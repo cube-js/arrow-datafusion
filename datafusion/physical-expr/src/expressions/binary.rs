@@ -45,11 +45,13 @@ use arrow::compute::kernels::comparison::{
     eq_scalar, gt_eq_scalar, gt_scalar, lt_eq_scalar, lt_scalar, neq_scalar,
 };
 use arrow::compute::kernels::comparison::{
-    eq_utf8_scalar, gt_eq_utf8_scalar, gt_utf8_scalar, like_utf8_scalar,
-    lt_eq_utf8_scalar, lt_utf8_scalar, neq_utf8_scalar, nlike_utf8_scalar,
-    regexp_is_match_utf8_scalar,
+    eq_utf8_scalar, gt_eq_utf8_scalar, gt_utf8_scalar, ilike_utf8_scalar,
+    like_utf8_scalar, lt_eq_utf8_scalar, lt_utf8_scalar, neq_utf8_scalar,
+    nilike_utf8_scalar, nlike_utf8_scalar, regexp_is_match_utf8_scalar,
 };
-use arrow::compute::kernels::comparison::{like_utf8, nlike_utf8, regexp_is_match_utf8};
+use arrow::compute::kernels::comparison::{
+    ilike_utf8, like_utf8, nilike_utf8, nlike_utf8, regexp_is_match_utf8,
+};
 use arrow::datatypes::{ArrowNumericType, DataType, Schema, TimeUnit};
 use arrow::error::ArrowError::DivideByZero;
 use arrow::record_batch::RecordBatch;
@@ -1083,6 +1085,8 @@ pub fn binary_operator_data_type(
         | Operator::Or
         | Operator::Like
         | Operator::NotLike
+        | Operator::ILike
+        | Operator::NotILike
         | Operator::Lt
         | Operator::Gt
         | Operator::GtEq
@@ -1229,6 +1233,12 @@ impl BinaryExpr {
             Operator::NotLike => {
                 binary_string_array_op_scalar!(array, scalar.clone(), nlike)
             }
+            Operator::ILike => {
+                binary_string_array_op_scalar!(array, scalar.clone(), ilike)
+            }
+            Operator::NotILike => {
+                binary_string_array_op_scalar!(array, scalar.clone(), nilike)
+            }
             Operator::Plus => {
                 binary_primitive_array_op_scalar!(array, scalar.clone(), add)
             }
@@ -1313,6 +1323,8 @@ impl BinaryExpr {
         match &self.op {
             Operator::Like => binary_string_array_op!(left, right, like),
             Operator::NotLike => binary_string_array_op!(left, right, nlike),
+            Operator::ILike => binary_string_array_op!(left, right, ilike),
+            Operator::NotILike => binary_string_array_op!(left, right, nilike),
             Operator::Lt => lt_dyn(&left, &right),
             Operator::LtEq => lt_eq_dyn(&left, &right),
             Operator::Gt => gt_dyn(&left, &right),
@@ -1656,6 +1668,18 @@ mod tests {
             BooleanArray,
             DataType::Boolean,
             vec![true, false]
+        );
+        test_coercion!(
+            StringArray,
+            DataType::Utf8,
+            vec!["hello world", "world"],
+            StringArray,
+            DataType::Utf8,
+            vec!["%hello%", "%hello%"],
+            Operator::NotLike,
+            BooleanArray,
+            DataType::Boolean,
+            vec![false, true]
         );
         test_coercion!(
             StringArray,

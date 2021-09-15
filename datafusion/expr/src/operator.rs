@@ -55,6 +55,10 @@ pub enum Operator {
     Like,
     /// Does not match a wildcard pattern
     NotLike,
+    /// Matches a wildcard pattern (case-insensitive)
+    ILike,
+    /// Does not match a wildcard pattern (case-insensitive)
+    NotILike,
     /// IS DISTINCT FROM
     IsDistinctFrom,
     /// IS NOT DISTINCT FROM
@@ -93,6 +97,8 @@ impl fmt::Display for Operator {
             Operator::Or => "OR",
             Operator::Like => "LIKE",
             Operator::NotLike => "NOT LIKE",
+            Operator::ILike => "ILIKE",
+            Operator::NotILike => "NOT ILIKE",
             Operator::RegexMatch => "~",
             Operator::RegexIMatch => "~*",
             Operator::RegexNotMatch => "!~",

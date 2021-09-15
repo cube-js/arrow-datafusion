@@ -47,7 +47,9 @@ pub(crate) fn coerce_types(
             comparison_order_coercion(lhs_type, rhs_type)
         }
         // "like" operators operate on strings and always return a boolean
-        Operator::Like | Operator::NotLike => like_coercion(lhs_type, rhs_type),
+        Operator::Like | Operator::NotLike | Operator::ILike | Operator::NotILike => {
+            like_coercion(lhs_type, rhs_type)
+        }
         // for math expressions, the final value of the coercion is also the return type
         // because coercion favours higher information types
         Operator::Plus | Operator::Minus => numerical_coercion(lhs_type, rhs_type)

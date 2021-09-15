@@ -338,6 +338,16 @@ impl Expr {
         binary_expr(self, Operator::NotLike, other)
     }
 
+    /// Return `self ILIKE other`
+    pub fn ilike(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::ILike, other)
+    }
+
+    /// Return `self NOT ILIKE other`
+    pub fn not_ilike(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::NotILike, other)
+    }
+
     /// Return `self AS name` alias expression
     pub fn alias(self, name: &str) -> Expr {
         Expr::Alias(Box::new(self), name.to_owned())

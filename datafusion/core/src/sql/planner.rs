@@ -1536,6 +1536,8 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             BinaryOperator::Or => Ok(Operator::Or),
             BinaryOperator::Like => Ok(Operator::Like),
             BinaryOperator::NotLike => Ok(Operator::NotLike),
+            BinaryOperator::ILike => Ok(Operator::ILike),
+            BinaryOperator::NotILike => Ok(Operator::NotILike),
             BinaryOperator::PGRegexMatch => Ok(Operator::RegexMatch),
             BinaryOperator::PGRegexIMatch => Ok(Operator::RegexIMatch),
             BinaryOperator::PGRegexNotMatch => Ok(Operator::RegexNotMatch),

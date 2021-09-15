@@ -610,6 +610,14 @@ async fn test_like() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_ilike() -> Result<()> {
+    test_expression!("'test' ILIKE '%Es%'", "true");
+    test_expression!("'payment' NOT ILIKE 'PAYMENT'", "false");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_is_boolean() -> Result<()> {
     test_expression!("true IS TRUE", "true");
     test_expression!("false IS TRUE", "false");
