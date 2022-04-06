@@ -1028,6 +1028,7 @@ impl TryFrom<&BuiltinScalarFunction> for protobuf::ScalarFunction {
             BuiltinScalarFunction::Now => Self::Now,
             BuiltinScalarFunction::Translate => Self::Translate,
             BuiltinScalarFunction::RegexpMatch => Self::RegexpMatch,
+            BuiltinScalarFunction::Coalesce => Self::Coalesce,
             // Cube SQL
             BuiltinScalarFunction::UtcTimestamp => Self::UtcTimestamp,
             BuiltinScalarFunction::ToDayInterval => Self::ToDayInterval,
