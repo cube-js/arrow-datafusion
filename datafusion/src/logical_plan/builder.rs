@@ -810,7 +810,6 @@ pub fn project_with_alias(
                 .push(columnize_expr(normalize_col(e, &plan)?, input_schema)),
         }
     }
-    validate_unique_names("Projections", projected_expr.iter(), input_schema)?;
     let input_schema = DFSchema::new(exprlist_to_fields(&projected_expr, input_schema)?)?;
     let schema = match alias {
         Some(ref alias) => input_schema.replace_qualifier(alias.as_str()),

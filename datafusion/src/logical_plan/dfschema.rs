@@ -18,7 +18,6 @@
 //! DFSchema is an extended schema struct that DataFusion uses to provide support for
 //! fields with optional relation names.
 
-use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -46,46 +45,6 @@ impl DFSchema {
 
     /// Create a new `DFSchema`
     pub fn new(fields: Vec<DFField>) -> Result<Self> {
-        let mut qualified_names = HashSet::new();
-        let mut unqualified_names = HashSet::new();
-
-        for field in &fields {
-            if let Some(qualifier) = field.qualifier() {
-                if !qualified_names.insert((qualifier, field.name())) {
-                    return Err(DataFusionError::Plan(format!(
-                        "Schema contains duplicate qualified field name '{}'",
-                        field.qualified_name()
-                    )));
-                }
-            } else if !unqualified_names.insert(field.name()) {
-                return Err(DataFusionError::Plan(format!(
-                    "Schema contains duplicate unqualified field name '{}'",
-                    field.name()
-                )));
-            }
-        }
-
-        // check for mix of qualified and unqualified field with same unqualified name
-        // note that we need to sort the contents of the HashSet first so that errors are
-        // deterministic
-        let mut qualified_names = qualified_names
-            .iter()
-            .map(|(l, r)| (l.to_owned(), r.to_owned()))
-            .collect::<Vec<(&String, &String)>>();
-        qualified_names.sort_by(|a, b| {
-            let a = format!("{}.{}", a.0, a.1);
-            let b = format!("{}.{}", b.0, b.1);
-            a.cmp(&b)
-        });
-        for (qualifier, name) in &qualified_names {
-            if unqualified_names.contains(name) {
-                return Err(DataFusionError::Plan(format!(
-                    "Schema contains qualified field name '{}.{}' \
-                    and unqualified field name '{}' which would be ambiguous",
-                    qualifier, name, name
-                )));
-            }
-        }
         Ok(Self { fields })
     }
 
