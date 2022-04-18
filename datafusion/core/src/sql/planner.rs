@@ -2001,6 +2001,13 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 Ok(Expr::Column(column))
             }
 
+            SQLExpr::DotExpr { expr, field } => {
+                Ok(Expr::GetIndexedField {
+                    expr: Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
+                    key: ScalarValue::Utf8(Some(field.value)),
+                })
+            }
+
             _ => Err(DataFusionError::NotImplemented(format!(
                 "Unsupported ast node {:?} in sqltorel",
                 sql
