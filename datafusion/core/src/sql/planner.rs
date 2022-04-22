@@ -2495,7 +2495,7 @@ pub fn convert_data_type(sql_type: &SQLDataType) -> Result<DataType> {
         SQLDataType::Float(_) => Ok(DataType::Float32),
         SQLDataType::Real => Ok(DataType::Float32),
         SQLDataType::Double => Ok(DataType::Float64),
-        SQLDataType::Char(_) | SQLDataType::Varchar(_) => Ok(DataType::Utf8),
+        SQLDataType::Char(_) | SQLDataType::Varchar(_) | SQLDataType::Text => Ok(DataType::Utf8),
         SQLDataType::Timestamp => Ok(DataType::Timestamp(TimeUnit::Nanosecond, None)),
         SQLDataType::Date => Ok(DataType::Date32),
         SQLDataType::Decimal(precision, scale) => make_decimal_type(*precision, *scale),
