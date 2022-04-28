@@ -312,6 +312,10 @@ pub fn create_physical_fun(
         BuiltinScalarFunction::Sqrt => Arc::new(math_expressions::sqrt),
         BuiltinScalarFunction::Tan => Arc::new(math_expressions::tan),
         BuiltinScalarFunction::Trunc => Arc::new(math_expressions::trunc),
+        BuiltinScalarFunction::Power => {
+            Arc::new(|args| make_scalar_function(math_expressions::power)(args))
+        }
+
         BuiltinScalarFunction::Pi => Arc::new(math_expressions::pi),
         // string functions
         BuiltinScalarFunction::MakeArray => Arc::new(array_expressions::array),

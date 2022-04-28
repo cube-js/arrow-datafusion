@@ -190,6 +190,7 @@ enum ScalarFunction {
   Upper=62;
   Coalesce=63;
   // Upstream
+  Power=64;
   CurrentDate=70;
   Pi=80;
   // Cubesql

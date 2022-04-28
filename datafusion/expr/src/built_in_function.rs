@@ -54,6 +54,8 @@ pub enum BuiltinScalarFunction {
     Log10,
     /// log2
     Log2,
+    /// power
+    Power,
     /// pi
     Pi,
     /// round
@@ -196,6 +198,7 @@ impl BuiltinScalarFunction {
             BuiltinScalarFunction::Log => Volatility::Immutable,
             BuiltinScalarFunction::Log10 => Volatility::Immutable,
             BuiltinScalarFunction::Log2 => Volatility::Immutable,
+            BuiltinScalarFunction::Power => Volatility::Immutable,
             BuiltinScalarFunction::Pi => Volatility::Immutable,
             BuiltinScalarFunction::Round => Volatility::Immutable,
             BuiltinScalarFunction::Signum => Volatility::Immutable,
@@ -284,6 +287,7 @@ impl FromStr for BuiltinScalarFunction {
             "log" => BuiltinScalarFunction::Log,
             "log10" => BuiltinScalarFunction::Log10,
             "log2" => BuiltinScalarFunction::Log2,
+            "power" => BuiltinScalarFunction::Power,
             "pi" => BuiltinScalarFunction::Pi,
             "round" => BuiltinScalarFunction::Round,
             "signum" => BuiltinScalarFunction::Signum,
