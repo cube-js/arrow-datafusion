@@ -48,12 +48,12 @@ pub use expr::{
     count, count_distinct, create_udaf, create_udf, create_udtf, date_part, date_trunc,
     digest, exp, exprlist_to_fields, exprlist_to_fields_from_schema, floor, in_list,
     initcap, left, length, lit, lit_timestamp_nano, ln, log10, log2, lower, lpad, ltrim,
-    max, md5, min, now, now_expr, nullif, octet_length, or, pi, random, regexp_match,
-    regexp_replace, repeat, replace, reverse, right, round, rpad, rtrim, sha224, sha256,
-    sha384, sha512, signum, sin, split_part, sqrt, starts_with, strpos, substr, sum, tan,
-    to_hex, to_timestamp_micros, to_timestamp_millis, to_timestamp_seconds, translate,
-    trim, trunc, unalias, upper, when, Column, Expr, ExprSchema, GroupingSet, Like,
-    Literal,
+    max, md5, min, now, now_expr, nullif, octet_length, or, pi, power, random,
+    regexp_match, regexp_replace, repeat, replace, reverse, right, round, rpad, rtrim,
+    sha224, sha256, sha384, sha512, signum, sin, split_part, sqrt, starts_with, strpos,
+    substr, sum, tan, to_hex, to_timestamp_micros, to_timestamp_millis,
+    to_timestamp_seconds, translate, trim, trunc, unalias, upper, when, Column, Expr,
+    ExprSchema, GroupingSet, Like, Literal,
 };
 pub use expr_rewriter::{
     normalize_col, normalize_cols, replace_col, replace_col_to_expr,

@@ -244,6 +244,11 @@ pub fn return_type(
             }
         }),
 
+        BuiltinScalarFunction::Power => match &input_expr_types[0] {
+            DataType::Int64 => Ok(DataType::Int64),
+            _ => Ok(DataType::Float64),
+        },
+
         BuiltinScalarFunction::Abs
         | BuiltinScalarFunction::Acos
         | BuiltinScalarFunction::Asin
@@ -550,6 +555,13 @@ pub fn signature(fun: &BuiltinScalarFunction) -> Signature {
         ),
         BuiltinScalarFunction::Pi => Signature::exact(vec![], fun.volatility()),
         BuiltinScalarFunction::Random => Signature::exact(vec![], fun.volatility()),
+        BuiltinScalarFunction::Power => Signature::one_of(
+            vec![
+                TypeSignature::Exact(vec![DataType::Int64, DataType::Int64]),
+                TypeSignature::Exact(vec![DataType::Float64, DataType::Float64]),
+            ],
+            fun.volatility(),
+        ),
         BuiltinScalarFunction::Log => Signature::one_of(
             vec![
                 TypeSignature::Exact(vec![DataType::Float64]),
