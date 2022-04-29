@@ -215,7 +215,7 @@ async fn sql_basic() -> Result<()> {
     let df = ctx.sql("SELECT * from stats_table").await.unwrap();
 
     let physical_plan = ctx
-        .create_physical_plan(&df.to_logical_plan())
+        .create_physical_plan(&df.to_logical_plan()?)
         .await
         .unwrap();
 
@@ -236,7 +236,7 @@ async fn sql_filter() -> Result<()> {
         .unwrap();
 
     let physical_plan = ctx
-        .create_physical_plan(&df.to_logical_plan())
+        .create_physical_plan(&df.to_logical_plan()?)
         .await
         .unwrap();
 
@@ -253,7 +253,7 @@ async fn sql_limit() -> Result<()> {
 
     let df = ctx.sql("SELECT * FROM stats_table LIMIT 5").await.unwrap();
     let physical_plan = ctx
-        .create_physical_plan(&df.to_logical_plan())
+        .create_physical_plan(&df.to_logical_plan()?)
         .await
         .unwrap();
     // when the limit is smaller than the original number of lines
@@ -272,7 +272,7 @@ async fn sql_limit() -> Result<()> {
         .await
         .unwrap();
     let physical_plan = ctx
-        .create_physical_plan(&df.to_logical_plan())
+        .create_physical_plan(&df.to_logical_plan()?)
         .await
         .unwrap();
     // when the limit is larger than the original number of lines, statistics remain unchanged
@@ -292,7 +292,7 @@ async fn sql_window() -> Result<()> {
         .unwrap();
 
     let physical_plan = ctx
-        .create_physical_plan(&df.to_logical_plan())
+        .create_physical_plan(&df.to_logical_plan()?)
         .await
         .unwrap();
 

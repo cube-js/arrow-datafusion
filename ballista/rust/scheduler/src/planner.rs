@@ -306,7 +306,7 @@ mod test {
             )
             .await?;
 
-        let plan = df.to_logical_plan();
+        let plan = df.to_logical_plan()?;
         let plan = ctx.optimize(&plan)?;
         let plan = ctx.create_physical_plan(&plan).await?;
 
@@ -420,7 +420,7 @@ order by
             )
             .await?;
 
-        let plan = df.to_logical_plan();
+        let plan = df.to_logical_plan()?;
         let plan = ctx.optimize(&plan)?;
         let plan = ctx.create_physical_plan(&plan).await?;
 
@@ -568,7 +568,7 @@ order by
             )
             .await?;
 
-        let plan = df.to_logical_plan();
+        let plan = df.to_logical_plan()?;
         let plan = ctx.optimize(&plan)?;
         let plan = ctx.create_physical_plan(&plan).await?;
 

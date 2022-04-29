@@ -268,7 +268,7 @@ impl BallistaContext {
         path: &str,
         options: CsvReadOptions<'_>,
     ) -> Result<()> {
-        match self.read_csv(path, options).await?.to_logical_plan() {
+        match self.read_csv(path, options).await?.to_logical_plan()? {
             LogicalPlan::TableScan(TableScan { source, .. }) => {
                 self.register_table(name, source)
             }
@@ -282,7 +282,7 @@ impl BallistaContext {
         path: &str,
         options: ParquetReadOptions<'_>,
     ) -> Result<()> {
-        match self.read_parquet(path, options).await?.to_logical_plan() {
+        match self.read_parquet(path, options).await?.to_logical_plan()? {
             LogicalPlan::TableScan(TableScan { source, .. }) => {
                 self.register_table(name, source)
             }
@@ -296,7 +296,7 @@ impl BallistaContext {
         path: &str,
         options: AvroReadOptions<'_>,
     ) -> Result<()> {
-        match self.read_avro(path, options).await?.to_logical_plan() {
+        match self.read_avro(path, options).await?.to_logical_plan()? {
             LogicalPlan::TableScan(TableScan { source, .. }) => {
                 self.register_table(name, source)
             }
