@@ -1714,6 +1714,12 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 }
             }
 
+            SQLExpr::ArrayIndex { obj, indexs } => {
+                let expr = self.sql_expr_to_logical_expr(*obj, schema)?;
+
+                plan_indexed(expr, indexs)
+            }
+
             SQLExpr::CompoundIdentifier(ids) => {
                 let mut var_names: Vec<_> = ids.into_iter().map(normalize_ident).collect();
 

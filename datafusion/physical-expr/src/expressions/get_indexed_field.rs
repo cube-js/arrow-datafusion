@@ -18,9 +18,14 @@
 //! get field of a `ListArray`
 
 use crate::{field_util::get_indexed_field as get_data_type_field, PhysicalExpr};
-use arrow::array::Array;
+use arrow::array::{
+    Array, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
+    Int8Array, LargeStringArray, StringArray, UInt16Array, UInt32Array, UInt64Array,
+    UInt8Array,
+};
 use arrow::array::{ListArray, StructArray};
 use arrow::compute::concat;
+
 use arrow::{
     datatypes::{DataType, Schema},
     record_batch::RecordBatch,
@@ -56,6 +61,30 @@ impl std::fmt::Display for GetIndexedFieldExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "({}).[{}]", self.arg, self.key)
     }
+}
+
+macro_rules! scalar_value_from_list_index {
+    ($VALUES:expr, $TYPE:ident, $INDEX:expr, $SCALAR_TYPE:expr) => {{
+        let wrapper = $VALUES.as_any().downcast_ref::<$TYPE>().unwrap();
+        if wrapper.len() > 0 || $INDEX > wrapper.len() || wrapper.is_null($INDEX) {
+            Ok(ColumnarValue::Scalar($SCALAR_TYPE(None)))
+        } else {
+            Ok(ColumnarValue::Scalar(ScalarValue::from(
+                wrapper.value($INDEX),
+            )))
+        }
+    }};
+}
+
+macro_rules! scalar_value_from_struct_column {
+    ($VALUES:expr, $TYPE:ident, $SCALAR_TYPE:expr) => {{
+        let wrapper = $VALUES.as_any().downcast_ref::<$TYPE>().unwrap();
+        if wrapper.is_null(0) {
+            Ok(ColumnarValue::Scalar($SCALAR_TYPE(None)))
+        } else {
+            Ok(ColumnarValue::Scalar(ScalarValue::from(wrapper.value(0))))
+        }
+    }};
 }
 
 impl PhysicalExpr for GetIndexedFieldExpr {
@@ -105,9 +134,69 @@ impl PhysicalExpr for GetIndexedFieldExpr {
                 }
                 (dt, key) => Err(DataFusionError::NotImplemented(format!("get indexed field is only possible on lists with int64 indexes. Tried {} with {} index", dt, key))),
             },
-            ColumnarValue::Scalar(_) => Err(DataFusionError::NotImplemented(
-                "field access is not yet implemented for scalar values".to_string(),
-            )),
+            ColumnarValue::Scalar(scalar) => match (scalar.get_datatype(), &self.key) {
+                (DataType::List(_) | DataType::Struct(_), _) if self.key.is_null() => {
+                    let scalar_null: ScalarValue = (&scalar.get_datatype()).try_into()?;
+                    Ok(ColumnarValue::Scalar(scalar_null))
+                }
+                (DataType::List(_), ScalarValue::Int64(Some(i))) => {
+                    let wrapper = scalar.to_array_of_size(1);
+                    let index = (i - 1) as usize;
+
+                    let as_list_array = wrapper.as_any().downcast_ref::<ListArray>().unwrap();
+                    let values_ref = as_list_array.value(0);
+
+                    match values_ref.data_type() {
+                        DataType::Boolean => scalar_value_from_list_index!(values_ref, BooleanArray, index, ScalarValue::Boolean),
+                        DataType::Float32 => scalar_value_from_list_index!(values_ref, Float32Array, index, ScalarValue::Float32),
+                        DataType::Float64 => scalar_value_from_list_index!(values_ref, Float64Array, index, ScalarValue::Float64),
+                        DataType::Int8 => scalar_value_from_list_index!(values_ref, Int8Array, index, ScalarValue::Int8),
+                        DataType::Int16 => scalar_value_from_list_index!(values_ref, Int16Array, index, ScalarValue::Int16),
+                        DataType::Int32 => scalar_value_from_list_index!(values_ref, Int32Array, index, ScalarValue::Int64),
+                        DataType::Int64 => scalar_value_from_list_index!(values_ref, Int64Array, index, ScalarValue::Int64),
+                        DataType::UInt8 => scalar_value_from_list_index!(values_ref, UInt8Array, index, ScalarValue::UInt8),
+                        DataType::UInt16 => scalar_value_from_list_index!(values_ref, UInt16Array, index, ScalarValue::UInt16),
+                        DataType::UInt32 => scalar_value_from_list_index!(values_ref, UInt32Array, index, ScalarValue::UInt32),
+                        DataType::UInt64 => scalar_value_from_list_index!(values_ref, UInt64Array, index, ScalarValue::UInt64),
+                        DataType::Utf8 => scalar_value_from_list_index!(values_ref, StringArray, index, ScalarValue::Utf8),
+                        DataType::LargeUtf8 => scalar_value_from_list_index!(values_ref, LargeStringArray, index, ScalarValue::LargeUtf8),
+                        other => Err(DataFusionError::NotImplemented(format!(
+                            "index access is not yet implemented for scalar value on List with type: {:?}",
+                            other
+                        )))
+                    }
+                },
+                (DataType::Struct(_), ScalarValue::Utf8(Some(k))) => {
+                    let wrapper = scalar.to_array_of_size(1);
+
+                    let as_struct_array = wrapper.as_any().downcast_ref::<StructArray>().unwrap();
+                    match as_struct_array.column_by_name(k) {
+                        None => Err(DataFusionError::Execution(format!("get indexed field {} not found in struct", k))),
+                        Some(col) => match col.data_type() {
+                            DataType::Boolean => scalar_value_from_struct_column!(col, BooleanArray, ScalarValue::Boolean),
+                            DataType::Float32 => scalar_value_from_struct_column!(col, Float32Array, ScalarValue::Float32),
+                            DataType::Float64 => scalar_value_from_struct_column!(col, Float64Array, ScalarValue::Float64),
+                            DataType::UInt8 => scalar_value_from_struct_column!(col, UInt8Array, ScalarValue::UInt8),
+                            DataType::UInt16 => scalar_value_from_struct_column!(col, UInt16Array, ScalarValue::UInt16),
+                            DataType::UInt32 => scalar_value_from_struct_column!(col, UInt32Array, ScalarValue::UInt32),
+                            DataType::UInt64 => scalar_value_from_struct_column!(col, UInt64Array, ScalarValue::UInt64),
+                            DataType::Int8 => scalar_value_from_struct_column!(col, UInt8Array, ScalarValue::Int8),
+                            DataType::Int16 => scalar_value_from_struct_column!(col, UInt16Array, ScalarValue::Int16),
+                            DataType::Int32 => scalar_value_from_struct_column!(col, UInt32Array, ScalarValue::Int32),
+                            DataType::Int64 => scalar_value_from_struct_column!(col, UInt64Array, ScalarValue::Int64),
+                            DataType::Utf8 => scalar_value_from_struct_column!(col, StringArray, ScalarValue::Utf8),
+                            DataType::LargeUtf8 => scalar_value_from_struct_column!(col, LargeStringArray, ScalarValue::LargeUtf8),
+                            other => Err(DataFusionError::NotImplemented(format!(
+                                "index access is not yet implemented for scalar value on Struct with type: {:?}",
+                                other
+                            )))
+                        }
+                    }
+                }
+                _ => Err(DataFusionError::NotImplemented(
+                    "field access is not yet implemented for scalar values".to_string(),
+                ))
+            },
         }
     }
 }

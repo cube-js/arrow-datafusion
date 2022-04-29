@@ -366,6 +366,16 @@ async fn test_crypto_expressions() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_array_index() -> Result<()> {
+    test_expression!("([5,4,3,2,1])[1]", "5");
+    test_expression!("([5,4,3,2,1])[5]", "1");
+    test_expression!("([5,4,3,2,1])[100]", "NULL");
+    test_expression!("([5,4,3,2,1])[-1]", "NULL");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_array_literals() -> Result<()> {
     // Named, just another syntax
     test_expression!("ARRAY[1,2,3,4,5]", "[1, 2, 3, 4, 5]");
