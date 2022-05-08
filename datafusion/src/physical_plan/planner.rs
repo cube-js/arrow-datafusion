@@ -506,6 +506,8 @@ impl DefaultPhysicalPlanner {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
+                //It's not obvious here, but "order" here is vector of positions of underlying
+                //index columns in "order by" columns order
                 let (strategy, order) =
                     compute_aggregation_strategy(input_exec.as_ref(), &groups);
                 // TODO: fix cubestore planning and re-enable.
@@ -536,11 +538,14 @@ impl DefaultPhysicalPlanner {
                 if strategy == AggregateStrategy::InplaceSorted
                     && initial_aggr.output_partitioning().partition_count() != 1
                     && !groups.is_empty()
+                    && order.is_some()
                 {
+                    let order = order.as_ref().unwrap();
                     initial_aggr = Arc::new(MergeSortExec::try_new(
                         initial_aggr,
-                        (0..groups.len())
-                            .map(|i| Column::new(&groups[i].1, i))
+                        order
+                            .iter()
+                            .map(|i| Column::new(&groups[*i].1, *i))
                             .collect(),
                     )?);
                 }
