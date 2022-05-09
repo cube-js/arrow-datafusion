@@ -506,8 +506,8 @@ impl DefaultPhysicalPlanner {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                //It's not obvious here, but "order" here is vector of positions of underlying
-                //index columns in "order by" columns order
+                //It's not obvious here, but "order" here is mapping from input "sort_on" into
+                //positions of "group by" columns
                 let (strategy, order) =
                     compute_aggregation_strategy(input_exec.as_ref(), &groups);
                 // TODO: fix cubestore planning and re-enable.
