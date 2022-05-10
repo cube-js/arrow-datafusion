@@ -5052,6 +5052,10 @@ mod tests {
             name: TableReference,
         ) -> Option<Arc<dyn TableProvider>> {
             let schema = match name.table() {
+                "test_decimal" => Some(Schema::new(vec![
+                    Field::new("id", DataType::Int32, false),
+                    Field::new("price", DataType::Decimal(10, 2), false),
+                ])),
                 "person" => Some(Schema::new(vec![
                     Field::new("id", DataType::UInt32, false),
                     Field::new("first_name", DataType::Utf8, false),
@@ -5440,6 +5444,14 @@ mod tests {
         let expected = "Projection: #person.id, #person.state, #person.age, #COUNT(UInt8(1))\
         \n  Aggregate: groupBy=[[#person.id, CUBE (#person.state, #person.age)]], aggr=[[COUNT(UInt8(1))]]\
         \n    TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[tokio::test]
+    async fn round_decimal() {
+        let sql = "SELECT round(price/3, 2) FROM test_decimal";
+        let expected = "Projection: round(#test_decimal.price / Int64(3), Int64(2))\
+        \n  TableScan: test_decimal projection=None";
         quick_test(sql, expected);
     }
 
