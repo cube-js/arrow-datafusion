@@ -1793,7 +1793,8 @@ mod tests {
         let bool_expr = col("c1").eq(col("c1"));
         let cases = vec![
             // utf8 < u32
-            col("c1").lt(col("c2")),
+            // NOTE(cubesql): valid
+            //col("c1").lt(col("c2")),
             // utf8 AND utf8
             col("c1").and(col("c1")),
             // u8 AND u8

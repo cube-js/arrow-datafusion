@@ -1280,3 +1280,123 @@ async fn nested_subquery() -> Result<()> {
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
+
+#[tokio::test]
+async fn comparisons_with_null() -> Result<()> {
+    let ctx = SessionContext::new();
+    // 1. Numeric comparison with NULL
+    let sql = "select column1 < NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------+",
+        "| t.column1 Lt Utf8(NULL) |",
+        "+-------------------------+",
+        "|                         |",
+        "|                         |",
+        "+-------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql =
+        "select column1 <= NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+---------------------------+",
+        "| t.column1 LtEq Utf8(NULL) |",
+        "+---------------------------+",
+        "|                           |",
+        "|                           |",
+        "+---------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "select column1 > NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------+",
+        "| t.column1 Gt Utf8(NULL) |",
+        "+-------------------------+",
+        "|                         |",
+        "|                         |",
+        "+-------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql =
+        "select column1 >= NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+---------------------------+",
+        "| t.column1 GtEq Utf8(NULL) |",
+        "+---------------------------+",
+        "|                           |",
+        "|                           |",
+        "+---------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "select column1 = NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------+",
+        "| t.column1 Eq Utf8(NULL) |",
+        "+-------------------------+",
+        "|                         |",
+        "|                         |",
+        "+-------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql =
+        "select column1 != NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----------------------------+",
+        "| t.column1 NotEq Utf8(NULL) |",
+        "+----------------------------+",
+        "|                            |",
+        "|                            |",
+        "+----------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    // 1.1 Float value comparison with NULL
+    let sql = "select column3 < NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------+",
+        "| t.column3 Lt Utf8(NULL) |",
+        "+-------------------------+",
+        "|                         |",
+        "|                         |",
+        "+-------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    // String comparison with NULL
+    let sql = "select column2 < NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------+",
+        "| t.column2 Lt Utf8(NULL) |",
+        "+-------------------------+",
+        "|                         |",
+        "|                         |",
+        "+-------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    // Boolean comparison with NULL
+    let sql = "select column1 < NULL from (VALUES (true), (false)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------+",
+        "| t.column1 Lt Utf8(NULL) |",
+        "+-------------------------+",
+        "|                         |",
+        "|                         |",
+        "+-------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
