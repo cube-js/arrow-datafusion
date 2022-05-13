@@ -72,7 +72,6 @@ use crate::optimizer::to_approx_perc::ToApproxPerc;
 
 use crate::physical_optimizer::coalesce_batches::CoalesceBatches;
 use crate::physical_optimizer::merge_exec::AddCoalescePartitionsExec;
-use crate::physical_optimizer::repartition::Repartition;
 
 use crate::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use crate::logical_plan::plan::Explain;
@@ -1164,7 +1163,8 @@ impl SessionState {
                 Arc::new(AggregateStatistics::new()),
                 Arc::new(HashBuildProbeOrder::new()),
                 Arc::new(CoalesceBatches::new()),
-                Arc::new(Repartition::new()),
+                // FIXME: Repartition is temporarily disabled to avoid issues with subqueries
+                //Arc::new(Repartition::new()),
                 Arc::new(AddCoalescePartitionsExec::new()),
             ],
             query_planner: Arc::new(DefaultQueryPlanner {}),
