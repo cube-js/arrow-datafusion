@@ -111,6 +111,7 @@ impl ExprSchemable for Expr {
             | Expr::IsNull(_)
             | Expr::Between { .. }
             | Expr::InList { .. }
+            | Expr::AnyExpr { .. }
             | Expr::IsNotNull(_) => Ok(DataType::Boolean),
             Expr::BinaryExpr {
                 ref left,
@@ -185,6 +186,11 @@ impl ExprSchemable for Expr {
             | Expr::AggregateUDF { .. } => Ok(true),
             Expr::IsNull(_) | Expr::IsNotNull(_) => Ok(false),
             Expr::BinaryExpr {
+                ref left,
+                ref right,
+                ..
+            } => Ok(left.nullable(input_schema)? || right.nullable(input_schema)?),
+            Expr::AnyExpr {
                 ref left,
                 ref right,
                 ..

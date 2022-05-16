@@ -1477,6 +1477,29 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         }
     }
 
+    fn parse_sql_binary_any(
+        &self,
+        left: SQLExpr,
+        op: BinaryOperator,
+        right: Box<SQLExpr>,
+        schema: &DFSchema,
+    ) -> Result<Expr> {
+        let operator = match op {
+            BinaryOperator::Eq => Ok(Operator::Eq),
+            BinaryOperator::NotEq => Ok(Operator::NotEq),
+            _ => Err(DataFusionError::NotImplemented(format!(
+                "Unsupported SQL ANY operator {:?}",
+                op
+            ))),
+        }?;
+
+        Ok(Expr::AnyExpr {
+            left: Box::new(self.sql_expr_to_logical_expr(left, schema)?),
+            op: operator,
+            right: Box::new(self.sql_expr_to_logical_expr(*right, schema)?),
+        })
+    }
+
     fn parse_sql_binary_op(
         &self,
         left: SQLExpr,
@@ -1484,6 +1507,19 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         right: SQLExpr,
         schema: &DFSchema,
     ) -> Result<Expr> {
+        match right {
+            SQLExpr::AnyOp(any_expr) => {
+                return self.parse_sql_binary_any(left, op, any_expr, schema);
+            }
+            SQLExpr::AllOp(_) => {
+                return Err(DataFusionError::NotImplemented(format!(
+                    "Unsupported SQL ALL operator {:?}",
+                    right
+                )));
+            }
+            _ => {}
+        };
+
         let operator = match op {
             BinaryOperator::Gt => Ok(Operator::Gt),
             BinaryOperator::GtEq => Ok(Operator::GtEq),

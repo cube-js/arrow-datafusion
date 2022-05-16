@@ -73,6 +73,7 @@ impl ExpressionVisitor for ColumnNameVisitor<'_> {
             Expr::Alias(_, _)
             | Expr::Literal(_)
             | Expr::BinaryExpr { .. }
+            | Expr::AnyExpr { .. }
             | Expr::Not(_)
             | Expr::IsNotNull(_)
             | Expr::IsNull(_)
@@ -305,6 +306,9 @@ pub fn expr_sub_expressions(expr: &Expr) -> Result<Vec<Expr>> {
         Expr::BinaryExpr { left, right, .. } => {
             Ok(vec![left.as_ref().to_owned(), right.as_ref().to_owned()])
         }
+        Expr::AnyExpr { left, right, .. } => {
+            Ok(vec![left.as_ref().to_owned(), right.as_ref().to_owned()])
+        }
         Expr::IsNull(expr)
         | Expr::IsNotNull(expr)
         | Expr::Cast { expr, .. }
@@ -390,6 +394,11 @@ pub fn expr_sub_expressions(expr: &Expr) -> Result<Vec<Expr>> {
 pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
     match expr {
         Expr::BinaryExpr { op, .. } => Ok(Expr::BinaryExpr {
+            left: Box::new(expressions[0].clone()),
+            op: *op,
+            right: Box::new(expressions[1].clone()),
+        }),
+        Expr::AnyExpr { op, .. } => Ok(Expr::AnyExpr {
             left: Box::new(expressions[0].clone()),
             op: *op,
             right: Box::new(expressions[1].clone()),

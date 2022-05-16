@@ -385,6 +385,7 @@ impl<'a> ConstEvaluator<'a> {
             Expr::TableUDF { .. } => false,
             Expr::Literal(_)
             | Expr::BinaryExpr { .. }
+            | Expr::AnyExpr { .. }
             | Expr::Not(_)
             | Expr::IsNotNull(_)
             | Expr::IsNull(_)

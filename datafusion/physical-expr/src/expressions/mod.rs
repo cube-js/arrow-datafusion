@@ -37,6 +37,7 @@ mod lead_lag;
 mod literal;
 #[macro_use]
 mod min_max;
+mod any;
 mod approx_median;
 mod correlation;
 mod covariance;
@@ -83,6 +84,7 @@ pub use covariance::{
 };
 pub use cume_dist::cume_dist;
 
+pub use any::any;
 pub use distinct_expressions::{DistinctArrayAgg, DistinctCount};
 pub use get_indexed_field::GetIndexedFieldExpr;
 pub use in_list::{in_list, InListExpr};

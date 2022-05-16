@@ -91,6 +91,7 @@ impl ExpressionVisitor for ApplicabilityVisitor<'_> {
             | Expr::Cast { .. }
             | Expr::TryCast { .. }
             | Expr::BinaryExpr { .. }
+            | Expr::AnyExpr { .. }
             | Expr::Between { .. }
             | Expr::InList { .. }
             | Expr::GetIndexedField { .. }

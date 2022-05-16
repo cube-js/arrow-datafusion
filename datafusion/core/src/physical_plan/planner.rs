@@ -67,7 +67,7 @@ use arrow::datatypes::{Schema, SchemaRef};
 use arrow::{compute::can_cast_types, datatypes::DataType};
 use async_trait::async_trait;
 use datafusion_common::OuterQueryCursor;
-use datafusion_physical_expr::expressions::OuterColumn;
+use datafusion_physical_expr::expressions::{any, OuterColumn};
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::{debug, trace};
@@ -111,6 +111,11 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
             let left = create_physical_name(left, false)?;
             let right = create_physical_name(right, false)?;
             Ok(format!("{} {:?} {}", left, op, right))
+        }
+        Expr::AnyExpr { left, op, right } => {
+            let left = create_physical_name(left, false)?;
+            let right = create_physical_name(right, false)?;
+            Ok(format!("{} {:?} ANY({})", left, op, right))
         }
         Expr::Case {
             expr,
@@ -1096,7 +1101,6 @@ pub fn create_physical_expr(
             create_physical_expr(expr, input_dfschema, input_schema, execution_props)?,
             create_physical_expr(key, input_dfschema, input_schema, execution_props)?,
         ))),
-
         Expr::ScalarFunction { fun, args } => {
             let physical_args = args
                 .iter()
@@ -1171,6 +1175,21 @@ pub fn create_physical_expr(
             } else {
                 binary_expr
             }
+        }
+        Expr::AnyExpr { left, op, right } => {
+            let lhs = create_physical_expr(
+                left,
+                input_dfschema,
+                input_schema,
+                execution_props,
+            )?;
+            let rhs = create_physical_expr(
+                right,
+                input_dfschema,
+                input_schema,
+                execution_props,
+            )?;
+            any(lhs, *op, rhs, input_schema)
         }
         Expr::InList {
             expr,
