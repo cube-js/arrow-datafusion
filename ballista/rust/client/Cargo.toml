@@ -35,7 +35,7 @@ datafusion = { path = "../../../datafusion/core", version = "7.0.0" }
 futures = "0.3"
 log = "0.4"
 parking_lot = "0.12"
-sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "81217ce0dccc446d3d2f42582717b9e8fe960113" }
+sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "90bbbcf041160cdefd7ddc0f95e6b2b358dfcef2" }
 tempfile = "3"
 tokio = "1.0"
 

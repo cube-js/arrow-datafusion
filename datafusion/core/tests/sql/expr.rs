@@ -549,6 +549,20 @@ async fn test_substring_expr() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_is_boolean() -> Result<()> {
+    test_expression!("true IS TRUE", "true");
+    test_expression!("false IS TRUE", "false");
+    test_expression!("true IS FALSE", "false");
+    test_expression!("false IS FALSE", "true");
+    // doesnt work:
+    // - DF doesnt support NULL scalars correctly
+    // - x IS TRUE will be translated to x = true, which doesnt handle null values
+    // test_expression!("null IS FALSE", "true");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_string_expressions() -> Result<()> {
     test_expression!("ascii('')", "0");
     test_expression!("ascii('x')", "120");
