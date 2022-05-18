@@ -755,15 +755,7 @@ where
             .map(|arg| arg.clone().into_array(num_rows))
             .collect::<Vec<ArrayRef>>();
 
-        let result = (inner)(&args);
-
-        let to_return: (ArrayRef, Vec<usize>) = result
-            .iter()
-            .map(|(r, indexes)| (r.clone(), indexes.clone()))
-            .next()
-            .unwrap();
-
-        Ok(to_return)
+        Ok((inner)(&args)?)
     })
 }
 
