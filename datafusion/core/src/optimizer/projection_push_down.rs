@@ -206,8 +206,16 @@ fn optimize_plan(
             ..
         }) => {
             for (l, r) in on {
-                new_required_columns.insert(l.clone());
-                new_required_columns.insert(r.clone());
+                new_required_columns.insert({
+                    let mut l = l.clone();
+                    l.name = l.name.to_ascii_lowercase();
+                    l
+                });
+                new_required_columns.insert({
+                    let mut r = r.clone();
+                    r.name = r.name.to_ascii_lowercase();
+                    r
+                });
             }
 
             let optimized_left = Arc::new(optimize_plan(

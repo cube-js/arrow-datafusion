@@ -54,10 +54,25 @@ fn check_join_set_is_valid(
     right: &HashSet<Column>,
     on: &[(Column, Column)],
 ) -> Result<()> {
-    let on_left = &on.iter().map(|on| on.0.clone()).collect::<HashSet<_>>();
+    let left = &left
+        .iter()
+        .map(|column| Column::new(&column.name().to_ascii_lowercase(), column.index()))
+        .collect();
+    let right = &right
+        .iter()
+        .map(|column| Column::new(&column.name().to_ascii_lowercase(), column.index()))
+        .collect();
+
+    let on_left = &on
+        .iter()
+        .map(|on| Column::new(&on.0.name().to_ascii_lowercase(), on.0.index()))
+        .collect::<HashSet<_>>();
     let left_missing = on_left.difference(left).collect::<HashSet<_>>();
 
-    let on_right = &on.iter().map(|on| on.1.clone()).collect::<HashSet<_>>();
+    let on_right = &on
+        .iter()
+        .map(|on| Column::new(&on.1.name().to_ascii_lowercase(), on.1.index()))
+        .collect::<HashSet<_>>();
     let right_missing = on_right.difference(right).collect::<HashSet<_>>();
 
     if !left_missing.is_empty() | !right_missing.is_empty() {
