@@ -602,6 +602,14 @@ async fn test_substring_expr() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_like() -> Result<()> {
+    test_expression!("'test' LIKE e'%'", "true");
+    test_expression!("'payment_p2020_01' LIKE E'payment\\_p2020\\_01'", "true");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_is_boolean() -> Result<()> {
     test_expression!("true IS TRUE", "true");
     test_expression!("false IS TRUE", "false");

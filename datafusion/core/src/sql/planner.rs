@@ -1589,6 +1589,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         match sql {
             SQLExpr::Value(Value::Number(n, _)) => parse_sql_number(&n),
             SQLExpr::Value(Value::SingleQuotedString(ref s)) => Ok(lit(s.clone())),
+            SQLExpr::Value(Value::EscapedStringLiteral(ref s)) => Ok(lit(s.clone())),
             SQLExpr::Value(Value::Boolean(n)) => Ok(lit(n)),
             SQLExpr::Value(Value::Null) => Ok(Expr::Literal(ScalarValue::Utf8(None))),
             SQLExpr::Extract { field, expr } => Ok(Expr::ScalarFunction {
