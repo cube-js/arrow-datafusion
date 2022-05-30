@@ -1655,8 +1655,6 @@ mod tests {
             col("c3").and(col("c3")),
             // utf8 = u32
             col("c1").eq(col("c2")),
-            // utf8 = bool
-            col("c1").eq(bool_expr.clone()),
             // u32 AND bool
             col("c2").and(bool_expr),
             // utf8 LIKE u32
@@ -1798,17 +1796,9 @@ mod tests {
         .project(vec![col("c12").lt_eq(lit(0.025)).in_list(list, false)])?
         .build()?;
         let execution_plan = plan(&logical_plan).await;
-
-        let expected_error = "Unsupported CAST from Utf8 to Boolean";
-        match execution_plan {
-            Ok(_) => panic!("Expected planning failure"),
-            Err(e) => assert!(
-                e.to_string().contains(expected_error),
-                "Error '{}' did not contain expected error '{}'",
-                e,
-                expected_error
-            ),
-        }
+        // verify that the plan correctly adds cast from Utf8 to Boolean
+        let expected = "InListExpr { expr: BinaryExpr { left: Column { name: \"c12\", index: 11 }, op: LtEq, right: Literal { value: Float64(0.025) } }, list: [Literal { value: Boolean(true) }, CastExpr { expr: Literal { value: Utf8(\"a\") }, cast_type: Boolean, cast_options: CastOptions { safe: false } }], negated: false }";
+        assert!(format!("{:?}", execution_plan).contains(expected));
 
         Ok(())
     }

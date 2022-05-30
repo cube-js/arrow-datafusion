@@ -106,6 +106,7 @@ fn comparison_eq_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<Da
         return Some(lhs_type.clone());
     }
     comparison_binary_numeric_coercion(lhs_type, rhs_type)
+        .or_else(|| string_boolean_equality_coercion(lhs_type, rhs_type))
         .or_else(|| dictionary_coercion(lhs_type, rhs_type))
         .or_else(|| temporal_coercion(lhs_type, rhs_type))
 }
@@ -414,6 +415,19 @@ fn string_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType>
     }
 }
 
+/// Coercion rules for testing equality between strings and booleans.
+/// One of the sides has to be Utf8 type and the other has to be Boolean
+fn string_boolean_equality_coercion(
+    lhs_type: &DataType,
+    rhs_type: &DataType,
+) -> Option<DataType> {
+    use arrow::datatypes::DataType::*;
+    match (lhs_type, rhs_type) {
+        (Utf8, Boolean) | (Boolean, Utf8) => Some(Boolean),
+        _ => None,
+    }
+}
+
 /// coercion rules for like operations.
 /// This is a union of string coercion rules and dictionary coercion rules
 fn like_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
@@ -670,6 +684,20 @@ mod tests {
             &right_decimal_type,
         );
         assert_eq!(DataType::Decimal(11, 4), result.unwrap());
+    }
+
+    #[test]
+    fn test_string_boolean_equality_coercion() -> Result<()> {
+        use DataType::*;
+
+        let operators = [Operator::Eq, Operator::NotEq];
+
+        for op in &operators {
+            assert_eq!(coerce_types(&Utf8, op, &Boolean)?, Boolean);
+            assert_eq!(coerce_types(&Boolean, op, &Utf8)?, Boolean);
+        }
+
+        Ok(())
     }
 
     #[test]
