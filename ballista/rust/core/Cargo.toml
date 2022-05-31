@@ -49,7 +49,7 @@ parse_arg = "0.1.3"
 prost = "0.9"
 prost-types = "0.9"
 serde = { version = "1", features = ["derive"] }
-sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "2fdd894ca842d72eb4f1fd4c85b422315cfb9e8a" }
+sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "a4628ce6fcd5f8e536bf62090a2b7e49f88e84ce" }
 tokio = "1.0"
 tonic = "0.6"
 uuid = { version = "0.8", features = ["v4"] }
