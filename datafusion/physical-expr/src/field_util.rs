@@ -63,9 +63,9 @@ pub fn get_indexed_field(data_type: &DataType, key: &Box<Expr>) -> Result<Field>
             "Only utf8 strings are valid as an indexed field in a struct, actual: {}",
             key
         ))),
-        _ => Err(DataFusionError::Plan(
-            "The expression to get an indexed field is only valid for `List` and `Struct` types"
-                .to_string(),
-        )),
+        (left, right) => Err(DataFusionError::Plan(format!(
+            "The expression to get an indexed field is only valid for `List` and `Struct` types, field: {}, key: {}",
+            left, right
+        ))),
     }
 }
