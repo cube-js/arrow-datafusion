@@ -51,6 +51,7 @@ use crate::{
 };
 use arrow::datatypes::*;
 use hashbrown::HashMap;
+use log::warn;
 
 use sqlparser::ast::{
     BinaryOperator, DataType as SQLDataType, DateTimeField, Expr as SQLExpr, FunctionArg,
@@ -2127,6 +2128,12 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     expr: Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
                     key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(field.value)))),
                 })
+            }
+
+            // FIXME: Exists is unsupported but all the queries we need return false
+            SQLExpr::Exists(_) => {
+                warn!("EXISTS(...) is not supported yet. Replacing with scalar `false` value.");
+                Ok(Expr::Literal(ScalarValue::Boolean(Some(false))))
             }
 
             _ => Err(DataFusionError::NotImplemented(format!(
