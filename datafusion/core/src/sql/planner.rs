@@ -2136,6 +2136,15 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 Ok(Expr::Literal(ScalarValue::Boolean(Some(false))))
             }
 
+            // FIXME: ArraySubquery is unsupported but all the queries we need return empty array
+            SQLExpr::ArraySubquery(_) => {
+                warn!("ARRAY(...) is not supported yet. Replacing with scalar empty array.");
+                Ok(Expr::Literal(ScalarValue::List(
+                    Some(Box::new(vec![])),
+                    Box::new(DataType::Utf8),
+                )))
+            }
+
             _ => Err(DataFusionError::NotImplemented(format!(
                 "Unsupported ast node {:?} in sqltorel",
                 sql
