@@ -751,6 +751,17 @@ async fn query_nested_get_indexed_field_on_struct() -> Result<()> {
 }
 
 #[tokio::test]
+async fn not_indexed_expr() -> Result<()> {
+    let ctx = SessionContext::new();
+    let sql = "SELECT r.t FROM (SELECT 1 as t) AS r";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec!["+---+", "| t |", "+---+", "| 1 |", "+---+"];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn query_on_string_dictionary() -> Result<()> {
     // Test to ensure DataFusion can operate on dictionary types
     // Use StringDictionary (32 bit indexes = keys)

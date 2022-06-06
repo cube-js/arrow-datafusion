@@ -1762,11 +1762,19 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                             }
 
                             if let Some(field) = schema.fields().iter().find(|f| f.name().eq(&relation)) {
-                                // Access to a field of a column which is a structure, example: SELECT my_struct.key
-                                Ok(Expr::GetIndexedField {
-                                    expr: Box::new(Expr::Column(field.qualified_column())),
-                                    key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(name)))),
-                                })
+                                if field.qualifier() == Some(&name) {
+                                    // table.column identifier
+                                    Ok(Expr::Column(Column {
+                                        relation: Some(relation),
+                                        name,
+                                    }))
+                                } else {
+                                    // Access to a field of a column which is a structure, example: SELECT my_struct.key
+                                    Ok(Expr::GetIndexedField {
+                                        expr: Box::new(Expr::Column(field.qualified_column())),
+                                        key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(name)))),
+                                    })
+                                }
                             } else {
                                 // table.column identifier
                                 Ok(Expr::Column(Column {
