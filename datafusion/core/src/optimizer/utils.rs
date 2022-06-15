@@ -560,10 +560,14 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
         }
         Expr::Not(_) => Ok(Expr::Not(Box::new(expressions[0].clone()))),
         Expr::Negative(_) => Ok(Expr::Negative(Box::new(expressions[0].clone()))),
+        Expr::InList { list, negated, .. } => Ok(Expr::InList {
+            expr: Box::new(expressions[0].clone()),
+            list: list.clone(),
+            negated: *negated,
+        }),
         Expr::Column(_)
         | Expr::OuterColumn(_, _)
         | Expr::Literal(_)
-        | Expr::InList { .. }
         | Expr::ScalarVariable(_, _) => Ok(expr.clone()),
         Expr::Sort {
             asc, nulls_first, ..
