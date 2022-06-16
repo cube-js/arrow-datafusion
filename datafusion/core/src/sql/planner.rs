@@ -290,7 +290,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 }
                 // create logical plan & pass backreferencing CTEs
                 let logical_plan = self.query_to_plan_with_alias(
-                    cte.query,
+                    *cte.query,
                     Some(cte.alias.name.value.clone()),
                     &mut ctes.clone(),
                 )?;
