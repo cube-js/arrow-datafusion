@@ -258,6 +258,7 @@ pub trait ExecutionPlan: Debug + Send + Sync {
     fn statistics(&self) -> Statistics;
 }
 
+// FIXME: See Repartition optimizer
 /// Return a [wrapper](DisplayableExecutionPlan) around an
 /// [`ExecutionPlan`] which can be displayed in various easier to
 /// understand ways.
@@ -290,8 +291,7 @@ pub trait ExecutionPlan: Debug + Send + Sync {
 ///   assert_eq!("ProjectionExec: expr=[a@0 as a]\
 ///              \n  CoalesceBatchesExec: target_batch_size=4096\
 ///              \n    FilterExec: a@0 < 5\
-///              \n      RepartitionExec: partitioning=RoundRobinBatch(3)\
-///              \n        CsvExec: files=[tests/example.csv], has_header=true, limit=None, projection=[a]",
+///              \n      CsvExec: files=[tests/example.csv], has_header=true, limit=None, projection=[a]",
 ///               plan_string.trim());
 /// }
 /// ```

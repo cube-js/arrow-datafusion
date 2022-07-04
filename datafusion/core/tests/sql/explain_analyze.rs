@@ -17,6 +17,7 @@
 
 use super::*;
 
+// FIXME: See Repartition optimizer
 #[tokio::test]
 async fn explain_analyze_baseline_metrics() {
     // This test uses the execute function to run an actual plan under EXPLAIN ANALYZE
@@ -51,7 +52,7 @@ async fn explain_analyze_baseline_metrics() {
     assert_metrics!(
         &formatted,
         "HashAggregateExec: mode=Partial, gby=[]",
-        "metrics=[output_rows=3, elapsed_compute="
+        "metrics=[output_rows=1, elapsed_compute="
     );
     assert_metrics!(
         &formatted,
@@ -630,6 +631,7 @@ order by
     Ok(())
 }
 
+// FIXME: See Repartition optimizer
 #[tokio::test]
 async fn test_physical_plan_display_indent() {
     // Hard code target_partitions as it appears in the RepartitionExec output
@@ -657,8 +659,7 @@ async fn test_physical_plan_display_indent() {
         "              HashAggregateExec: mode=Partial, gby=[c1@0 as c1], aggr=[MAX(aggregate_test_100.c12), MIN(aggregate_test_100.c12)]",
         "                CoalesceBatchesExec: target_batch_size=4096",
         "                  FilterExec: c12@1 < CAST(10 AS Float64)",
-        "                    RepartitionExec: partitioning=RoundRobinBatch(3)",
-        "                      CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1, c12]",
+        "                    CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1, c12]",
     ];
 
     let data_path = datafusion::test_util::arrow_test_data();
@@ -676,6 +677,7 @@ async fn test_physical_plan_display_indent() {
     );
 }
 
+// FIXME: See Repartition optimizer
 #[tokio::test]
 async fn test_physical_plan_display_indent_multi_children() {
     // Hard code target_partitions as it appears in the RepartitionExec output
@@ -702,14 +704,12 @@ async fn test_physical_plan_display_indent_multi_children() {
         "        RepartitionExec: partitioning=Hash([Column { name: \"c1\", index: 0 }], 3)",
         "          ProjectionExec: expr=[c1@0 as c1]",
         "            ProjectionExec: expr=[c1@0 as c1]",
-        "              RepartitionExec: partitioning=RoundRobinBatch(3)",
-        "                CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1]",
+        "              CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1]",
         "      CoalesceBatchesExec: target_batch_size=4096",
         "        RepartitionExec: partitioning=Hash([Column { name: \"c2\", index: 0 }], 3)",
         "          ProjectionExec: expr=[c2@0 as c2]",
         "            ProjectionExec: expr=[c1@0 as c2]",
-        "              RepartitionExec: partitioning=RoundRobinBatch(3)",
-        "                CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1]",
+        "              CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1]",
     ];
 
     let data_path = datafusion::test_util::arrow_test_data();
@@ -727,6 +727,7 @@ async fn test_physical_plan_display_indent_multi_children() {
     );
 }
 
+// FIXME: See Repartition optimizer
 #[tokio::test]
 async fn csv_explain() {
     // This test uses the execute function that create full plan cycle: logical, optimized logical, and physical,
@@ -750,8 +751,7 @@ async fn csv_explain() {
              "ProjectionExec: expr=[c1@0 as c1]\
               \n  CoalesceBatchesExec: target_batch_size=4096\
               \n    FilterExec: CAST(c2@1 AS Int64) > 10\
-              \n      RepartitionExec: partitioning=RoundRobinBatch(NUM_CORES)\
-              \n        CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1, c2]\
+              \n      CsvExec: files=[ARROW_TEST_DATA/csv/aggregate_test_100.csv], has_header=true, limit=None, projection=[c1, c2]\
               \n"
         ]];
     assert_eq!(expected, actual);

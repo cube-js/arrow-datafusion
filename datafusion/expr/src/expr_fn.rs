@@ -292,7 +292,7 @@ scalar_expr!(ToTimestampSeconds, to_timestamp_seconds, date);
 /// Returns an array of fixed size with each argument on it.
 pub fn array(args: Vec<Expr>) -> Expr {
     Expr::ScalarFunction {
-        fun: built_in_function::BuiltinScalarFunction::Array,
+        fun: built_in_function::BuiltinScalarFunction::MakeArray,
         args,
     }
 }

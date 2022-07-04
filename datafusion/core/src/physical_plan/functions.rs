@@ -100,7 +100,7 @@ pub fn return_type(
     // the return type of the built in function.
     // Some built-in functions' return type depends on the incoming type.
     match fun {
-        BuiltinScalarFunction::Array => Ok(DataType::FixedSizeList(
+        BuiltinScalarFunction::MakeArray => Ok(DataType::FixedSizeList(
             Box::new(Field::new("item", input_expr_types[0].clone(), true)),
             input_expr_types.len() as i32,
         )),
@@ -375,7 +375,7 @@ fn signature(fun: &BuiltinScalarFunction) -> Signature {
 
     // for now, the list is small, as we do not have many built-in functions.
     match fun {
-        BuiltinScalarFunction::Array => Signature::variadic(
+        BuiltinScalarFunction::MakeArray => Signature::variadic(
             array_expressions::SUPPORTED_ARRAY_TYPES.to_vec(),
             fun.volatility(),
         ),
@@ -802,7 +802,7 @@ pub fn create_physical_fun(
         BuiltinScalarFunction::Tan => Arc::new(math_expressions::tan),
         BuiltinScalarFunction::Trunc => Arc::new(math_expressions::trunc),
         // string functions
-        BuiltinScalarFunction::Array => Arc::new(array_expressions::array),
+        BuiltinScalarFunction::MakeArray => Arc::new(array_expressions::array),
         BuiltinScalarFunction::Ascii => Arc::new(|args| match args[0].data_type() {
             DataType::Utf8 => {
                 make_scalar_function(string_expressions::ascii::<i32>)(args)
@@ -3552,7 +3552,7 @@ mod tests {
         let execution_props = ExecutionProps::new();
 
         let expr = create_physical_expr(
-            &BuiltinScalarFunction::Array,
+            &BuiltinScalarFunction::MakeArray,
             &[col("a", &schema)?, col("b", &schema)?],
             &schema,
             &execution_props,

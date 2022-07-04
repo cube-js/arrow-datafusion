@@ -53,8 +53,10 @@ pub(crate) fn coerce_types(
         }
         // for math expressions, the final value of the coercion is also the return type
         // because coercion favours higher information types
-        Operator::Plus | Operator::Minus => numerical_coercion(lhs_type, rhs_type)
-            .or_else(|| interval_coercion(lhs_type, rhs_type)),
+        Operator::Plus | Operator::Minus => {
+            mathematics_numerical_coercion(op, lhs_type, rhs_type)
+                .or_else(|| interval_coercion(lhs_type, rhs_type))
+        }
         // Same as Plus & Minus
         Operator::Modulo | Operator::Divide | Operator::Multiply => {
             mathematics_numerical_coercion(op, lhs_type, rhs_type)

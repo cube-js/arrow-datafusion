@@ -131,7 +131,7 @@ async fn query_array() -> Result<()> {
 
     let ctx = SessionContext::new();
     ctx.register_table("test", Arc::new(table))?;
-    let sql = "SELECT array(c1, cast(c2 as varchar)) FROM test";
+    let sql = "SELECT make_array(c1, cast(c2 as varchar)) FROM test";
     let actual = execute(&ctx, sql).await;
     let expected = vec![
         vec!["[,0]"],

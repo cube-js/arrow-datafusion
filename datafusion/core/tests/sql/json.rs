@@ -71,6 +71,7 @@ async fn json_single_nan_schema() {
     }
 }
 
+// FIXME: See Repartition optimizer
 #[tokio::test]
 async fn json_explain() {
     let ctx = SessionContext::new();
@@ -93,10 +94,8 @@ async fn json_explain() {
             "physical_plan",
             "ProjectionExec: expr=[COUNT(UInt8(1))@0 as COUNT(UInt8(1))]\
             \n  HashAggregateExec: mode=Final, gby=[], aggr=[COUNT(UInt8(1))]\
-            \n    CoalescePartitionsExec\
-            \n      HashAggregateExec: mode=Partial, gby=[], aggr=[COUNT(UInt8(1))]\
-            \n        RepartitionExec: partitioning=RoundRobinBatch(NUM_CORES)\
-            \n          JsonExec: limit=None, files=[tests/jsons/2.json]\n",
+            \n    HashAggregateExec: mode=Partial, gby=[], aggr=[COUNT(UInt8(1))]\
+            \n      JsonExec: limit=None, files=[tests/jsons/2.json]\n",
         ],
     ];
     assert_eq!(expected, actual);

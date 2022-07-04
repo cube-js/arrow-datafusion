@@ -1155,7 +1155,7 @@ impl SessionState {
                 Arc::new(AggregateStatistics::new()),
                 Arc::new(HashBuildProbeOrder::new()),
                 Arc::new(CoalesceBatches::new()),
-                // FIXME: Repartition is temporarily disabled to avoid issues with subqueries
+                // FIXME: Repartition doesn't work well with cubesql yet
                 //Arc::new(Repartition::new()),
                 Arc::new(AddCoalescePartitionsExec::new()),
             ],
