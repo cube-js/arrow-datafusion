@@ -16,5 +16,6 @@
 // under the License.
 
 mod nullif_str;
+pub mod temporal;
 
-pub use nullif_str::nullif_func_str;
+pub use nullif_str::*;

@@ -38,3 +38,4 @@ path = "src/lib.rs"
 arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "5eec82b6bde95d824bb9f3721789c98e033f812f", features = ["prettyprint"] }
 datafusion-common = { path = "../common", version = "7.0.0" }
 datafusion-expr = { path = "../expr", version = "7.0.0" }
+chrono = { version = "0.4.16", package = "chrono", default-features = false, features = ["clock"]}

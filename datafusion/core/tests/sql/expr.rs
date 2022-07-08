@@ -884,6 +884,20 @@ async fn test_extract_date_part() -> Result<()> {
         "date_part('second', to_timestamp('2020-09-08T12:00:12+00:00'))",
         "12"
     );
+
+    test_expression!(
+        "EXTRACT(doy FROM to_timestamp('2020-01-01T00:00:00+00:00'))",
+        "1"
+    );
+    test_expression!(
+        "date_part('doy', to_timestamp('2020-01-01T00:00:00+00:00'))",
+        "1"
+    );
+    test_expression!(
+        "date_part('doy', to_timestamp('2020-02-01T00:00:00+00:00'))",
+        "32"
+    );
+
     Ok(())
 }
 
