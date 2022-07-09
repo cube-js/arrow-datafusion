@@ -339,9 +339,21 @@ fn rewrite_sort_col_by_aggs(expr: Expr, plan: &LogicalPlan) -> Result<Expr> {
                         }
                         None
                     }
-                    _ => None,
+                    _ => {
+                        if e.name(input.schema()).unwrap_or_default()
+                            == res.name(input.schema()).unwrap_or_default()
+                        {
+                            if let Ok(col) =
+                                normalize_col(unnormalize_col(e.clone()), plan)
+                            {
+                                return Some(col);
+                            }
+                        }
+
+                        return None;
+                    }
                 })
-                .unwrap_or(normalize_col(unnormalize_col(res), plan)?);
+                .unwrap_or(res);
             let res = rewrite_sort_col_by_aggs(res, input)?;
             Ok(res)
         }
