@@ -885,6 +885,7 @@ async fn test_extract_date_part() -> Result<()> {
         "12"
     );
 
+    // DOY
     test_expression!(
         "EXTRACT(doy FROM to_timestamp('2020-01-01T00:00:00+00:00'))",
         "1"
@@ -896,6 +897,24 @@ async fn test_extract_date_part() -> Result<()> {
     test_expression!(
         "date_part('doy', to_timestamp('2020-02-01T00:00:00+00:00'))",
         "32"
+    );
+
+    // DOW
+    test_expression!(
+        "EXTRACT(dow FROM to_timestamp('2020-01-01T00:00:00+00:00'))",
+        "3"
+    );
+    test_expression!(
+        "date_part('dow', to_timestamp('2020-01-01T00:00:00+00:00'))",
+        "3"
+    );
+    test_expression!(
+        "date_part('dow', to_timestamp('2020-01-04T00:00:00+00:00'))",
+        "6"
+    );
+    test_expression!(
+        "date_part('dow', to_timestamp('2020-01-05T00:00:00+00:00'))",
+        "0"
     );
 
     Ok(())

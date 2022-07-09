@@ -21,8 +21,8 @@ use arrow::error::{ArrowError, Result};
 
 use chrono::format::strftime::StrftimeItems;
 use chrono::format::{parse, Parsed};
-use chrono::Datelike;
 use chrono::FixedOffset;
+use chrono::{Datelike, NaiveDateTime};
 
 pub fn using_chrono_tz_and_utc_naive_date_time(
     _tz: &str,
@@ -138,7 +138,50 @@ where
                 scratch
             )
         }
-        dt => return_compute_error_with!("quarter does not support", dt),
+        dt => return_compute_error_with!("doy does not support", dt),
+    }
+
+    Ok(b.finish())
+}
+
+trait ChronoDateLikeExt {
+    fn weekday_from_sunday(&self) -> i32;
+}
+
+impl ChronoDateLikeExt for NaiveDateTime {
+    fn weekday_from_sunday(&self) -> i32 {
+        self.weekday().num_days_from_sunday() as i32
+    }
+}
+
+/// Extracts the day of week of a given temporal array as an array of integers
+pub fn dow<T>(array: &PrimitiveArray<T>) -> Result<Int32Array>
+where
+    T: ArrowTemporalType + ArrowNumericType,
+    i64: std::convert::From<T::Native>,
+{
+    let mut b = Int32Builder::new(array.len());
+    match array.data_type() {
+        &DataType::Date32 | &DataType::Date64 | &DataType::Timestamp(_, None) => {
+            extract_component_from_array!(
+                array,
+                b,
+                weekday_from_sunday,
+                value_as_datetime
+            )
+        }
+        &DataType::Timestamp(_, Some(ref tz)) => {
+            let mut scratch = Parsed::new();
+            extract_component_from_array!(
+                array,
+                b,
+                weekday_from_sunday,
+                value_as_datetime_with_tz,
+                tz,
+                scratch
+            )
+        }
+        dt => return_compute_error_with!("dow does not support", dt),
     }
 
     Ok(b.finish())

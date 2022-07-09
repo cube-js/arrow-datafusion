@@ -537,6 +537,7 @@ pub fn date_part(args: &[ColumnarValue]) -> Result<ColumnarValue> {
 
     let arr = match date_part.to_lowercase().as_str() {
         "doy" => extract_date_part!(array, cube_ext::temporal::doy),
+        "dow" => extract_date_part!(array, cube_ext::temporal::dow),
         "year" => extract_date_part!(array, temporal::year),
         "quarter" => extract_date_part!(array, temporal::quarter),
         "month" => extract_date_part!(array, temporal::month),
