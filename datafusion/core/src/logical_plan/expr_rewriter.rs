@@ -21,7 +21,9 @@ use super::Expr;
 use crate::logical_plan::plan::{Aggregate, Projection};
 use crate::logical_plan::DFSchema;
 use crate::logical_plan::LogicalPlan;
-use crate::sql::utils::rebase_expr;
+use crate::sql::utils::{
+    extract_aliased_expr_names, rebase_expr, resolve_exprs_to_aliases,
+};
 use datafusion_common::Column;
 use datafusion_common::Result;
 use std::collections::HashMap;
@@ -325,35 +327,36 @@ fn rewrite_sort_col_by_aggs(expr: Expr, plan: &LogicalPlan) -> Result<Expr> {
         LogicalPlan::Projection(Projection {
             input,
             expr: projection_expr,
+            alias,
             ..
         }) => {
             let res = rebase_expr(&expr, projection_expr.as_slice(), input)?;
-            let res = projection_expr
-                .iter()
-                .find_map(|e| match e {
-                    Expr::Alias(expr, alias) => {
-                        if expr.name(input.schema()).unwrap_or_default()
-                            == res.name(input.schema()).unwrap_or_default()
-                        {
-                            return Some(Expr::Column(Column::from_name(alias)));
-                        }
-                        None
-                    }
-                    _ => {
-                        if e.name(input.schema()).unwrap_or_default()
-                            == res.name(input.schema()).unwrap_or_default()
-                        {
-                            if let Ok(col) =
-                                normalize_col(unnormalize_col(e.clone()), plan)
+            let alias_map = extract_aliased_expr_names(&projection_expr, input.schema());
+            let rewrited_res =
+                resolve_exprs_to_aliases(&res, &alias_map, input.schema())?;
+            let res = if rewrited_res != res || alias.is_none() {
+                rewrited_res
+            } else {
+                projection_expr
+                    .iter()
+                    .find_map(|e| match e {
+                        Expr::Alias(..) => None,
+                        _ => {
+                            if e.name(input.schema()).unwrap()
+                                == res.name(input.schema()).unwrap()
                             {
-                                return Some(col);
+                                if let Ok(col) =
+                                    normalize_col(unnormalize_col(e.clone()), plan)
+                                {
+                                    return Some(col);
+                                }
                             }
-                        }
 
-                        return None;
-                    }
-                })
-                .unwrap_or(res);
+                            None
+                        }
+                    })
+                    .unwrap_or(res)
+            };
             let res = rewrite_sort_col_by_aggs(res, input)?;
             Ok(res)
         }

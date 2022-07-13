@@ -18,6 +18,7 @@
 //! SQL Utility Functions
 
 use arrow::datatypes::{DataType, DECIMAL_DEFAULT_SCALE, DECIMAL_MAX_PRECISION};
+use datafusion_common::DFSchema;
 use sqlparser::ast::Ident;
 
 use crate::logical_plan::ExprVisitable;
@@ -416,6 +417,27 @@ pub(crate) fn extract_aliases(exprs: &[Expr]) -> HashMap<String, Expr> {
         .collect::<HashMap<String, Expr>>()
 }
 
+/// Returns mapping of each expression name (`String`) to the alias (`String`) it is
+/// aliased.
+pub(crate) fn extract_aliased_expr_names(
+    exprs: &[Expr],
+    input_schema: &DFSchema,
+) -> HashMap<String, String> {
+    exprs
+        .iter()
+        .filter_map(|expr| match expr {
+            Expr::Alias(nested_expr, alias_name) => {
+                if let Ok(expr_name) = nested_expr.name(input_schema) {
+                    Some((expr_name, alias_name.clone()))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect::<HashMap<String, String>>()
+}
+
 /// Given an expression that's literal int encoding position, lookup the corresponding expression
 /// in the select_exprs list, if the index is within the bounds and it is indeed a position literal;
 /// Otherwise, return None
@@ -450,6 +472,24 @@ pub(crate) fn resolve_aliases_to_exprs(
         Expr::Column(c) if c.relation.is_none() => {
             if let Some(aliased_expr) = aliases.get(&c.name) {
                 Ok(Some(aliased_expr.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+        _ => Ok(None),
+    })
+}
+
+/// Rebuilds an `Expr` with columns to aliases
+pub(crate) fn resolve_exprs_to_aliases(
+    expr: &Expr,
+    aliases: &HashMap<String, String>,
+    input_schema: &DFSchema,
+) -> Result<Expr> {
+    clone_with_replacement(expr, &|nested_expr| match nested_expr.name(input_schema) {
+        Ok(name) => {
+            if let Some(alias) = aliases.get(&name) {
+                Ok(Some(Expr::Column(Column::from_name(alias))))
             } else {
                 Ok(None)
             }
