@@ -280,6 +280,10 @@ impl TableFunStream {
             }
         }
 
+        if max_batch_sizes.is_empty() {
+            return Ok(RecordBatch::new_empty(self.schema.clone()));
+        }
+
         let mut columns: Vec<ArrayRef> = Vec::new();
 
         for (col_i, ((col_arr, cur_batch_sizes), is_table_fun)) in
