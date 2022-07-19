@@ -172,7 +172,19 @@ pub(crate) fn rebase_expr(
 ) -> Result<Expr> {
     clone_with_replacement(expr, &|nested_expr| {
         if base_exprs.contains(nested_expr) {
-            Ok(Some(expr_as_column_expr(nested_expr, plan)?))
+            match (expr, plan) {
+                (Expr::Column(col), LogicalPlan::Projection(projection))
+                    if projection.alias.is_some() =>
+                {
+                    let col = Column::from_name(col.name.clone())
+                        .normalize_with_schemas(
+                            &plan.all_schemas(),
+                            &plan.using_columns()?,
+                        )?;
+                    Ok(Some(Expr::Column(col)))
+                }
+                (_, _) => Ok(Some(expr_as_column_expr(nested_expr, plan)?)),
+            }
         } else {
             Ok(None)
         }

@@ -327,36 +327,14 @@ fn rewrite_sort_col_by_aggs(expr: Expr, plan: &LogicalPlan) -> Result<Expr> {
         LogicalPlan::Projection(Projection {
             input,
             expr: projection_expr,
-            alias,
             ..
         }) => {
             let res = rebase_expr(&expr, projection_expr.as_slice(), input)?;
             let alias_map = extract_aliased_expr_names(&projection_expr, input.schema());
             let rewrited_res =
                 resolve_exprs_to_aliases(&res, &alias_map, input.schema())?;
-            let res = if rewrited_res != res || alias.is_none() {
-                rewrited_res
-            } else {
-                projection_expr
-                    .iter()
-                    .find_map(|e| match e {
-                        Expr::Alias(..) => None,
-                        _ => {
-                            if e.name(input.schema()).unwrap()
-                                == res.name(input.schema()).unwrap()
-                            {
-                                if let Ok(col) =
-                                    normalize_col(unnormalize_col(e.clone()), plan)
-                                {
-                                    return Some(col);
-                                }
-                            }
-
-                            None
-                        }
-                    })
-                    .unwrap_or(res)
-            };
+            let res = rebase_expr(&rewrited_res, projection_expr.as_slice(), plan)
+                .unwrap_or(res);
             let res = rewrite_sort_col_by_aggs(res, input)?;
             Ok(res)
         }
