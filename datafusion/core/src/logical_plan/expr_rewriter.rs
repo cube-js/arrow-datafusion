@@ -331,9 +331,9 @@ fn rewrite_sort_col_by_aggs(expr: Expr, plan: &LogicalPlan) -> Result<Expr> {
         }) => {
             let res = rebase_expr(&expr, projection_expr.as_slice(), input)?;
             let alias_map = extract_aliased_expr_names(&projection_expr, input.schema());
-            let rewrited_res =
+            let rewritten_res =
                 resolve_exprs_to_aliases(&res, &alias_map, input.schema())?;
-            let res = rebase_expr(&rewrited_res, projection_expr.as_slice(), plan)
+            let res = rebase_expr(&rewritten_res, projection_expr.as_slice(), plan)
                 .unwrap_or(res);
             let res = rewrite_sort_col_by_aggs(res, input)?;
             Ok(res)
