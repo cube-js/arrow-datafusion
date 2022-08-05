@@ -75,6 +75,10 @@ pub enum Operator {
     BitwiseAnd,
     /// Bitwise or, like `|`
     BitwiseOr,
+    /// Bitwise right, like `>>`
+    BitwiseShiftRight,
+    /// Bitwise right, like `<<`
+    BitwiseShiftLeft,
     /// String concat
     StringConcat,
 }
@@ -107,6 +111,8 @@ impl fmt::Display for Operator {
             Operator::IsNotDistinctFrom => "IS NOT DISTINCT FROM",
             Operator::BitwiseAnd => "&",
             Operator::BitwiseOr => "|",
+            Operator::BitwiseShiftRight => ">>",
+            Operator::BitwiseShiftLeft => "<<",
             Operator::StringConcat => "||",
         };
         write!(f, "{}", display)

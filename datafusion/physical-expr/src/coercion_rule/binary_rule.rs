@@ -32,9 +32,10 @@ pub(crate) fn coerce_types(
 ) -> Result<DataType> {
     // This result MUST be compatible with `binary_coerce`
     let result = match op {
-        Operator::BitwiseAnd | Operator::BitwiseOr => {
-            bitwise_coercion(lhs_type, rhs_type)
-        }
+        Operator::BitwiseAnd
+        | Operator::BitwiseOr
+        | Operator::BitwiseShiftLeft
+        | Operator::BitwiseShiftRight => bitwise_coercion(lhs_type, rhs_type),
         Operator::And | Operator::Or => match (lhs_type, rhs_type) {
             // logical binary boolean operators can only be evaluated in bools
             (DataType::Boolean, DataType::Boolean) => Some(DataType::Boolean),

@@ -458,6 +458,15 @@ async fn test_array_index() -> Result<()> {
 }
 
 #[tokio::test]
+async fn binary_bitwise_shift() -> Result<()> {
+    test_expression!("2 << 10", "2048");
+
+    test_expression!("2048 >> 10", "2");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_interval_expressions() -> Result<()> {
     // day nano intervals
     test_expression!(
