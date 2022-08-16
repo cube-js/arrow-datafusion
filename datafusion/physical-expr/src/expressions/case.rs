@@ -113,13 +113,19 @@ macro_rules! if_then_else {
             .as_ref()
             .as_any()
             .downcast_ref::<$ARRAY_TYPE>()
-            .expect("true_values downcast failed");
+            .expect(&format!(
+                "true_values downcast failed to {}",
+                stringify!($ARRAY_TYPE)
+            ));
 
         let false_values = $FALSE
             .as_ref()
             .as_any()
             .downcast_ref::<$ARRAY_TYPE>()
-            .expect("false_values downcast failed");
+            .expect(&format!(
+                "false_values downcast failed to {}",
+                stringify!($ARRAY_TYPE)
+            ));
 
         let mut builder = <$BUILDER_TYPE>::new($BOOLS.len());
         for i in 0..$BOOLS.len() {

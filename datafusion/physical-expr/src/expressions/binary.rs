@@ -16,7 +16,6 @@
 // under the License.
 
 use std::convert::TryInto;
-use std::ops::{BitAnd, BitOr};
 use std::{any::Any, sync::Arc};
 
 use arrow::array::TimestampMillisecondArray;
@@ -399,7 +398,7 @@ fn modulus_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<DecimalA
 /// like int64, int32.
 /// It is used to do bitwise operation.
 macro_rules! binary_bitwise_array_op {
-    ($LEFT:expr, $RIGHT:expr, $METHOD:tt, $ARRAY_TYPE:ident, $TYPE:ty) => {{
+    ($LEFT:expr, $RIGHT:expr, $METHOD:expr, $ARRAY_TYPE:ident) => {{
         let len = $LEFT.len();
         let left = $LEFT.as_any().downcast_ref::<$ARRAY_TYPE>().unwrap();
         let right = $RIGHT.as_any().downcast_ref::<$ARRAY_TYPE>().unwrap();
@@ -409,7 +408,7 @@ macro_rules! binary_bitwise_array_op {
                 if left.is_null(i) || right.is_null(i) {
                     None
                 } else {
-                    Some(left.value(i).$METHOD(right.value(i) as $TYPE))
+                    Some($METHOD(left.value(i), right.value(i)))
                 }
             })
             .collect::<$ARRAY_TYPE>();
@@ -421,7 +420,7 @@ macro_rules! binary_bitwise_array_op {
 /// like int64, int32.
 /// It is used to do bitwise operation on an array with a scalar.
 macro_rules! binary_bitwise_array_scalar {
-    ($LEFT:expr, $RIGHT:expr, $METHOD:tt, $ARRAY_TYPE:ident, $TYPE:ty) => {{
+    ($LEFT:expr, $RIGHT:expr, $METHOD:expr, $ARRAY_TYPE:ident, $TYPE:ty) => {{
         let len = $LEFT.len();
         let array = $LEFT.as_any().downcast_ref::<$ARRAY_TYPE>().unwrap();
         let scalar = $RIGHT;
@@ -435,7 +434,7 @@ macro_rules! binary_bitwise_array_scalar {
                     if array.is_null(i) {
                         None
                     } else {
-                        Some(array.value(i).$METHOD(right))
+                        Some($METHOD(array.value(i), right))
                     }
                 })
                 .collect::<$ARRAY_TYPE>();
@@ -447,16 +446,16 @@ macro_rules! binary_bitwise_array_scalar {
 fn bitwise_and(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
     match &left.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_op!(left, right, bitand, Int8Array, i8)
+            binary_bitwise_array_op!(left, right, |a, b| a & b, Int8Array)
         }
         DataType::Int16 => {
-            binary_bitwise_array_op!(left, right, bitand, Int16Array, i16)
+            binary_bitwise_array_op!(left, right, |a, b| a & b, Int16Array)
         }
         DataType::Int32 => {
-            binary_bitwise_array_op!(left, right, bitand, Int32Array, i32)
+            binary_bitwise_array_op!(left, right, |a, b| a & b, Int32Array)
         }
         DataType::Int64 => {
-            binary_bitwise_array_op!(left, right, bitand, Int64Array, i64)
+            binary_bitwise_array_op!(left, right, |a, b| a & b, Int64Array)
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -469,16 +468,16 @@ fn bitwise_and(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
 fn bitwise_or(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
     match &left.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_op!(left, right, bitor, Int8Array, i8)
+            binary_bitwise_array_op!(left, right, |a, b| a | b, Int8Array)
         }
         DataType::Int16 => {
-            binary_bitwise_array_op!(left, right, bitor, Int16Array, i16)
+            binary_bitwise_array_op!(left, right, |a, b| a | b, Int16Array)
         }
         DataType::Int32 => {
-            binary_bitwise_array_op!(left, right, bitor, Int32Array, i32)
+            binary_bitwise_array_op!(left, right, |a, b| a | b, Int32Array)
         }
         DataType::Int64 => {
-            binary_bitwise_array_op!(left, right, bitor, Int64Array, i64)
+            binary_bitwise_array_op!(left, right, |a, b| a | b, Int64Array)
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -491,16 +490,36 @@ fn bitwise_or(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
 fn bitwise_shift_right(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
     match &left.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_op!(left, right, wrapping_shr, Int8Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i8, b: i8| a.wrapping_shr(b as u32),
+                Int8Array
+            )
         }
         DataType::Int16 => {
-            binary_bitwise_array_op!(left, right, wrapping_shr, Int16Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i16, b: i16| a.wrapping_shr(b as u32),
+                Int16Array
+            )
         }
         DataType::Int32 => {
-            binary_bitwise_array_op!(left, right, wrapping_shr, Int32Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i32, b: i32| a.wrapping_shr(b as u32),
+                Int32Array
+            )
         }
         DataType::Int64 => {
-            binary_bitwise_array_op!(left, right, wrapping_shr, Int64Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i64, b: i64| a.wrapping_shr(b as u32),
+                Int64Array
+            )
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -513,16 +532,36 @@ fn bitwise_shift_right(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
 fn bitwise_shift_left(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
     match &left.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_op!(left, right, wrapping_shl, Int8Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i8, b: i8| a.wrapping_shl(b as u32),
+                Int8Array
+            )
         }
         DataType::Int16 => {
-            binary_bitwise_array_op!(left, right, wrapping_shl, Int16Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i16, b: i16| a.wrapping_shl(b as u32),
+                Int16Array
+            )
         }
         DataType::Int32 => {
-            binary_bitwise_array_op!(left, right, wrapping_shl, Int32Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i32, b: i32| a.wrapping_shl(b as u32),
+                Int32Array
+            )
         }
         DataType::Int64 => {
-            binary_bitwise_array_op!(left, right, wrapping_shl, Int64Array, u32)
+            binary_bitwise_array_op!(
+                left,
+                right,
+                |a: i64, b: i64| a.wrapping_shl(b as u32),
+                Int64Array
+            )
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -565,16 +604,16 @@ fn bitwise_and_scalar(
 ) -> Option<Result<ArrayRef>> {
     let result = match array.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_scalar!(array, scalar, bitand, Int8Array, i8)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a & b, Int8Array, i8)
         }
         DataType::Int16 => {
-            binary_bitwise_array_scalar!(array, scalar, bitand, Int16Array, i16)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a & b, Int16Array, i16)
         }
         DataType::Int32 => {
-            binary_bitwise_array_scalar!(array, scalar, bitand, Int32Array, i32)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a & b, Int32Array, i32)
         }
         DataType::Int64 => {
-            binary_bitwise_array_scalar!(array, scalar, bitand, Int64Array, i64)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a & b, Int64Array, i64)
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -588,16 +627,16 @@ fn bitwise_and_scalar(
 fn bitwise_or_scalar(array: &dyn Array, scalar: ScalarValue) -> Option<Result<ArrayRef>> {
     let result = match array.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_scalar!(array, scalar, bitor, Int8Array, i8)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a | b, Int8Array, i8)
         }
         DataType::Int16 => {
-            binary_bitwise_array_scalar!(array, scalar, bitor, Int16Array, i16)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a | b, Int16Array, i16)
         }
         DataType::Int32 => {
-            binary_bitwise_array_scalar!(array, scalar, bitor, Int32Array, i32)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a | b, Int32Array, i32)
         }
         DataType::Int64 => {
-            binary_bitwise_array_scalar!(array, scalar, bitor, Int64Array, i64)
+            binary_bitwise_array_scalar!(array, scalar, |a, b| a | b, Int64Array, i64)
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -614,16 +653,40 @@ fn bitwise_shift_left_scalar(
 ) -> Option<Result<ArrayRef>> {
     let result = match array.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shl, Int8Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i8, b: i8| a.wrapping_shl(b as u32),
+                Int8Array,
+                i8
+            )
         }
         DataType::Int16 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shl, Int16Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i16, b: i16| a.wrapping_shl(b as u32),
+                Int16Array,
+                i16
+            )
         }
         DataType::Int32 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shl, Int32Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i32, b: i32| a.wrapping_shl(b as u32),
+                Int32Array,
+                i32
+            )
         }
         DataType::Int64 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shl, Int64Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i64, b: i64| a.wrapping_shl(b as u32),
+                Int64Array,
+                i64
+            )
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -640,16 +703,40 @@ fn bitwise_shift_right_scalar(
 ) -> Option<Result<ArrayRef>> {
     let result = match array.data_type() {
         DataType::Int8 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shr, Int8Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i8, b: i8| a.wrapping_shr(b as u32),
+                Int8Array,
+                i8
+            )
         }
         DataType::Int16 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shr, Int16Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i16, b: i16| a.wrapping_shr(b as u32),
+                Int16Array,
+                i16
+            )
         }
         DataType::Int32 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shr, Int32Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i32, b: i32| a.wrapping_shr(b as u32),
+                Int32Array,
+                i32
+            )
         }
         DataType::Int64 => {
-            binary_bitwise_array_scalar!(array, scalar, wrapping_shr, Int64Array, u32)
+            binary_bitwise_array_scalar!(
+                array,
+                scalar,
+                |a: i64, b: i64| a.wrapping_shr(b as u32),
+                Int64Array,
+                i64
+            )
         }
         other => Err(DataFusionError::Internal(format!(
             "Data type {:?} not supported for binary operation '{}' on dyn arrays",
@@ -3384,6 +3471,21 @@ mod tests {
         let mut result = bitwise_shift_left_scalar(&input, module.clone()).unwrap()?;
 
         let expected = Int32Array::from(vec![Some(2048), None, Some(4096)]);
+        assert_eq!(result.as_ref(), &expected);
+
+        result = bitwise_shift_right_scalar(&result, module).unwrap()?;
+        assert_eq!(result.as_ref(), &input);
+
+        Ok(())
+    }
+
+    #[test]
+    fn bitwise_shift_scalar_test_i64() -> Result<()> {
+        let input = Arc::new(Int64Array::from(vec![Some(2), None, Some(4)])) as ArrayRef;
+        let module = ScalarValue::from(10i64);
+        let mut result = bitwise_shift_left_scalar(&input, module.clone()).unwrap()?;
+
+        let expected = Int64Array::from(vec![Some(2048), None, Some(4096)]);
         assert_eq!(result.as_ref(), &expected);
 
         result = bitwise_shift_right_scalar(&result, module).unwrap()?;
