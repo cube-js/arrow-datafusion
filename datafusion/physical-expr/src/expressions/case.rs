@@ -17,14 +17,15 @@
 
 use std::{any::Any, sync::Arc};
 
+use crate::coercion_rule::binary_rule::coerce_types;
 use crate::expressions::try_cast;
 use crate::PhysicalExpr;
 use arrow::array::{self, *};
-use arrow::compute::{and, eq_dyn, is_null, not, or, or_kleene};
+use arrow::compute::{and, cast, eq_dyn, is_null, not, or, or_kleene};
 use arrow::datatypes::{DataType, Schema};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DataFusionError, Result};
-use datafusion_expr::ColumnarValue;
+use datafusion_expr::{ColumnarValue, Operator};
 
 type WhenThen = (Arc<dyn PhysicalExpr>, Arc<dyn PhysicalExpr>);
 
@@ -275,6 +276,25 @@ impl CaseExpr {
                 .0
                 .evaluate_selection(batch, &remainder)?;
             let when_value = when_value.into_array(batch.num_rows());
+
+            let common_type = coerce_types(
+                when_value.data_type(),
+                &Operator::Eq,
+                base_value.data_type(),
+            )?;
+            let when_value = cast(&when_value, &common_type).map_err(|e| {
+                DataFusionError::Execution(format!(
+                    "Unable to cast when value to common type: {}",
+                    e.to_string()
+                ))
+            })?;
+            let base_value = cast(&base_value, &common_type).map_err(|e| {
+                DataFusionError::Execution(format!(
+                    "Unable to cast base value to common type: {}",
+                    e.to_string()
+                ))
+            })?;
+
             // build boolean array representing which rows match the "when" value
             let when_match = eq_dyn(&when_value, base_value.as_ref())?;
 
@@ -282,6 +302,14 @@ impl CaseExpr {
                 .1
                 .evaluate_selection(batch, &when_match)?;
             let then_value = then_value.into_array(batch.num_rows());
+
+            // Variable return_type uses the first when_then_expr, but it can be different across then expressions
+            let then_value = cast(&then_value, &return_type).map_err(|e| {
+                DataFusionError::Execution(format!(
+                    "Unable to cast then value to common type: {}",
+                    e.to_string()
+                ))
+            })?;
 
             current_value =
                 if_then_else(&when_match, then_value, current_value, &return_type)?;

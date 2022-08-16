@@ -64,6 +64,55 @@ async fn case_when_else() -> Result<()> {
 }
 
 #[tokio::test]
+async fn case_when_else_null() -> Result<()> {
+    let ctx = create_case_context()?;
+    let sql = "SELECT CASE 'test' WHEN 'int4' THEN NULL ELSE 100 END";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------------------------------------------------------+",
+        "| CASE Utf8(\"test\") WHEN Utf8(\"int4\") THEN Utf8(NULL) ELSE Int64(100) END |",
+        "+-------------------------------------------------------------------------+",
+        "| 100                                                                     |",
+        "+-------------------------------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn case_when_else_utf_boolean_cast() -> Result<()> {
+    let ctx = create_case_context()?;
+    let sql = "SELECT CASE true WHEN 'false' THEN 'yes' ELSE 'no' END";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----------------------------------------------------------------------------+",
+        "| CASE Boolean(true) WHEN Utf8(\"false\") THEN Utf8(\"yes\") ELSE Utf8(\"no\") END |",
+        "+----------------------------------------------------------------------------+",
+        "| no                                                                         |",
+        "+----------------------------------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn case_when_else_then_diff_types() -> Result<()> {
+    let ctx = create_case_context()?;
+    let sql =
+        "SELECT CASE true WHEN 'false' THEN 'yes' WHEN 'true' THEN true ELSE 'no' END";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-----------------------------------------------------------------------------------------------------------------+",
+        "| CASE Boolean(true) WHEN Utf8(\"false\") THEN Utf8(\"yes\") WHEN Utf8(\"true\") THEN Boolean(true) ELSE Utf8(\"no\") END |",
+        "+-----------------------------------------------------------------------------------------------------------------+",
+        "| 1                                                                                                               |",
+        "+-----------------------------------------------------------------------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
 async fn case_when_with_base_expr() -> Result<()> {
     let ctx = create_case_context()?;
     let sql = "SELECT \
