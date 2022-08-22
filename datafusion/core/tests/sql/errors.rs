@@ -70,6 +70,48 @@ async fn test_aggregation_with_bad_arguments() -> Result<()> {
 }
 
 #[tokio::test]
+async fn query_cte() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_aggregate_csv(&ctx).await?;
+
+    let sql =
+        "WITH Q1 AS (SELECT c1 FROM aggregate_test_100) SELECT c1 from Q1 LIMIT 100";
+    let plan = ctx.create_logical_plan(sql)?;
+    let formatted = plan.display_indent().to_string();
+    let actual: Vec<&str> = formatted.trim().lines().collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            "Limit: 100",
+            "  Projection: #Q1.c1",
+            "    Projection: #aggregate_test_100.c1, alias=Q1",
+            "      TableScan: aggregate_test_100 projection=None"
+        ]
+    );
+
+    // reasling
+    let sql =
+        "WITH Q1 AS (SELECT c1 FROM aggregate_test_100) SELECT r.c1 from Q1 as \"r\" LIMIT 100";
+    let plan = ctx.create_logical_plan(sql)?;
+    let formatted = plan.display_indent().to_string();
+    let actual: Vec<&str> = formatted.trim().lines().collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            "Limit: 100",
+            "  Projection: #r.c1",
+            "    Projection: #Q1.c1, alias=r",
+            "      Projection: #aggregate_test_100.c1, alias=Q1",
+            "        TableScan: aggregate_test_100 projection=None"
+        ]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn query_cte_incorrect() -> Result<()> {
     let ctx = SessionContext::new();
 
