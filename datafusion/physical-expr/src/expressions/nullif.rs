@@ -17,18 +17,16 @@
 
 use std::sync::Arc;
 
-use crate::expressions::binary::{eq_decimal, eq_decimal_scalar};
 use arrow::array::Array;
 use arrow::array::*;
+use arrow::compute::eq_dyn;
 use arrow::compute::kernels::boolean::nullif;
-use arrow::compute::kernels::comparison::{
-    eq, eq_bool, eq_bool_scalar, eq_scalar, eq_utf8, eq_utf8_scalar,
-};
-use arrow::datatypes::{DataType, TimeUnit};
+use arrow::datatypes::DataType;
 use cube_ext::nullif_func_str;
-use datafusion_common::ScalarValue;
 use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::ColumnarValue;
+
+use super::binary::array_eq_scalar;
 
 /// Invoke a compute kernel on a primitive array and a Boolean Array
 macro_rules! compute_bool_array_op {
@@ -88,7 +86,7 @@ pub fn nullif_func(args: &[ColumnarValue]) -> Result<ColumnarValue> {
 
     match (lhs, rhs) {
         (ColumnarValue::Array(lhs), ColumnarValue::Scalar(rhs)) => {
-            let cond_array = binary_array_op_scalar!(lhs, rhs.clone(), eq).unwrap()?;
+            let cond_array = array_eq_scalar(lhs, rhs)?;
 
             let array = primitive_bool_array_op!(lhs, *cond_array, nullif)?;
 
@@ -96,10 +94,10 @@ pub fn nullif_func(args: &[ColumnarValue]) -> Result<ColumnarValue> {
         }
         (ColumnarValue::Array(lhs), ColumnarValue::Array(rhs)) => {
             // Get args0 == args1 evaluated and produce a boolean array
-            let cond_array = binary_array_op!(lhs, rhs, eq)?;
+            let cond_array = eq_dyn(lhs, rhs)?;
 
             // Now, invoke nullif on the result
-            let array = primitive_bool_array_op!(lhs, *cond_array, nullif)?;
+            let array = primitive_bool_array_op!(lhs, cond_array, nullif)?;
             Ok(ColumnarValue::Array(array))
         }
         _ => Err(DataFusionError::NotImplemented(
@@ -130,7 +128,7 @@ pub static SUPPORTED_NULLIF_TYPES: &[DataType] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use datafusion_common::Result;
+    use datafusion_common::{Result, ScalarValue};
 
     #[test]
     fn nullif_int32() -> Result<()> {

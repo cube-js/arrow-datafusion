@@ -15,14 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
-[package]
-name = "fuzz-utils"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "85c9d642464886bf977cb6b95fad7c28d0b64cc8", features = ["prettyprint"] }
-env_logger = "0.9.0"
-rand = "0.8"
+name: Prepare Rust Builder
+description: 'Prepare Rust Build Environment'
+inputs:
+  rust-version:
+    description: 'version of rust to install (e.g. stable)'
+    required: true
+    default: 'stable'
+runs:
+  using: "composite"
+  steps:
+    - name: Install Build Dependencies
+      shell: bash
+      run: |
+        apt-get update
+        apt-get install -y protobuf-compiler
+    - name: Setup Rust toolchain
+      shell: bash
+      run: |
+        echo "Installing ${{ inputs.rust-version }}"
+        rustup toolchain install ${{ inputs.rust-version }}
+        rustup default ${{ inputs.rust-version }}
+        rustup component add rustfmt

@@ -16,6 +16,7 @@
 // under the License.
 
 use super::*;
+use datafusion::datasource::empty::EmptyTable;
 
 #[tokio::test]
 async fn case_when() -> Result<()> {
@@ -155,6 +156,106 @@ async fn case_when_else_with_base_expr() -> Result<()> {
         "+-------------------------------------------------------------------------------------------+",
     ];
     assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn case_when_else_with_null_contant() -> Result<()> {
+    let ctx = create_case_context()?;
+    let sql = "SELECT \
+        CASE WHEN c1 = 'a' THEN 1 \
+             WHEN NULL THEN 2 \
+             ELSE 999 END \
+        FROM t1";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----------------------------------------------------------------------------------------+",
+        "| CASE WHEN #t1.c1 = Utf8(\"a\") THEN Int64(1) WHEN NULL THEN Int64(2) ELSE Int64(999) END |",
+        "+----------------------------------------------------------------------------------------+",
+        "| 1                                                                                      |",
+        "| 999                                                                                    |",
+        "| 999                                                                                    |",
+        "| 999                                                                                    |",
+        "+----------------------------------------------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "SELECT CASE WHEN NULL THEN 'foo' ELSE 'bar' END";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+------------------------------------------------------+",
+        "| CASE WHEN NULL THEN Utf8(\"foo\") ELSE Utf8(\"bar\") END |",
+        "+------------------------------------------------------+",
+        "| bar                                                  |",
+        "+------------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn case_expr_with_null() -> Result<()> {
+    let ctx = SessionContext::new();
+    let sql = "select case when b is null then null else b end from (select a,b from (values (1,null),(2,3)) as t (a,b)) a;";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+------------------------------------------------+",
+        "| CASE WHEN #a.b IS NULL THEN NULL ELSE #a.b END |",
+        "+------------------------------------------------+",
+        "|                                                |",
+        "| 3                                              |",
+        "+------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "select case when b is null then null else b end from (select a,b from (values (1,1),(2,3)) as t (a,b)) a;";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+------------------------------------------------+",
+        "| CASE WHEN #a.b IS NULL THEN NULL ELSE #a.b END |",
+        "+------------------------------------------------+",
+        "| 1                                              |",
+        "| 3                                              |",
+        "+------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn case_expr_with_nulls() -> Result<()> {
+    let ctx = SessionContext::new();
+    let sql = "select case when b is null then null when b < 3 then null when b >=3 then b + 1 else b end from (select a,b from (values (1,null),(1,2),(2,3)) as t (a,b)) a";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+--------------------------------------------------------------------------------------------------------------------------+",
+        "| CASE WHEN #a.b IS NULL THEN NULL WHEN #a.b < Int64(3) THEN NULL WHEN #a.b >= Int64(3) THEN #a.b + Int64(1) ELSE #a.b END |",
+        "+--------------------------------------------------------------------------------------------------------------------------+",
+        "|                                                                                                                          |",
+        "|                                                                                                                          |",
+        "| 4                                                                                                                        |",
+        "+--------------------------------------------------------------------------------------------------------------------------+"
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "select case b when 1 then null when 2 then null when 3 then b + 1 else b end from (select a,b from (values (1,null),(1,2),(2,3)) as t (a,b)) a;";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+------------------------------------------------------------------------------------------------------------+",
+        "| CASE #a.b WHEN Int64(1) THEN NULL WHEN Int64(2) THEN NULL WHEN Int64(3) THEN #a.b + Int64(1) ELSE #a.b END |",
+        "+------------------------------------------------------------------------------------------------------------+",
+        "|                                                                                                            |",
+        "|                                                                                                            |",
+        "| 4                                                                                                          |",
+        "+------------------------------------------------------------------------------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
     Ok(())
 }
 
@@ -360,11 +461,11 @@ async fn test_string_concat_operator() -> Result<()> {
     let sql = "SELECT 'aa' || NULL || 'd'";
     let actual = execute_to_batches(&ctx, sql).await;
     let expected = vec![
-        "+---------------------------------------+",
-        "| Utf8(\"aa\") || Utf8(NULL) || Utf8(\"d\") |",
-        "+---------------------------------------+",
-        "|                                       |",
-        "+---------------------------------------+",
+        "+---------------------------------+",
+        "| Utf8(\"aa\") || NULL || Utf8(\"d\") |",
+        "+---------------------------------+",
+        "|                                 |",
+        "+---------------------------------+",
     ];
     assert_batches_eq!(expected, &actual);
 
@@ -379,6 +480,45 @@ async fn test_string_concat_operator() -> Result<()> {
         "+-----------------------------------------+",
     ];
     assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_not_expressions() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    let sql = "SELECT not(true), not(false)";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------+--------------------+",
+        "| NOT Boolean(true) | NOT Boolean(false) |",
+        "+-------------------+--------------------+",
+        "| false             | true               |",
+        "+-------------------+--------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "SELECT null, not(null)";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+------+----------+",
+        "| NULL | NOT NULL |",
+        "+------+----------+",
+        "|      |          |",
+        "+------+----------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "SELECT NOT('hi')";
+    let result = plan_and_collect(&ctx, sql).await;
+    match result {
+        Ok(_) => panic!("expected error"),
+        Err(e) => {
+            assert_contains!(e.to_string(),
+                             "NOT 'Literal { value: Utf8(\"hi\") }' can't be evaluated because the expression's type is Utf8, not boolean or NULL"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -509,8 +649,10 @@ async fn test_array_index() -> Result<()> {
 #[tokio::test]
 async fn binary_bitwise_shift() -> Result<()> {
     test_expression!("2 << 10", "2048");
-
     test_expression!("2048 >> 10", "2");
+
+    test_expression!("2 << NULL", "NULL");
+    test_expression!("2048 >> NULL", "NULL");
 
     Ok(())
 }
@@ -1222,4 +1364,164 @@ async fn csv_query_sqrt_sqrt() -> Result<()> {
     let expected = vec![vec!["0.9818650561397431"]];
     assert_float_eq(&expected, &actual);
     Ok(())
+}
+
+#[tokio::test]
+async fn nested_subquery() -> Result<()> {
+    let ctx = SessionContext::new();
+    let schema = Schema::new(vec![
+        Field::new("id", DataType::Int16, false),
+        Field::new("a", DataType::Int16, false),
+    ]);
+    let empty_table = Arc::new(EmptyTable::new(Arc::new(schema)));
+    ctx.register_table("t1", empty_table.clone())?;
+    ctx.register_table("t2", empty_table)?;
+    let sql = "SELECT COUNT(*) as cnt \
+    FROM (\
+        (SELECT id FROM t1) EXCEPT \
+        (SELECT id FROM t2)\
+        ) foo";
+    let actual = execute_to_batches(&ctx, sql).await;
+    // the purpose of this test is just to make sure the query produces a valid plan
+    #[rustfmt::skip]
+    let expected = vec![
+        "+-----+",
+        "| cnt |",
+        "+-----+",
+        "| 0   |",
+        "+-----+"
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn like_nlike_with_null_lt() {
+    let ctx = SessionContext::new();
+    let sql = "SELECT column1 like NULL as col_null, NULL like column1 as null_col from (values('a'), ('b'), (NULL)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----------+----------+",
+        "| col_null | null_col |",
+        "+----------+----------+",
+        "|          |          |",
+        "|          |          |",
+        "|          |          |",
+        "+----------+----------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = "SELECT column1 not like NULL as col_null, NULL not like column1 as null_col from (values('a'), ('b'), (NULL)) as t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----------+----------+",
+        "| col_null | null_col |",
+        "+----------+----------+",
+        "|          |          |",
+        "|          |          |",
+        "|          |          |",
+        "+----------+----------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+}
+
+#[tokio::test]
+async fn comparisons_with_null_lt() {
+    let ctx = SessionContext::new();
+
+    // we expect all the following queries to yield a two null values
+    let cases = vec![
+        // 1. Numeric comparison with NULL
+        "select column1 < NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select column1 <= NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select column1 > NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select column1 >= NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select column1 = NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select column1 != NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        // 1.1 Float value comparison with NULL
+        "select column3 < NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        // String comparison with NULL
+        "select column2 < NULL from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        // Boolean comparison with NULL
+        "select column1 < NULL from (VALUES (true), (false)) as t",
+        // ----
+        // ---- same queries, reversed argument order (as they go through
+        // ---- a different evaluation path)
+        // ----
+
+        // 1. Numeric comparison with NULL
+        "select NULL < column1  from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select NULL <= column1 from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select NULL > column1 from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select NULL >= column1 from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select NULL = column1 from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        "select NULL != column1 from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        // 1.1 Float value comparison with NULL
+        "select NULL < column3 from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        // String comparison with NULL
+        "select NULL < column2 from (VALUES (1, 'foo' ,2.3), (2, 'bar', 5.4)) as t",
+        // Boolean comparison with NULL
+        "select NULL < column1 from (VALUES (true), (false)) as t",
+    ];
+
+    for sql in cases {
+        println!("Computing: {}", sql);
+
+        let mut actual = execute_to_batches(&ctx, sql).await;
+        assert_eq!(actual.len(), 1);
+
+        let batch = actual.pop().unwrap();
+        assert_eq!(batch.num_rows(), 2);
+        assert_eq!(batch.num_columns(), 1);
+        assert!(batch.columns()[0].is_null(0));
+        assert!(batch.columns()[0].is_null(1));
+    }
+}
+
+#[tokio::test]
+async fn binary_mathematical_operator_with_null_lt() {
+    let ctx = SessionContext::new();
+
+    let cases = vec![
+        // 1. Integer and NULL
+        "select column1 + NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column1 - NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column1 * NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column1 / NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column1 % NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        // 2. Float and NULL
+        "select column2 + NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column2 - NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column2 * NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column2 / NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select column2 % NULL from (VALUES (1, 2.3), (2, 5.4)) as t",
+        // ----
+        // ---- same queries, reversed argument order
+        // ----
+        // 3. NULL and Integer
+        "select NULL + column1 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL - column1 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL * column1 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL / column1 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL % column1 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        // 4. NULL and Float
+        "select NULL + column2 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL - column2 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL * column2 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL / column2 from (VALUES (1, 2.3), (2, 5.4)) as t",
+        "select NULL % column2 from (VALUES (1, 2.3), (2, 5.4)) as t",
+    ];
+
+    for sql in cases {
+        println!("Computing: {}", sql);
+
+        let mut actual = execute_to_batches(&ctx, sql).await;
+        assert_eq!(actual.len(), 1);
+
+        let batch = actual.pop().unwrap();
+        assert_eq!(batch.num_rows(), 2);
+        assert_eq!(batch.num_columns(), 1);
+        assert!(batch.columns()[0].is_null(0));
+        assert!(batch.columns()[0].is_null(1));
+    }
 }
