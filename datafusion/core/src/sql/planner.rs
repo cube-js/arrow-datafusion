@@ -678,89 +678,97 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 args,
                 ..
             } => {
-                let table_name = name.to_string();
+                let table_name = normalize_sql_object_name(name);
+                let table_ref: TableReference = table_name.as_str().into();
                 let default_table_alias =
                     name.0.iter().last().map(|i| i.value.to_string()).unwrap();
+
+                let table_alias = alias.as_ref().map(|i| i.name.value.to_string());
+
                 let cte = ctes.get(&table_name);
-                (
-                    match (
-                        cte,
-                        self.schema_provider.get_table_provider(name.try_into()?),
-                    ) {
-                        (Some(cte_plan), _) => Ok(cte_plan.clone()),
-                        (_, Some(provider)) => LogicalPlanBuilder::scan(
-                            // take alias into account to support `JOIN table1 as table2`
-                            alias
-                                .as_ref()
-                                .map(|a| a.name.value.as_str())
-                                .unwrap_or(&default_table_alias),
-                            provider,
-                            None,
-                        )?
-                        .build(),
-                        (None, None) => {
-                            let table_udf =
-                                self.schema_provider.get_table_function_meta(&table_name);
-                            if table_udf.is_some() {
-                                let udtf = Expr::TableUDF {
-                                    fun: table_udf.unwrap(),
-                                    args: self
-                                        .function_args_to_expr(args, &DFSchema::empty())
-                                        .unwrap(),
-                                };
+                let plan = match (cte, self.schema_provider.get_table_provider(table_ref))
+                {
+                    (Some(cte_plan), _) => match table_alias {
+                        Some(cte_alias) => project_with_alias(
+                            cte_plan.clone(),
+                            vec![Expr::Wildcard],
+                            Some(cte_alias),
+                        ),
+                        _ => Ok(cte_plan.clone()),
+                    },
+                    (_, Some(provider)) => LogicalPlanBuilder::scan(
+                        // take alias into account to support `JOIN table1 as table2`
+                        alias
+                            .as_ref()
+                            .map(|a| a.name.value.as_str())
+                            .unwrap_or(&default_table_alias),
+                        provider,
+                        None,
+                    )?
+                    .build(),
+                    (None, None) => {
+                        let table_udf =
+                            self.schema_provider.get_table_function_meta(&table_name);
+                        if table_udf.is_some() {
+                            let udtf = Expr::TableUDF {
+                                fun: table_udf.unwrap(),
+                                args: self
+                                    .function_args_to_expr(args, &DFSchema::empty())
+                                    .unwrap(),
+                            };
 
-                                let udtf_plan = table_udfs(
-                                    LogicalPlan::EmptyRelation(EmptyRelation {
-                                        produce_one_row: true,
-                                        schema: Arc::new(DFSchema::empty()),
-                                    }),
-                                    vec![udtf.clone()],
-                                )
-                                .unwrap();
+                            let udtf_plan = table_udfs(
+                                LogicalPlan::EmptyRelation(EmptyRelation {
+                                    produce_one_row: true,
+                                    schema: Arc::new(DFSchema::empty()),
+                                }),
+                                vec![udtf.clone()],
+                            )
+                            .unwrap();
 
-                                if alias.is_none() {
-                                    return Ok(udtf_plan);
-                                }
-
-                                let mut select_exprs = rewrite_udtfs_to_columns(
-                                    vec![udtf],
-                                    udtf_plan.schema().clone().as_ref().to_owned(),
-                                );
-
-                                let alias = alias.unwrap();
-
-                                if !alias.columns.is_empty() {
-                                    select_exprs = select_exprs
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, e)| {
-                                            if alias.columns.len() > i {
-                                                Expr::Alias(
-                                                    Box::new(e.clone()),
-                                                    alias.columns[i].to_string(),
-                                                )
-                                            } else {
-                                                e.clone()
-                                            }
-                                        })
-                                        .collect();
-                                }
-
-                                return project_with_alias(
-                                    udtf_plan,
-                                    select_exprs,
-                                    Some(alias.name.value),
-                                );
+                            if alias.is_none() {
+                                return Ok(udtf_plan);
                             }
 
-                            Err(DataFusionError::Plan(format!(
-                                "Table or CTE with name '{}' not found",
-                                name
-                            )))
+                            let mut select_exprs = rewrite_udtfs_to_columns(
+                                vec![udtf],
+                                udtf_plan.schema().clone().as_ref().to_owned(),
+                            );
+
+                            let alias = alias.unwrap();
+
+                            if !alias.columns.is_empty() {
+                                select_exprs = select_exprs
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, e)| {
+                                        if alias.columns.len() > i {
+                                            Expr::Alias(
+                                                Box::new(e.clone()),
+                                                alias.columns[i].to_string(),
+                                            )
+                                        } else {
+                                            e.clone()
+                                        }
+                                    })
+                                    .collect();
+                            }
+
+                            return project_with_alias(
+                                udtf_plan,
+                                select_exprs,
+                                Some(alias.name.value),
+                            );
                         }
-                    }?,
-                    alias,
-                )
+
+                        Err(DataFusionError::Plan(format!(
+                            "Table or CTE with name '{}' not found",
+                            name
+                        )))
+                    }
+                }?;
+
+                (plan, alias)
             }
             TableFactor::Derived {
                 subquery, alias, ..
@@ -2498,6 +2506,15 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
     }
 }
 
+/// Normalize a SQL object name
+fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+    sql_object_name
+        .0
+        .iter()
+        .map(|id| id.value.clone())
+        .collect::<Vec<String>>()
+        .join(".")
+}
 /// Remove join expressions from a filter expression
 fn remove_join_expressions(
     expr: &Expr,
