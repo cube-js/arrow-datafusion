@@ -680,10 +680,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             } => {
                 let table_name = normalize_sql_object_name(name);
                 let table_ref: TableReference = table_name.as_str().into();
+                let table_alias = alias.as_ref().map(|i| i.name.value.to_string());
                 let default_table_alias =
                     name.0.iter().last().map(|i| i.value.to_string()).unwrap();
-
-                let table_alias = alias.as_ref().map(|i| i.name.value.to_string());
 
                 let cte = ctes.get(&table_name);
                 let plan = match (cte, self.schema_provider.get_table_provider(table_ref))
@@ -698,10 +697,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     },
                     (_, Some(provider)) => LogicalPlanBuilder::scan(
                         // take alias into account to support `JOIN table1 as table2`
-                        alias
-                            .as_ref()
-                            .map(|a| a.name.value.as_str())
-                            .unwrap_or(&default_table_alias),
+                        table_alias.unwrap_or(default_table_alias),
                         provider,
                         None,
                     )?
