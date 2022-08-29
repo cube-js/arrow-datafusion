@@ -44,4 +44,4 @@ cranelift-module = { version = "0.82.0", optional = true }
 ordered-float = "2.10"
 parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "bf19359d1a5cf6e2a96dec805a0bd4da1c30df5e", features = ["arrow"], optional = true }
 pyo3 = { version = "0.16", optional = true }
-sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "ca8131c36325e86fd733f337673e6cae5e946711" }
+sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "952bb1bdec0b3045d05b36bbd955770a931ed094" }
