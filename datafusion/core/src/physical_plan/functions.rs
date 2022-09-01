@@ -771,7 +771,7 @@ where
             .map(|arg| arg.clone().into_array(num_rows))
             .collect::<Vec<ArrayRef>>();
 
-        Ok((inner)(&args)?)
+        (inner)(&args)
     })
 }
 

@@ -27,8 +27,8 @@ use datafusion_expr::Expr;
 /// Errors if
 /// * the `data_type` is not a Struct or,
 /// * there is no field key is not of the required index type
-pub fn get_indexed_field(data_type: &DataType, key: &Box<Expr>) -> Result<Field> {
-    match (data_type, &**key) {
+pub fn get_indexed_field(data_type: &DataType, key: &Expr) -> Result<Field> {
+    match (data_type, &*key) {
         (DataType::List(lt), Expr::Literal(ScalarValue::Int64(Some(i)))) => {
             if *i < 0 {
                 Err(DataFusionError::Plan(format!(

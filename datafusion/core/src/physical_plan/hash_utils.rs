@@ -733,7 +733,7 @@ mod tests {
 
         // DataType::LargeList
         let list_array =
-            GenericListArray::<i64>::from_iter_primitive::<Int32Type, _, _>(data.clone());
+            GenericListArray::<i64>::from_iter_primitive::<Int32Type, _, _>(data);
 
         let hashes_buff = &mut vec![0; list_array.len()];
         let list_hashes =

@@ -60,18 +60,15 @@ impl GetIndexedFieldExpr {
         match data_type {
             DataType::Struct(fields) => {
                 if let Some(key_lit) = self.key.as_any().downcast_ref::<Literal>() {
-                    match key_lit.value() {
-                        ScalarValue::Utf8(Some(v)) => {
-                            let field = fields.iter().find(|f| f.name() == v);
-                            match field {
-                                None => return Err(DataFusionError::Execution(format!(
-                                    "Field {} not found in struct",
-                                    v
-                                ))),
-                                Some(f) => return Ok(f.clone()),
-                            }
-                        },
-                        _ => {},
+                    if let ScalarValue::Utf8(Some(v)) = key_lit.value() {
+                        let field = fields.iter().find(|f| f.name() == v);
+                        match field {
+                            None => return Err(DataFusionError::Execution(format!(
+                                "Field {} not found in struct",
+                                v
+                            ))),
+                            Some(f) => return Ok(f.clone()),
+                        }
                     }
                 }
 
@@ -156,7 +153,7 @@ impl PhysicalExpr for GetIndexedFieldExpr {
                 }
                 (DataType::Struct(_), ScalarValue::Utf8(Some(k))) => {
                     let as_struct_array = left.as_any().downcast_ref::<StructArray>().unwrap();
-                    match as_struct_array.column_by_name(&k) {
+                    match as_struct_array.column_by_name(k) {
                         None => Err(DataFusionError::Execution(format!("get indexed field {} not found in struct", k))),
                         Some(col) => Ok(ColumnarValue::Array(col.clone()))
                     }
@@ -203,7 +200,7 @@ impl PhysicalExpr for GetIndexedFieldExpr {
                     };
 
                     let as_struct_array = left.as_any().downcast_ref::<StructArray>().unwrap();
-                    match as_struct_array.column_by_name(&key) {
+                    match as_struct_array.column_by_name(key) {
                         None => Err(DataFusionError::Execution(format!("get indexed field {} not found in struct", key))),
                         Some(col) => Ok(ColumnarValue::Array(col.clone()))
                     }

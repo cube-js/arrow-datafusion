@@ -285,13 +285,13 @@ impl CaseExpr {
             let when_value = cast(&when_value, &common_type).map_err(|e| {
                 DataFusionError::Execution(format!(
                     "Unable to cast when value to common type: {}",
-                    e.to_string()
+                    e,
                 ))
             })?;
             let base_value = cast(&base_value, &common_type).map_err(|e| {
                 DataFusionError::Execution(format!(
                     "Unable to cast base value to common type: {}",
-                    e.to_string()
+                    e,
                 ))
             })?;
 
@@ -307,7 +307,7 @@ impl CaseExpr {
             let then_value = cast(&then_value, &return_type).map_err(|e| {
                 DataFusionError::Execution(format!(
                     "Unable to cast then value to common type: {}",
-                    e.to_string()
+                    e,
                 ))
             })?;
 

@@ -1522,7 +1522,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         &self,
         left: SQLExpr,
         op: BinaryOperator,
-        right: Box<SQLExpr>,
+        right: SQLExpr,
         schema: &DFSchema,
     ) -> Result<Expr> {
         let operator = match op {
@@ -1537,7 +1537,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         Ok(Expr::AnyExpr {
             left: Box::new(self.sql_expr_to_logical_expr(left, schema)?),
             op: operator,
-            right: Box::new(self.sql_expr_to_logical_expr(*right, schema)?),
+            right: Box::new(self.sql_expr_to_logical_expr(right, schema)?),
         })
     }
 
@@ -1550,7 +1550,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
     ) -> Result<Expr> {
         match right {
             SQLExpr::AnyOp(any_expr) => {
-                return self.parse_sql_binary_any(left, op, any_expr, schema);
+                return self.parse_sql_binary_any(left, op, *any_expr, schema);
             }
             SQLExpr::AllOp(_) => {
                 return Err(DataFusionError::NotImplemented(format!(

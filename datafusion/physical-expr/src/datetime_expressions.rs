@@ -171,9 +171,9 @@ pub fn to_timestamp_seconds(args: &[ColumnarValue]) -> Result<ColumnarValue> {
 pub fn to_day_interval(args: &[ColumnarValue]) -> Result<ColumnarValue> {
     let unit = match &args[1] {
         ColumnarValue::Scalar(value) => match value {
-            ScalarValue::Utf8(value) => value
-                .clone()
-                .ok_or(DataFusionError::Execution("Unit can't be null".to_string()))?,
+            ScalarValue::Utf8(value) => value.clone().ok_or_else(|| {
+                DataFusionError::Execution("Unit can't be null".to_string())
+            })?,
             x => {
                 return Err(DataFusionError::Execution(format!(
                     "Unit is expected to be a string but {:?} found",
@@ -231,9 +231,9 @@ pub fn to_day_interval(args: &[ColumnarValue]) -> Result<ColumnarValue> {
 pub fn to_month_interval(args: &[ColumnarValue]) -> Result<ColumnarValue> {
     let unit = match &args[1] {
         ColumnarValue::Scalar(value) => match value {
-            ScalarValue::Utf8(value) => value
-                .clone()
-                .ok_or(DataFusionError::Execution("Unit can't be null".to_string()))?,
+            ScalarValue::Utf8(value) => value.clone().ok_or_else(|| {
+                DataFusionError::Execution("Unit can't be null".to_string())
+            })?,
             x => {
                 return Err(DataFusionError::Execution(format!(
                     "Unit is expected to be a string but {:?} found",

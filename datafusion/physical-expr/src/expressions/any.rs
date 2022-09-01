@@ -151,7 +151,7 @@ fn eq_bool(
                 }
             }
 
-            return false;
+            false
         },
         BooleanArray,
         list_from_scalar
@@ -173,7 +173,7 @@ fn neq_bool(
                 }
             }
 
-            return true;
+            true
         },
         BooleanArray,
         list_from_scalar
@@ -195,7 +195,7 @@ fn eq_utf8<OffsetSize: StringOffsetSizeTrait>(
                 }
             }
 
-            return false;
+            false
         },
         GenericStringArray<OffsetSize>,
         list_from_scalar
@@ -217,7 +217,7 @@ fn neq_utf8<OffsetSize: StringOffsetSizeTrait>(
                 }
             }
 
-            return true;
+            true
         },
         GenericStringArray<OffsetSize>,
         list_from_scalar
@@ -258,13 +258,13 @@ impl AnyExpr {
         if negated {
             Ok(ColumnarValue::Array(Arc::new(neq_utf8(
                 array,
-                &list,
+                list,
                 list_from_scalar,
             )?)))
         } else {
             Ok(ColumnarValue::Array(Arc::new(eq_utf8(
                 array,
-                &list,
+                list,
                 list_from_scalar,
             )?)))
         }
@@ -283,13 +283,13 @@ impl AnyExpr {
         if negated {
             Ok(ColumnarValue::Array(Arc::new(neq_bool(
                 array,
-                &list,
+                list,
                 list_from_scalar,
             )?)))
         } else {
             Ok(ColumnarValue::Array(Arc::new(eq_bool(
                 array,
-                &list,
+                list,
                 list_from_scalar,
             )?)))
         }
@@ -452,7 +452,7 @@ mod tests {
             true,
         );
 
-        let schema = Schema::new(vec![field_a.clone(), field_b.clone()]);
+        let schema = Schema::new(vec![field_a, field_b]);
         let a = Int64Array::from(vec![Some(0), Some(3), None]);
         let col_a = col("a", &schema)?;
 
