@@ -18,9 +18,9 @@
 use clap::Parser;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionConfig;
+use datafusion::prelude::SessionContext;
 use datafusion_cli::{
-    context::Context, exec, print_format::PrintFormat, print_options::PrintOptions,
-    DATAFUSION_CLI_VERSION,
+    exec, print_format::PrintFormat, print_options::PrintOptions, DATAFUSION_CLI_VERSION,
 };
 use mimalloc::MiMalloc;
 use std::env;
@@ -70,12 +70,6 @@ struct Args {
     #[clap(long, arg_enum, default_value_t = PrintFormat::Table)]
     format: PrintFormat,
 
-    #[clap(long, help = "Ballista scheduler host")]
-    host: Option<String>,
-
-    #[clap(long, help = "Ballista scheduler port")]
-    port: Option<u16>,
-
     #[clap(
         short,
         long,
@@ -104,10 +98,7 @@ pub async fn main() -> Result<()> {
         session_config = session_config.with_batch_size(batch_size);
     };
 
-    let mut ctx: Context = match (args.host, args.port) {
-        (Some(ref h), Some(p)) => Context::new_remote(h, p).await?,
-        _ => Context::new_local(&session_config),
-    };
+    let mut ctx = SessionContext::with_config(session_config.clone());
 
     let mut print_options = PrintOptions {
         format: args.format,

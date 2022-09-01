@@ -19,8 +19,7 @@
 
 # DataFusion Command-line Interface
 
-The DataFusion CLI allows SQL queries to be executed by an in-process DataFusion context, or by a distributed
-Ballista context.
+The DataFusion CLI allows SQL queries to be executed by an in-process DataFusion context.
 
 ```
 USAGE:
@@ -36,8 +35,6 @@ OPTIONS:
     -p, --data-path <data-path>      Path to your data, default to current directory
     -f, --file <file>...             Execute commands from file(s), then exit
         --format <format>            Output format [default: table]  [possible values: csv, tsv, table, json, ndjson]
-        --host <host>                Ballista scheduler host
-        --port <port>                Ballista scheduler port
 ```
 
 ## Example
@@ -63,30 +60,6 @@ DataFusion CLI v5.1.0-SNAPSHOT
 | 1 | 2 |
 +---+---+
 1 row in set. Query took 0.017 seconds.
-```
-
-## Ballista
-
-The DataFusion CLI can also connect to a Ballista scheduler for query execution.
-
-Before you use the `datafusion-cli` to connect the Ballista scheduler, you should build/compile
-the `datafusion-cli` with feature of "ballista" first.
-
-```bash
-cargo build --features ballista
-```
-
-or
-
-```bash
-cargo build -p datafusion-cli --features ballista
-
-```
-
-Then, you can connect the Ballista by below command.
-
-```bash
-datafusion-cli --host localhost --port 50050
 ```
 
 ## Cli commands

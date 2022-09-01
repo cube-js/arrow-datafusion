@@ -19,17 +19,6 @@
 
 # Release Process
 
-## Sub-projects
-
-The DataFusion repo contains 2 different releasable sub-projects: DataFusion, Ballista
-
-We use DataFusion release to drive the release for the other sub-projects. As a
-result, DataFusion version bump is required for every release while version
-bumps for the Python binding and Ballista are optional. In other words, we can
-release a new version of DataFusion without releasing a new version of the
-Python binding or Ballista. On the other hand, releasing a new version of the
-Python binding or Ballista always requires a new DataFusion version release.
-
 ## Branching
 
 ### Major Release
@@ -64,7 +53,7 @@ PyPI.
 
 ### Change Log
 
-We maintain `CHANGELOG.md` for each sub project so our users know what has been
+We maintain a `CHANGELOG.md` so our users know what has been
 changed between releases.
 
 The CHANGELOG is managed automatically using
@@ -97,12 +86,6 @@ Update datafusion version in `datafusion/Cargo.toml` to `5.1.0`:
 ./dev/update_datafusion_versions.py 5.1.0
 ```
 
-If there is a ballista release, update versions in ballista Cargo.tomls, run
-
-```
-./dev/update_ballista_versions.py 0.5.0
-```
-
 If there is a datafusion python binding release, update versions in
 `./python/Cargo.toml`.
 
@@ -115,7 +98,7 @@ git commit -a -m 'Update version'
 ### Update CHANGELOG.md
 
 Manully edit the base version tag argument in
-`dev/release/update_change_log-{ballista,datafusion,python}.sh`. Commits
+`dev/release/update_change_log-{datafusion,python}.sh`. Commits
 between the base verstion tag and the latest upstream master will be used to
 populate the changelog content.
 
@@ -127,8 +110,7 @@ git commit -a -m 'Create changelog for release'
 ```
 
 You can add `invalid` or `development-process` label to exclude items from
-release notes. Add `datafusion`, `ballista` and `python` labels to group items
-into each sub-project's change log.
+release notes.
 
 Send a PR to get these changes merged into `master` branch. If new commits that
 could change the change log content landed in the `master` branch before you
@@ -252,13 +234,6 @@ git tag 5.1.0
 git push apache 5.1.0
 ```
 
-If there is a ballista release, also push the ballista tag
-
-```
-git tag ballista-0.5.0
-git push apache ballista-0.5.0
-```
-
 ### Publish on Crates.io
 
 Only approved releases of the tarball should be published to
@@ -274,10 +249,6 @@ create an account and login to crates.io before asking to be added as an owner
 of the following crates:
 
 - [datafusion](https://crates.io/crates/datafusion)
-- [ballista](https://crates.io/crates/ballista)
-- [ballista-core](https://crates.io/crates/ballista-core)
-- [ballista-executor](https://crates.io/crates/ballista-executor)
-- [ballista-scheduler](https://crates.io/crates/ballista-scheduler)
 
 Download and unpack the official release tarball
 
@@ -290,16 +261,6 @@ following commands
 (cd datafusion-expr && cargo publish)
 (cd datafusion && cargo publish)
 ```
-
-If there is a ballista release, run
-
-```shell
-(cd ballista/rust/core && cargo publish)
-(cd ballista/rust/executor && cargo publish)
-(cd ballista/rust/scheduler && cargo publish)
-(cd ballista/rust/client && cargo publish)
-```
-
 
 ### Publish datafusion-cli on Homebrew and crates.io
 
@@ -329,11 +290,7 @@ with the release verification.
 You can include mention crates.io and PyPI version URLs in the email if applicable.
 
 ```
-We have published new versions of datafusion and ballista to crates.io:
+We have published new version of datafusion to crates.io:
 
 https://crates.io/crates/datafusion/5.0.0
-https://crates.io/crates/ballista/0.5.0
-https://crates.io/crates/ballista-core/0.5.0
-https://crates.io/crates/ballista-executor/0.5.0
-https://crates.io/crates/ballista-scheduler/0.5.0
 ```

@@ -22,5 +22,5 @@ set -e
 cd /
 for query in 1 3 5 6 7 10 12 13
 do
-  /tpch benchmark ballista --host ballista-scheduler --port 50050 --query $query --path /data --format tbl --iterations 1 --debug
+  /tpch benchmark datafusion --host datafusion-scheduler --port 50050 --query $query --path /data --format tbl --iterations 1 --debug
 done

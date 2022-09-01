@@ -27,4 +27,3 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_TOP_DIR="$(cd "${SOURCE_DIR}/../../" && pwd)"
 
 ${SOURCE_DIR}/update_change_log-datafusion.sh
-${SOURCE_DIR}/update_change_log-ballista.sh

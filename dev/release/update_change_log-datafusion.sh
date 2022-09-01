@@ -28,5 +28,5 @@ CURRENT_VER=$(grep version "${SOURCE_TOP_DIR}/datafusion/Cargo.toml" | head -n 1
 ${SOURCE_DIR}/update_change_log.sh \
     datafusion \
     5.0.0 \
-    --exclude-tags-regex "(python|ballista)-.+" \
+    --exclude-tags-regex "(python)-.+" \
     --future-release "${CURRENT_VER}"

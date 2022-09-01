@@ -30,9 +30,6 @@ logical query plans as well as a query optimizer and execution engine
 capable of parallel execution against partitioned data sources (CSV
 and Parquet) using threads.
 
-DataFusion also supports distributed query execution via the
-[Ballista](ballista/README.md) crate.
-
 ## Use Cases
 
 DataFusion is used to create modern, fast and efficient data
@@ -59,7 +56,7 @@ Projects that adapt to or serve as plugins to DataFusion:
 
 Here are some of the projects known to use DataFusion:
 
-- [Ballista](ballista) Distributed Compute Platform
+- [Ballista](https://github.com/apache/arrow-ballista) Distributed Compute Platform
 - [Cloudfuse Buzz](https://github.com/cloudfuse-io/buzz-rust)
 - [Cube Store](https://github.com/cube-js/cube.js/tree/master/rust)
 - [delta-rs](https://github.com/delta-io/delta-rs)

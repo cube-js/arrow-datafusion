@@ -88,8 +88,6 @@ Usage
         -p, --data-path <data-path>      Path to your data, default to current directory
         -f, --file <file>...             Execute commands from file(s), then exit
             --format <format>            Output format [default: table]  [possible values: csv, tsv, table, json, ndjson]
-            --host <host>                Ballista scheduler host
-            --port <port>                Ballista scheduler port
 
 Type `exit` or `quit` to exit the CLI.
 
