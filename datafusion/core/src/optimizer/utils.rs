@@ -74,6 +74,9 @@ impl ExpressionVisitor for ColumnNameVisitor<'_> {
             | Expr::Literal(_)
             | Expr::BinaryExpr { .. }
             | Expr::AnyExpr { .. }
+            | Expr::Like { .. }
+            | Expr::ILike { .. }
+            | Expr::SimilarTo { .. }
             | Expr::Not(_)
             | Expr::IsNotNull(_)
             | Expr::IsNull(_)
@@ -313,6 +316,11 @@ pub fn expr_sub_expressions(expr: &Expr) -> Result<Vec<Expr>> {
         Expr::AnyExpr { left, right, .. } => {
             Ok(vec![left.as_ref().to_owned(), right.as_ref().to_owned()])
         }
+        Expr::Like { expr, pattern, .. }
+        | Expr::ILike { expr, pattern, .. }
+        | Expr::SimilarTo { expr, pattern, .. } => {
+            Ok(vec![expr.as_ref().to_owned(), pattern.as_ref().to_owned()])
+        }
         Expr::IsNull(expr)
         | Expr::IsNotNull(expr)
         | Expr::Cast { expr, .. }
@@ -406,6 +414,36 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
             left: Box::new(expressions[0].clone()),
             op: *op,
             right: Box::new(expressions[1].clone()),
+        }),
+        Expr::Like {
+            negated,
+            escape_char,
+            ..
+        } => Ok(Expr::Like {
+            negated: *negated,
+            expr: Box::new(expressions[0].clone()),
+            pattern: Box::new(expressions[1].clone()),
+            escape_char: *escape_char,
+        }),
+        Expr::ILike {
+            negated,
+            escape_char,
+            ..
+        } => Ok(Expr::ILike {
+            negated: *negated,
+            expr: Box::new(expressions[0].clone()),
+            pattern: Box::new(expressions[1].clone()),
+            escape_char: *escape_char,
+        }),
+        Expr::SimilarTo {
+            negated,
+            escape_char,
+            ..
+        } => Ok(Expr::SimilarTo {
+            negated: *negated,
+            expr: Box::new(expressions[0].clone()),
+            pattern: Box::new(expressions[1].clone()),
+            escape_char: *escape_char,
         }),
         Expr::IsNull(_) => Ok(Expr::IsNull(Box::new(expressions[0].clone()))),
         Expr::IsNotNull(_) => Ok(Expr::IsNotNull(Box::new(expressions[0].clone()))),

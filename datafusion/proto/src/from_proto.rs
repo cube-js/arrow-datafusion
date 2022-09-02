@@ -999,6 +999,24 @@ pub fn parse_expr(
             low: Box::new(parse_required_expr(&between.low, registry, "expr")?),
             high: Box::new(parse_required_expr(&between.high, registry, "expr")?),
         }),
+        ExprType::Like(like) => Ok(Expr::Like {
+            expr: Box::new(parse_required_expr(&like.expr, registry, "expr")?),
+            negated: like.negated,
+            pattern: Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
+            escape_char: parse_escape_char(&like.escape_char)?,
+        }),
+        ExprType::Ilike(like) => Ok(Expr::ILike {
+            expr: Box::new(parse_required_expr(&like.expr, registry, "expr")?),
+            negated: like.negated,
+            pattern: Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
+            escape_char: parse_escape_char(&like.escape_char)?,
+        }),
+        ExprType::SimilarTo(like) => Ok(Expr::SimilarTo {
+            expr: Box::new(parse_required_expr(&like.expr, registry, "expr")?),
+            negated: like.negated,
+            pattern: Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
+            escape_char: parse_escape_char(&like.escape_char)?,
+        }),
         ExprType::Case(case) => {
             let when_then_expr = case
                 .when_then_expr
@@ -1240,6 +1258,17 @@ pub fn parse_expr(
                     .collect::<Result<Vec<_>, Error>>()?,
             })
         }
+    }
+}
+
+/// Parse an optional escape_char for Like, ILike, SimilarTo
+fn parse_escape_char(s: &str) -> Result<Option<char>, DataFusionError> {
+    match s.len() {
+        0 => Ok(None),
+        1 => Ok(s.chars().next()),
+        _ => Err(DataFusionError::Internal(
+            "Invalid length for escape char".to_string(),
+        )),
     }
 }
 

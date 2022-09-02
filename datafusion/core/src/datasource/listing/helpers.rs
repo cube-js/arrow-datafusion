@@ -93,6 +93,9 @@ impl ExpressionVisitor for ApplicabilityVisitor<'_> {
             | Expr::BinaryExpr { .. }
             | Expr::AnyExpr { .. }
             | Expr::Between { .. }
+            | Expr::Like { .. }
+            | Expr::ILike { .. }
+            | Expr::SimilarTo { .. }
             | Expr::InList { .. }
             | Expr::GetIndexedField { .. }
             | Expr::Case { .. } => Recursion::Continue(self),
