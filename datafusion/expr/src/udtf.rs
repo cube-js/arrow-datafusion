@@ -52,6 +52,8 @@ impl PartialEq for TableUDF {
     }
 }
 
+impl Eq for TableUDF {}
+
 impl std::hash::Hash for TableUDF {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
