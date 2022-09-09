@@ -68,6 +68,7 @@ use arrow::datatypes::{Schema, SchemaRef};
 use arrow::{compute::can_cast_types, datatypes::DataType};
 use async_trait::async_trait;
 use datafusion_common::OuterQueryCursor;
+use datafusion_expr::expr_fn::binary_expr;
 use datafusion_physical_expr::expressions::{any, OuterColumn};
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
@@ -1079,6 +1080,46 @@ pub fn create_physical_expr(
                 execution_props,
             )?;
             binary(lhs, *op, rhs, input_schema)
+        }
+        Expr::Like {
+            negated,
+            expr,
+            pattern,
+            escape_char,
+        } => {
+            if escape_char.is_some() {
+                return Err(DataFusionError::Execution(
+                    "LIKE does not support escape_char".to_string(),
+                ));
+            }
+            let op = if *negated {
+                Operator::NotLike
+            } else {
+                Operator::Like
+            };
+            let bin_expr =
+                binary_expr(expr.as_ref().clone(), op, pattern.as_ref().clone());
+            create_physical_expr(&bin_expr, input_dfschema, input_schema, execution_props)
+        }
+        Expr::ILike {
+            negated,
+            expr,
+            pattern,
+            escape_char,
+        } => {
+            if escape_char.is_some() {
+                return Err(DataFusionError::Execution(
+                    "ILIKE does not support escape_char".to_string(),
+                ));
+            }
+            let op = if *negated {
+                Operator::NotILike
+            } else {
+                Operator::ILike
+            };
+            let bin_expr =
+                binary_expr(expr.as_ref().clone(), op, pattern.as_ref().clone());
+            create_physical_expr(&bin_expr, input_dfschema, input_schema, execution_props)
         }
         Expr::Case {
             expr,
