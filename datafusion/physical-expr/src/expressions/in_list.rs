@@ -23,8 +23,9 @@ use std::sync::Arc;
 use arrow::array::GenericStringArray;
 use arrow::array::{
     ArrayRef, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, StringOffsetSizeTrait, UInt16Array, UInt32Array, UInt64Array,
-    UInt8Array,
+    Int64Array, Int8Array, StringOffsetSizeTrait, TimestampMicrosecondArray,
+    TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+    UInt16Array, UInt32Array, UInt64Array, UInt8Array,
 };
 use arrow::datatypes::ArrowPrimitiveType;
 use arrow::{
@@ -35,6 +36,7 @@ use arrow::{
 use crate::PhysicalExpr;
 use arrow::array::*;
 use arrow::buffer::{Buffer, MutableBuffer};
+use arrow::datatypes::TimeUnit;
 use datafusion_common::ScalarValue;
 use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::ColumnarValue;
@@ -134,8 +136,8 @@ macro_rules! make_contains_primitive {
             .iter()
             .flat_map(|expr| match expr {
                 ColumnarValue::Scalar(s) => match s {
-                    ScalarValue::$SCALAR_VALUE(Some(v)) => Some(*v),
-                    ScalarValue::$SCALAR_VALUE(None) => None,
+                    ScalarValue::$SCALAR_VALUE(Some(v), ..) => Some(*v),
+                    ScalarValue::$SCALAR_VALUE(None, ..) => None,
                     ScalarValue::Utf8(None) => None,
                     datatype => unimplemented!("Unexpected type {} for InList", datatype),
                 },
@@ -451,6 +453,36 @@ impl PhysicalExpr for InListExpr {
             DataType::LargeUtf8 => {
                 self.compare_utf8::<i64>(array, list_values, self.negated)
             }
+            DataType::Timestamp(unit, _) => match unit {
+                TimeUnit::Second => make_contains_primitive!(
+                    array,
+                    list_values,
+                    self.negated,
+                    TimestampSecond,
+                    TimestampSecondArray
+                ),
+                TimeUnit::Millisecond => make_contains_primitive!(
+                    array,
+                    list_values,
+                    self.negated,
+                    TimestampMillisecond,
+                    TimestampMillisecondArray
+                ),
+                TimeUnit::Microsecond => make_contains_primitive!(
+                    array,
+                    list_values,
+                    self.negated,
+                    TimestampMicrosecond,
+                    TimestampMicrosecondArray
+                ),
+                TimeUnit::Nanosecond => make_contains_primitive!(
+                    array,
+                    list_values,
+                    self.negated,
+                    TimestampNanosecond,
+                    TimestampNanosecondArray
+                ),
+            },
             datatype => Result::Err(DataFusionError::NotImplemented(format!(
                 "InList does not support datatype {:?}.",
                 datatype
@@ -711,6 +743,110 @@ mod tests {
         ];
         in_list!(batch, list, &true, vec![Some(false), None], col_a.clone());
 
+        Ok(())
+    }
+
+    #[test]
+    fn in_list_set_timestamp() -> Result<()> {
+        // Size at which to use a Set rather than Vec for `IN` / `NOT IN`
+        // Value chosen by the benchmark at
+        // https://github.com/apache/arrow-datafusion/pull/2156#discussion_r845198369
+        // TODO: add switch codeGen in In_List
+        let optimizer_inset_threshold: usize = 30;
+
+        let schema = Schema::new(vec![Field::new(
+            "a",
+            DataType::Timestamp(TimeUnit::Microsecond, None),
+            true,
+        )]);
+        let a = TimestampMicrosecondArray::from(vec![
+            Some(1388588401000000000),
+            Some(1288588501000000000),
+            None,
+        ]);
+        let col_a = col("a", &schema)?;
+        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![Arc::new(a)])?;
+
+        let mut list = vec![
+            lit(ScalarValue::TimestampMicrosecond(
+                Some(1388588401000000000),
+                None,
+            )),
+            lit(ScalarValue::TimestampMicrosecond(None, None)),
+            lit(ScalarValue::TimestampMicrosecond(
+                Some(1388588401000000001),
+                None,
+            )),
+        ];
+        let start_ts = 1388588401000000001;
+        for v in start_ts..(start_ts + optimizer_inset_threshold + 4) {
+            list.push(lit(ScalarValue::TimestampMicrosecond(Some(v as i64), None)));
+        }
+
+        in_list!(
+            batch,
+            list.clone(),
+            &false,
+            vec![Some(true), None, None],
+            col_a.clone()
+        );
+
+        in_list!(
+            batch,
+            list.clone(),
+            &true,
+            vec![Some(false), None, None],
+            col_a.clone()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn in_list_timestamp() -> Result<()> {
+        let schema = Schema::new(vec![Field::new(
+            "a",
+            DataType::Timestamp(TimeUnit::Microsecond, None),
+            true,
+        )]);
+        let a = TimestampMicrosecondArray::from(vec![
+            Some(1388588401000000000),
+            Some(1288588501000000000),
+            None,
+        ]);
+        let col_a = col("a", &schema)?;
+        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![Arc::new(a)])?;
+
+        let list = vec![
+            lit(ScalarValue::TimestampMicrosecond(
+                Some(1388588401000000000),
+                None,
+            )),
+            lit(ScalarValue::TimestampMicrosecond(
+                Some(1388588401000000001),
+                None,
+            )),
+            lit(ScalarValue::TimestampMicrosecond(
+                Some(1388588401000000002),
+                None,
+            )),
+        ];
+
+        in_list!(
+            batch,
+            list.clone(),
+            &false,
+            vec![Some(true), Some(false), None],
+            col_a.clone()
+        );
+
+        in_list!(
+            batch,
+            list.clone(),
+            &true,
+            vec![Some(false), Some(true), None],
+            col_a.clone()
+        );
         Ok(())
     }
 }
