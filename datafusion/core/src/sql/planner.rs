@@ -821,11 +821,12 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 (
                     project_with_alias(
                         logical_plan.clone(),
-                        logical_plan
-                            .schema()
-                            .fields()
-                            .iter()
-                            .map(|field| col(field.name())),
+                        logical_plan.schema().fields().iter().map(|field| {
+                            Expr::Column(Column {
+                                relation: None,
+                                name: field.name().clone(),
+                            })
+                        }),
                         alias.as_ref().map(|a| a.name.value.to_string()),
                     )?,
                     alias,
@@ -2968,6 +2969,19 @@ mod tests {
                         \n        Filter: #person.age > Int64(20)\
                         \n          TableScan: person projection=None";
 
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn select_nested_with_dotted_columns() {
+        let sql = "SELECT \"a.b\"
+                   FROM (
+                       SELECT 1 \"a.b\"
+                   ) AS t";
+        let expected = "Projection: #t.a.b\
+                      \n  Projection: #t.a.b, alias=t\
+                      \n    Projection: Int64(1) AS a.b, alias=t\
+                      \n      EmptyRelation";
         quick_test(sql, expected);
     }
 
