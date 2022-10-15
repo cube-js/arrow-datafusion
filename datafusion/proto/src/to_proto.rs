@@ -27,7 +27,7 @@ use datafusion::{
     },
     logical_plan::{
         window_frames::{WindowFrame, WindowFrameBound, WindowFrameUnits},
-        Column, DFField, DFSchemaRef, Expr,
+        Column, DFField, DFSchemaRef, Expr, Like,
     },
     physical_plan::{
         aggregates::AggregateFunction,
@@ -417,12 +417,12 @@ impl TryFrom<&Expr> for protobuf::LogicalExprNode {
                     expr_type: Some(ExprType::BinaryExpr(binary_expr)),
                 }
             }
-            Expr::Like {
+            Expr::Like(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => {
+            }) => {
                 let pb = Box::new(protobuf::LikeNode {
                     negated: *negated,
                     expr: Some(Box::new(expr.as_ref().try_into()?)),
@@ -435,12 +435,12 @@ impl TryFrom<&Expr> for protobuf::LogicalExprNode {
                     expr_type: Some(ExprType::Like(pb)),
                 }
             }
-            Expr::ILike {
+            Expr::ILike(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => {
+            }) => {
                 let pb = Box::new(protobuf::ILikeNode {
                     negated: *negated,
                     expr: Some(Box::new(expr.as_ref().try_into()?)),
@@ -453,12 +453,12 @@ impl TryFrom<&Expr> for protobuf::LogicalExprNode {
                     expr_type: Some(ExprType::Ilike(pb)),
                 }
             }
-            Expr::SimilarTo {
+            Expr::SimilarTo(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => {
+            }) => {
                 let pb = Box::new(protobuf::SimilarToNode {
                     negated: *negated,
                     expr: Some(Box::new(expr.as_ref().try_into()?)),

@@ -111,26 +111,11 @@ pub enum Expr {
         right: Box<Expr>,
     },
     /// LIKE expression
-    Like {
-        negated: bool,
-        expr: Box<Expr>,
-        pattern: Box<Expr>,
-        escape_char: Option<char>,
-    },
+    Like(Like),
     /// Case-insensitive LIKE expression
-    ILike {
-        negated: bool,
-        expr: Box<Expr>,
-        pattern: Box<Expr>,
-        escape_char: Option<char>,
-    },
+    ILike(Like),
     /// LIKE expression that uses regular expressions
-    SimilarTo {
-        negated: bool,
-        expr: Box<Expr>,
-        pattern: Box<Expr>,
-        escape_char: Option<char>,
-    },
+    SimilarTo(Like),
     /// Negation of an expression. The expression's type must be a boolean to make sense.
     Not(Box<Expr>),
     /// Whether an expression is not Null. This expression is never null.
@@ -270,6 +255,32 @@ pub enum Expr {
     Wildcard,
     /// Represents a reference to all fields in a specific schema.
     QualifiedWildcard { qualifier: String },
+}
+
+/// LIKE expression
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Like {
+    pub negated: bool,
+    pub expr: Box<Expr>,
+    pub pattern: Box<Expr>,
+    pub escape_char: Option<char>,
+}
+
+impl Like {
+    /// Create a new Like expression
+    pub fn new(
+        negated: bool,
+        expr: Box<Expr>,
+        pattern: Box<Expr>,
+        escape_char: Option<char>,
+    ) -> Self {
+        Self {
+            negated,
+            expr,
+            pattern,
+            escape_char,
+        }
+    }
 }
 
 /// Fixed seed for the hashing so that Ords are consistent across runs
@@ -416,39 +427,24 @@ impl Not for Expr {
 
     fn not(self) -> Self::Output {
         match self {
-            Expr::Like {
+            Expr::Like(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => Expr::Like {
-                negated: !negated,
-                expr,
-                pattern,
-                escape_char,
-            },
-            Expr::ILike {
+            }) => Expr::Like(Like::new(!negated, expr, pattern, escape_char)),
+            Expr::ILike(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => Expr::ILike {
-                negated: !negated,
-                expr,
-                pattern,
-                escape_char,
-            },
-            Expr::SimilarTo {
+            }) => Expr::ILike(Like::new(!negated, expr, pattern, escape_char)),
+            Expr::SimilarTo(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => Expr::SimilarTo {
-                negated: !negated,
-                expr,
-                pattern,
-                escape_char,
-            },
+            }) => Expr::SimilarTo(Like::new(!negated, expr, pattern, escape_char)),
             _ => Expr::Not(Box::new(self)),
         }
     }
@@ -594,12 +590,12 @@ impl fmt::Debug for Expr {
                     write!(f, "{:?} BETWEEN {:?} AND {:?}", expr, low, high)
                 }
             }
-            Expr::Like {
+            Expr::Like(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => {
+            }) => {
                 write!(f, "{:?}", expr)?;
                 if *negated {
                     write!(f, " NOT")?;
@@ -610,12 +606,12 @@ impl fmt::Debug for Expr {
                     write!(f, " LIKE {:?}", pattern)
                 }
             }
-            Expr::ILike {
+            Expr::ILike(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => {
+            }) => {
                 write!(f, "{:?}", expr)?;
                 if *negated {
                     write!(f, " NOT")?;
@@ -626,12 +622,12 @@ impl fmt::Debug for Expr {
                     write!(f, " ILIKE {:?}", pattern)
                 }
             }
-            Expr::SimilarTo {
+            Expr::SimilarTo(Like {
                 negated,
                 expr,
                 pattern,
                 escape_char,
-            } => {
+            }) => {
                 write!(f, "{:?}", expr)?;
                 if *negated {
                     write!(f, " NOT")?;
@@ -718,12 +714,12 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             let right = create_name(right, input_schema)?;
             Ok(format!("{} {} ANY({})", left, op, right))
         }
-        Expr::Like {
+        Expr::Like(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             let s = format!(
                 "{} {} {} {}",
                 expr,
@@ -737,12 +733,12 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             );
             Ok(s)
         }
-        Expr::ILike {
+        Expr::ILike(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             let s = format!(
                 "{} {} {} {}",
                 expr,
@@ -756,12 +752,12 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             );
             Ok(s)
         }
-        Expr::SimilarTo {
+        Expr::SimilarTo(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             let s = format!(
                 "{} {} {} {}",
                 expr,

@@ -28,6 +28,7 @@ pub use datafusion_common::{Column, ExprSchema};
 pub use datafusion_expr::expr_fn::*;
 use datafusion_expr::BuiltinScalarFunction;
 pub use datafusion_expr::Expr;
+pub use datafusion_expr::Like;
 use datafusion_expr::StateTypeFunction;
 pub use datafusion_expr::{lit, lit_timestamp_nano, Literal};
 use datafusion_expr::{

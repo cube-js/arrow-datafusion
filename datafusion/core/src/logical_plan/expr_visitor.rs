@@ -17,7 +17,7 @@
 
 //! Expression visitor
 
-use super::Expr;
+use super::{Expr, Like};
 use datafusion_common::Result;
 
 /// Controls how the visitor recursion should proceed.
@@ -120,15 +120,15 @@ impl ExprVisitable for Expr {
                 let visitor = left.accept(visitor)?;
                 right.accept(visitor)
             }
-            Expr::Like { expr, pattern, .. } => {
+            Expr::Like(Like { expr, pattern, .. }) => {
                 let visitor = expr.accept(visitor)?;
                 pattern.accept(visitor)
             }
-            Expr::ILike { expr, pattern, .. } => {
+            Expr::ILike(Like { expr, pattern, .. }) => {
                 let visitor = expr.accept(visitor)?;
                 pattern.accept(visitor)
             }
-            Expr::SimilarTo { expr, pattern, .. } => {
+            Expr::SimilarTo(Like { expr, pattern, .. }) => {
                 let visitor = expr.accept(visitor)?;
                 pattern.accept(visitor)
             }

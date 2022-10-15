@@ -28,7 +28,7 @@ use datafusion::{
         split_part, sqrt, starts_with, strpos, substr, tan, to_hex, to_timestamp_micros,
         to_timestamp_millis, to_timestamp_seconds, translate, trunc,
         window_frames::{WindowFrame, WindowFrameBound, WindowFrameUnits},
-        Column, DFField, DFSchema, DFSchemaRef, Expr, Operator,
+        Column, DFField, DFSchema, DFSchemaRef, Expr, Like, Operator,
     },
     physical_plan::{
         aggregates::AggregateFunction, functions::BuiltinScalarFunction,
@@ -999,24 +999,24 @@ pub fn parse_expr(
             low: Box::new(parse_required_expr(&between.low, registry, "expr")?),
             high: Box::new(parse_required_expr(&between.high, registry, "expr")?),
         }),
-        ExprType::Like(like) => Ok(Expr::Like {
-            expr: Box::new(parse_required_expr(&like.expr, registry, "expr")?),
-            negated: like.negated,
-            pattern: Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
-            escape_char: parse_escape_char(&like.escape_char)?,
-        }),
-        ExprType::Ilike(like) => Ok(Expr::ILike {
-            expr: Box::new(parse_required_expr(&like.expr, registry, "expr")?),
-            negated: like.negated,
-            pattern: Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
-            escape_char: parse_escape_char(&like.escape_char)?,
-        }),
-        ExprType::SimilarTo(like) => Ok(Expr::SimilarTo {
-            expr: Box::new(parse_required_expr(&like.expr, registry, "expr")?),
-            negated: like.negated,
-            pattern: Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
-            escape_char: parse_escape_char(&like.escape_char)?,
-        }),
+        ExprType::Like(like) => Ok(Expr::Like(Like::new(
+            like.negated,
+            Box::new(parse_required_expr(&like.expr, registry, "expr")?),
+            Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
+            parse_escape_char(&like.escape_char)?,
+        ))),
+        ExprType::Ilike(like) => Ok(Expr::ILike(Like::new(
+            like.negated,
+            Box::new(parse_required_expr(&like.expr, registry, "expr")?),
+            Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
+            parse_escape_char(&like.escape_char)?,
+        ))),
+        ExprType::SimilarTo(like) => Ok(Expr::SimilarTo(Like::new(
+            like.negated,
+            Box::new(parse_required_expr(&like.expr, registry, "expr")?),
+            Box::new(parse_required_expr(&like.pattern, registry, "pattern")?),
+            parse_escape_char(&like.escape_char)?,
+        ))),
         ExprType::Case(case) => {
             let when_then_expr = case
                 .when_then_expr

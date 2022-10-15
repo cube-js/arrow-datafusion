@@ -27,7 +27,7 @@ use crate::optimizer::optimizer::OptimizerConfig;
 use crate::logical_plan::builder::build_table_udf_schema;
 use crate::logical_plan::{
     build_join_schema, Column, CreateMemoryTable, DFSchemaRef, Distinct, Expr,
-    ExprVisitable, Limit, LogicalPlan, LogicalPlanBuilder, Operator, Partitioning,
+    ExprVisitable, Like, Limit, LogicalPlan, LogicalPlanBuilder, Operator, Partitioning,
     Recursion, Repartition, Union, Values,
 };
 use crate::prelude::lit;
@@ -316,9 +316,9 @@ pub fn expr_sub_expressions(expr: &Expr) -> Result<Vec<Expr>> {
         Expr::AnyExpr { left, right, .. } => {
             Ok(vec![left.as_ref().to_owned(), right.as_ref().to_owned()])
         }
-        Expr::Like { expr, pattern, .. }
-        | Expr::ILike { expr, pattern, .. }
-        | Expr::SimilarTo { expr, pattern, .. } => {
+        Expr::Like(Like { expr, pattern, .. })
+        | Expr::ILike(Like { expr, pattern, .. })
+        | Expr::SimilarTo(Like { expr, pattern, .. }) => {
             Ok(vec![expr.as_ref().to_owned(), pattern.as_ref().to_owned()])
         }
         Expr::IsNull(expr)
@@ -415,36 +415,36 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
             op: *op,
             right: Box::new(expressions[1].clone()),
         }),
-        Expr::Like {
+        Expr::Like(Like {
             negated,
             escape_char,
             ..
-        } => Ok(Expr::Like {
-            negated: *negated,
-            expr: Box::new(expressions[0].clone()),
-            pattern: Box::new(expressions[1].clone()),
-            escape_char: *escape_char,
-        }),
-        Expr::ILike {
+        }) => Ok(Expr::Like(Like::new(
+            *negated,
+            Box::new(expressions[0].clone()),
+            Box::new(expressions[1].clone()),
+            *escape_char,
+        ))),
+        Expr::ILike(Like {
             negated,
             escape_char,
             ..
-        } => Ok(Expr::ILike {
-            negated: *negated,
-            expr: Box::new(expressions[0].clone()),
-            pattern: Box::new(expressions[1].clone()),
-            escape_char: *escape_char,
-        }),
-        Expr::SimilarTo {
+        }) => Ok(Expr::ILike(Like::new(
+            *negated,
+            Box::new(expressions[0].clone()),
+            Box::new(expressions[1].clone()),
+            *escape_char,
+        ))),
+        Expr::SimilarTo(Like {
             negated,
             escape_char,
             ..
-        } => Ok(Expr::SimilarTo {
-            negated: *negated,
-            expr: Box::new(expressions[0].clone()),
-            pattern: Box::new(expressions[1].clone()),
-            escape_char: *escape_char,
-        }),
+        }) => Ok(Expr::SimilarTo(Like::new(
+            *negated,
+            Box::new(expressions[0].clone()),
+            Box::new(expressions[1].clone()),
+            *escape_char,
+        ))),
         Expr::IsNull(_) => Ok(Expr::IsNull(Box::new(expressions[0].clone()))),
         Expr::IsNotNull(_) => Ok(Expr::IsNotNull(Box::new(expressions[0].clone()))),
         Expr::ScalarFunction { fun, .. } => Ok(Expr::ScalarFunction {

@@ -35,7 +35,7 @@ pub use accumulator::Accumulator;
 pub use aggregate_function::AggregateFunction;
 pub use built_in_function::BuiltinScalarFunction;
 pub use columnar_value::{ColumnarValue, NullColumnarValue};
-pub use expr::Expr;
+pub use expr::{Expr, Like};
 pub use expr_fn::{col, sum};
 pub use function::{
     AccumulatorFunctionImplementation, ReturnTypeFunction, ScalarFunctionImplementation,

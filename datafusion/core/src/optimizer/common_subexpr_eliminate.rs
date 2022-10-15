@@ -23,7 +23,7 @@ use crate::logical_plan::{
     col,
     plan::{Aggregate, Sort},
     DFField, DFSchema, Expr, ExprRewritable, ExprRewriter, ExprSchemable, ExprVisitable,
-    ExpressionVisitor, LogicalPlan, Recursion, RewriteRecursion,
+    ExpressionVisitor, Like, LogicalPlan, Recursion, RewriteRecursion,
 };
 use crate::optimizer::optimizer::OptimizerConfig;
 use crate::optimizer::optimizer::OptimizerRule;
@@ -447,15 +447,15 @@ impl ExprIdentifierVisitor<'_> {
                 desc.push_str("Between-");
                 desc.push_str(&negated.to_string());
             }
-            Expr::Like { negated, .. } => {
+            Expr::Like(Like { negated, .. }) => {
                 desc.push_str("Like-");
                 desc.push_str(&negated.to_string());
             }
-            Expr::ILike { negated, .. } => {
+            Expr::ILike(Like { negated, .. }) => {
                 desc.push_str("ILike-");
                 desc.push_str(&negated.to_string());
             }
-            Expr::SimilarTo { negated, .. } => {
+            Expr::SimilarTo(Like { negated, .. }) => {
                 desc.push_str("SimilarTo-");
                 desc.push_str(&negated.to_string());
             }

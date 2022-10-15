@@ -31,7 +31,7 @@ use crate::logical_plan::Expr::Alias;
 use crate::logical_plan::{
     and, builder::expand_qualified_wildcard, builder::expand_wildcard, col, lit,
     normalize_col, rewrite_udtfs_to_columns, Column, CreateMemoryTable, DFSchema,
-    DFSchemaRef, DropTable, Expr, ExprSchemable, LogicalPlan, LogicalPlanBuilder,
+    DFSchemaRef, DropTable, Expr, ExprSchemable, Like, LogicalPlan, LogicalPlanBuilder,
     Operator, PlanType, ToDFSchema, ToStringifiedPlan,
 };
 use crate::optimizer::utils::exprlist_to_columns;
@@ -2009,13 +2009,12 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         "Invalid pattern in LIKE expression".to_string(),
                     ));
                 }
-                Ok(Expr::Like {
+                Ok(Expr::Like(Like::new(
                     negated,
-                    expr: Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
-                    pattern: Box::new(pattern),
+                    Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
+                    Box::new(pattern),
                     escape_char
-
-                })
+                )))
             }
 
             SQLExpr::ILike { negated, expr, pattern, escape_char } => {
@@ -2026,12 +2025,12 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         "Invalid pattern in ILIKE expression".to_string(),
                     ));
                 }
-                Ok(Expr::ILike {
+                Ok(Expr::ILike(Like::new(
                     negated,
-                    expr: Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
-                    pattern: Box::new(pattern),
+                    Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
+                    Box::new(pattern),
                     escape_char
-                })
+                )))
             }
 
             SQLExpr::SimilarTo { negated, expr, pattern, escape_char } => {
@@ -2042,12 +2041,12 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         "Invalid pattern in SIMILAR TO expression".to_string(),
                     ));
                 }
-                Ok(Expr::SimilarTo {
+                Ok(Expr::SimilarTo(Like::new(
                     negated,
-                    expr: Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
-                    pattern: Box::new(pattern),
+                    Box::new(self.sql_expr_to_logical_expr(*expr, schema)?),
+                    Box::new(pattern),
                     escape_char
-                })
+                )))
             }
 
             SQLExpr::BinaryOp {

@@ -30,7 +30,7 @@ use crate::logical_plan::plan::{
     TableUDFs, Window,
 };
 use crate::logical_plan::{
-    unalias, unnormalize_cols, CrossJoin, DFSchema, Distinct, Expr, LogicalPlan,
+    unalias, unnormalize_cols, CrossJoin, DFSchema, Distinct, Expr, Like, LogicalPlan,
     Operator, Partitioning as LogicalPartitioning, PlanType, Repartition,
     ToStringifiedPlan, Union, UserDefinedLogicalNode,
 };
@@ -219,12 +219,12 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
                 Ok(format!("{} BETWEEN {} AND {}", expr, low, high))
             }
         }
-        Expr::Like {
+        Expr::Like(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             let expr = create_physical_name(expr, false)?;
             let pattern = create_physical_name(pattern, false)?;
             let escape = if let Some(char) = escape_char {
@@ -238,12 +238,12 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
                 Ok(format!("{} LIKE {}{}", expr, pattern, escape))
             }
         }
-        Expr::ILike {
+        Expr::ILike(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             let expr = create_physical_name(expr, false)?;
             let pattern = create_physical_name(pattern, false)?;
             let escape = if let Some(char) = escape_char {
@@ -257,12 +257,12 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
                 Ok(format!("{} ILIKE {}{}", expr, pattern, escape))
             }
         }
-        Expr::SimilarTo {
+        Expr::SimilarTo(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             let expr = create_physical_name(expr, false)?;
             let pattern = create_physical_name(pattern, false)?;
             let escape = if let Some(char) = escape_char {
@@ -1081,12 +1081,12 @@ pub fn create_physical_expr(
             )?;
             binary(lhs, *op, rhs, input_schema)
         }
-        Expr::Like {
+        Expr::Like(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             if escape_char.is_some() {
                 return Err(DataFusionError::Execution(
                     "LIKE does not support escape_char".to_string(),
@@ -1101,12 +1101,12 @@ pub fn create_physical_expr(
                 binary_expr(expr.as_ref().clone(), op, pattern.as_ref().clone());
             create_physical_expr(&bin_expr, input_dfschema, input_schema, execution_props)
         }
-        Expr::ILike {
+        Expr::ILike(Like {
             negated,
             expr,
             pattern,
             escape_char,
-        } => {
+        }) => {
             if escape_char.is_some() {
                 return Err(DataFusionError::Execution(
                     "ILIKE does not support escape_char".to_string(),

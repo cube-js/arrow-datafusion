@@ -52,7 +52,7 @@ pub use expr::{
     replace, reverse, right, round, rpad, rtrim, sha224, sha256, sha384, sha512, signum,
     sin, split_part, sqrt, starts_with, strpos, substr, sum, tan, to_hex,
     to_timestamp_micros, to_timestamp_millis, to_timestamp_seconds, translate, trim,
-    trunc, unalias, upper, when, Column, Expr, ExprSchema, Literal,
+    trunc, unalias, upper, when, Column, Expr, ExprSchema, Like, Literal,
 };
 pub use expr_rewriter::{
     normalize_col, normalize_cols, replace_col, rewrite_sort_cols_by_aggs,
