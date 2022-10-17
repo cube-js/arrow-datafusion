@@ -25,6 +25,7 @@ pub mod eliminate_limit;
 pub mod filter_push_down;
 pub mod limit_push_down;
 pub mod optimizer;
+pub mod projection_drop_out;
 pub mod projection_push_down;
 pub mod simplify_expressions;
 pub mod single_distinct_to_groupby;

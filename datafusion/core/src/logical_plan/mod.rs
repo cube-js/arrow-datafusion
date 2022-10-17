@@ -55,9 +55,9 @@ pub use expr::{
     trunc, unalias, upper, when, Column, Expr, ExprSchema, Like, Literal,
 };
 pub use expr_rewriter::{
-    normalize_col, normalize_cols, replace_col, rewrite_sort_cols_by_aggs,
-    rewrite_udtfs_to_columns, unnormalize_col, unnormalize_cols, ExprRewritable,
-    ExprRewriter, RewriteRecursion,
+    normalize_col, normalize_cols, replace_col, replace_col_to_expr,
+    rewrite_sort_cols_by_aggs, rewrite_udtfs_to_columns, unnormalize_col,
+    unnormalize_cols, ExprRewritable, ExprRewriter, RewriteRecursion,
 };
 pub use expr_schema::ExprSchemable;
 pub use expr_simplier::{ExprSimplifiable, SimplifyInfo};
@@ -66,8 +66,8 @@ pub use extension::UserDefinedLogicalNode;
 pub use operators::Operator;
 pub use plan::{
     CreateCatalogSchema, CreateExternalTable, CreateMemoryTable, CrossJoin, Distinct,
-    DropTable, EmptyRelation, JoinConstraint, JoinType, Limit, LogicalPlan, Partitioning,
-    PlanType, PlanVisitor, Repartition, StringifiedPlan, Subquery, TableScan,
-    ToStringifiedPlan, Union, Values,
+    DropTable, EmptyRelation, Filter, JoinConstraint, JoinType, Limit, LogicalPlan,
+    Partitioning, PlanType, PlanVisitor, Repartition, StringifiedPlan, Subquery,
+    TableScan, ToStringifiedPlan, Union, Values,
 };
 pub use registry::FunctionRegistry;

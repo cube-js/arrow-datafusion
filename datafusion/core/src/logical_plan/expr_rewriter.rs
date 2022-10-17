@@ -465,6 +465,32 @@ pub fn replace_col(e: Expr, replace_map: &HashMap<&Column, &Column>) -> Result<E
     e.rewrite(&mut ColumnReplacer { replace_map })
 }
 
+/// Recursively replace all Column expressions in a given expression tree with Expressions
+/// provided by the hash map argument.
+pub fn replace_col_to_expr(
+    e: Expr,
+    replace_map: &HashMap<&Column, &Expr>,
+) -> Result<Expr> {
+    struct ColumnReplacer<'a> {
+        replace_map: &'a HashMap<&'a Column, &'a Expr>,
+    }
+
+    impl<'a> ExprRewriter for ColumnReplacer<'a> {
+        fn mutate(&mut self, expr: Expr) -> Result<Expr> {
+            if let Expr::Column(c) = &expr {
+                match self.replace_map.get(c) {
+                    Some(new_e) => Ok((*new_e).to_owned()),
+                    None => Ok(expr),
+                }
+            } else {
+                Ok(expr)
+            }
+        }
+    }
+
+    e.rewrite(&mut ColumnReplacer { replace_map })
+}
+
 /// Recursively 'unnormalize' (remove all qualifiers) from an
 /// expression tree.
 ///
