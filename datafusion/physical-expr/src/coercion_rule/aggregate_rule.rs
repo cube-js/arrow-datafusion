@@ -182,6 +182,15 @@ pub fn coerce_types(
             }
             Ok(input_types.to_vec())
         }
+        AggregateFunction::BoolAnd | AggregateFunction::BoolOr => {
+            if input_types[0] != DataType::Boolean {
+                return Err(DataFusionError::Plan(format!(
+                    "The function {:?} does not support inputs of type {:?}.",
+                    agg_fun, input_types[0]
+                )));
+            }
+            Ok(input_types.to_vec())
+        }
     }
 }
 

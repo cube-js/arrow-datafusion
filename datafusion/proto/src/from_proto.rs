@@ -463,6 +463,8 @@ impl From<protobuf::AggregateFunction> for AggregateFunction {
                 Self::ApproxPercentileContWithWeight
             }
             protobuf::AggregateFunction::ApproxMedian => Self::ApproxMedian,
+            protobuf::AggregateFunction::BoolAnd => Self::BoolAnd,
+            protobuf::AggregateFunction::BoolOr => Self::BoolOr,
         }
     }
 }

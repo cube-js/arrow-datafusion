@@ -57,6 +57,10 @@ pub enum AggregateFunction {
     ApproxPercentileContWithWeight,
     /// ApproxMedian
     ApproxMedian,
+    /// BoolAnd
+    BoolAnd,
+    /// BoolOr
+    BoolOr,
 }
 
 impl fmt::Display for AggregateFunction {
@@ -92,6 +96,8 @@ impl FromStr for AggregateFunction {
                 AggregateFunction::ApproxPercentileContWithWeight
             }
             "approx_median" => AggregateFunction::ApproxMedian,
+            "bool_and" => AggregateFunction::BoolAnd,
+            "bool_or" => AggregateFunction::BoolOr,
             _ => {
                 return Err(DataFusionError::Plan(format!(
                     "There is no built-in function named {}",

@@ -24,6 +24,7 @@ mod array_agg;
 mod average;
 #[macro_use]
 mod binary;
+mod bool_and_or;
 mod case;
 mod cast;
 mod column;
@@ -70,6 +71,7 @@ pub use array_agg::ArrayAgg;
 pub use average::is_avg_support_arg_type;
 pub use average::{avg_return_type, Avg, AvgAccumulator};
 pub use binary::{binary, binary_operator_data_type, BinaryExpr};
+pub use bool_and_or::{BoolAnd, BoolOr};
 pub use case::{case, CaseExpr};
 pub use cast::{
     cast, cast_column, cast_with_options, CastExpr, DEFAULT_DATAFUSION_CAST_OPTIONS,

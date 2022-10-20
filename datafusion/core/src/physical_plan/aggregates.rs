@@ -83,6 +83,7 @@ pub fn return_type(
             Ok(coerced_data_types[0].clone())
         }
         AggregateFunction::ApproxMedian => Ok(coerced_data_types[0].clone()),
+        AggregateFunction::BoolAnd | AggregateFunction::BoolOr => Ok(DataType::Boolean),
     }
 }
 
@@ -297,6 +298,13 @@ pub fn create_aggregate_expr(
                 "MEDIAN(DISTINCT) aggregations are not available".to_string(),
             ));
         }
+        (AggregateFunction::BoolAnd, _) => Arc::new(expressions::BoolAnd::new(
+            coerced_phy_exprs[0].clone(),
+            name,
+        )),
+        (AggregateFunction::BoolOr, _) => {
+            Arc::new(expressions::BoolOr::new(coerced_phy_exprs[0].clone(), name))
+        }
     })
 }
 
@@ -374,6 +382,9 @@ pub(super) fn signature(fun: &AggregateFunction) -> Signature {
                 .collect(),
             Volatility::Immutable,
         ),
+        AggregateFunction::BoolAnd | AggregateFunction::BoolOr => {
+            Signature::exact(vec![DataType::Boolean], Volatility::Immutable)
+        }
     }
 }
 
@@ -381,9 +392,9 @@ pub(super) fn signature(fun: &AggregateFunction) -> Signature {
 mod tests {
     use super::*;
     use crate::physical_plan::expressions::{
-        ApproxDistinct, ApproxMedian, ApproxPercentileCont, ArrayAgg, Avg, Correlation,
-        Count, Covariance, DistinctArrayAgg, DistinctCount, Max, Min, Stddev, Sum,
-        Variance,
+        ApproxDistinct, ApproxMedian, ApproxPercentileCont, ArrayAgg, Avg, BoolAnd,
+        BoolOr, Correlation, Count, Covariance, DistinctArrayAgg, DistinctCount, Max,
+        Min, Stddev, Sum, Variance,
     };
     use crate::{error::Result, scalar::ScalarValue};
 
@@ -996,6 +1007,45 @@ mod tests {
     }
 
     #[test]
+    fn test_bool_and_or_expr() -> Result<()> {
+        let funcs = vec![AggregateFunction::BoolAnd, AggregateFunction::BoolOr];
+        for fun in funcs {
+            let input_schema =
+                Schema::new(vec![Field::new("c1", DataType::Boolean, true)]);
+            let input_phy_exprs: Vec<Arc<dyn PhysicalExpr>> = vec![Arc::new(
+                expressions::Column::new_with_schema("c1", &input_schema).unwrap(),
+            )];
+            let result_agg_phy_exprs = create_aggregate_expr(
+                &fun,
+                false,
+                &input_phy_exprs[0..1],
+                &input_schema,
+                "c1",
+            )?;
+            match fun {
+                AggregateFunction::BoolAnd => {
+                    assert!(result_agg_phy_exprs.as_any().is::<BoolAnd>());
+                    assert_eq!("c1", result_agg_phy_exprs.name());
+                    assert_eq!(
+                        Field::new("c1", DataType::Boolean, true),
+                        result_agg_phy_exprs.field().unwrap()
+                    );
+                }
+                AggregateFunction::BoolOr => {
+                    assert!(result_agg_phy_exprs.as_any().is::<BoolOr>());
+                    assert_eq!("c1", result_agg_phy_exprs.name());
+                    assert_eq!(
+                        Field::new("c1", DataType::Boolean, true),
+                        result_agg_phy_exprs.field().unwrap()
+                    );
+                }
+                _ => {}
+            };
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_median() -> Result<()> {
         let observed = return_type(&AggregateFunction::ApproxMedian, &[DataType::Utf8]);
         assert!(observed.is_err());
@@ -1156,6 +1206,34 @@ mod tests {
     #[test]
     fn test_stddev_no_utf8() {
         let observed = return_type(&AggregateFunction::Stddev, &[DataType::Utf8]);
+        assert!(observed.is_err());
+    }
+
+    #[test]
+    fn test_bool_and_return_type() -> Result<()> {
+        let observed = return_type(&AggregateFunction::BoolAnd, &[DataType::Boolean])?;
+        assert_eq!(DataType::Boolean, observed);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bool_and_no_utf8() {
+        let observed = return_type(&AggregateFunction::BoolAnd, &[DataType::Utf8]);
+        assert!(observed.is_err());
+    }
+
+    #[test]
+    fn test_bool_or_return_type() -> Result<()> {
+        let observed = return_type(&AggregateFunction::BoolOr, &[DataType::Boolean])?;
+        assert_eq!(DataType::Boolean, observed);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bool_or_no_utf8() {
+        let observed = return_type(&AggregateFunction::BoolOr, &[DataType::Utf8]);
         assert!(observed.is_err());
     }
 }

@@ -179,6 +179,24 @@ pub fn approx_percentile_cont_with_weight(
     }
 }
 
+/// Create an expression to represent the bool_and() aggregate function
+pub fn bool_and(expr: Expr) -> Expr {
+    Expr::AggregateFunction {
+        fun: aggregate_function::AggregateFunction::BoolAnd,
+        distinct: false,
+        args: vec![expr],
+    }
+}
+
+/// Create an expression to represent the bool_or() aggregate function
+pub fn bool_or(expr: Expr) -> Expr {
+    Expr::AggregateFunction {
+        fun: aggregate_function::AggregateFunction::BoolOr,
+        distinct: false,
+        args: vec![expr],
+    }
+}
+
 // TODO(kszucs): this seems buggy, unary_scalar_expr! is used for many
 // varying arity functions
 /// Create an convenience function representing a unary scalar function
