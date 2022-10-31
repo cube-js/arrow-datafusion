@@ -211,6 +211,7 @@ pub fn return_type(
         BuiltinScalarFunction::UtcTimestamp => {
             Ok(DataType::Timestamp(TimeUnit::Nanosecond, None))
         }
+        BuiltinScalarFunction::CurrentDate => Ok(DataType::Date32),
         BuiltinScalarFunction::Translate => {
             utf8_to_str_type(&input_expr_types[0], "translate")
         }
@@ -890,6 +891,12 @@ pub fn create_physical_fun(
         BuiltinScalarFunction::UtcTimestamp => {
             // bind value for utc_timestamp at plan time
             Arc::new(datetime_expressions::make_utc_timestamp(
+                execution_props.query_execution_start_time,
+            ))
+        }
+        BuiltinScalarFunction::CurrentDate => {
+            // bind value for current_date at plan time
+            Arc::new(datetime_expressions::make_current_date(
                 execution_props.query_execution_start_time,
             ))
         }

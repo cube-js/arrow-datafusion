@@ -324,6 +324,14 @@ pub fn coalesce(args: Vec<Expr>) -> Expr {
     }
 }
 
+/// Returns current UTC date as a [`DataType::Date32`] value
+pub fn current_date() -> Expr {
+    Expr::ScalarFunction {
+        fun: built_in_function::BuiltinScalarFunction::CurrentDate,
+        args: vec![],
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

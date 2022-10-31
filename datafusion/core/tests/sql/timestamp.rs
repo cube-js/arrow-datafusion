@@ -814,3 +814,35 @@ async fn group_by_timestamp_millis() -> Result<()> {
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
+
+#[tokio::test]
+async fn test_current_date() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    let sql = "select current_date() dt";
+    let results = execute_to_batches(&ctx, sql).await;
+    assert_eq!(
+        results[0]
+            .schema()
+            .field_with_name("dt")
+            .unwrap()
+            .data_type()
+            .to_owned(),
+        DataType::Date32
+    );
+
+    let sql = "select case when current_date() = cast(now() as date) then 'OK' else 'FAIL' end result";
+    let results = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+--------+",
+        "| result |",
+        "+--------+",
+        "| OK     |",
+        "+--------+",
+    ];
+
+    assert_batches_eq!(expected, &results);
+
+    Ok(())
+}
