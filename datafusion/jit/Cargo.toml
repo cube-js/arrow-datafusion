@@ -36,7 +36,7 @@ path = "src/lib.rs"
 jit = []
 
 [dependencies]
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "0a23deccf4e589768177fbaa7a3745c8b25f63c9" }
+arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "d0466eca208313f3a8b669794e0bdc920151e19e" }
 cranelift = "0.82.0"
 cranelift-jit = "0.82.0"
 cranelift-module = "0.82.0"
