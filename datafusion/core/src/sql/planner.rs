@@ -379,7 +379,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     }
                 }
             }
-            SetExpr::Query(q) => self.query_to_plan(*q),
+            SetExpr::Query(q) => self.query_to_plan_with_alias(*q, None, ctes),
             _ => Err(DataFusionError::NotImplemented(format!(
                 "Query {} not implemented yet",
                 set_expr
@@ -4859,6 +4859,25 @@ mod tests {
     fn test_at_time_zone() {
         let sql = "select CAST(158412331400600000 as timestamp) AT TIME ZONE 'Etc/UTC';";
         let expected = "Projection: CAST(Int64(158412331400600000) AS Timestamp(Nanosecond, None))\n  EmptyRelation";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn test_union_ctes() {
+        let sql = "\
+        \n  WITH w AS (SELECT 1 l)\
+        \n  SELECT w.l\
+        \n  FROM w\
+        \n  UNION ALL (SELECT w.l FROM w)\
+        \n;";
+        let expected = "\
+        Union\
+        \n  Projection: #w.l\
+        \n    Projection: Int64(1) AS l, alias=w\
+        \n      EmptyRelation\
+        \n  Projection: #w.l\
+        \n    Projection: Int64(1) AS l, alias=w\
+        \n      EmptyRelation";
         quick_test(sql, expected);
     }
 }
