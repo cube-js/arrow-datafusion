@@ -348,7 +348,9 @@ fn batches_to_paths(batches: &[RecordBatch]) -> Vec<PartitionedFile> {
             (0..batch.num_rows()).map(move |row| PartitionedFile {
                 file_meta: FileMeta {
                     last_modified: match modified_array.is_null(row) {
-                        false => Some(Utc.timestamp_millis(modified_array.value(row))),
+                        false => {
+                            Some(to_timestamp_millis(modified_array.value(row)).unwrap())
+                        }
                         true => None,
                     },
                     sized_file: SizedFile {
@@ -364,6 +366,20 @@ fn batches_to_paths(batches: &[RecordBatch]) -> Vec<PartitionedFile> {
             })
         })
         .collect()
+}
+
+fn to_timestamp_millis(v: i64) -> Result<chrono::DateTime<Utc>> {
+    match Utc.timestamp_millis_opt(v) {
+        chrono::LocalResult::None => Err(DataFusionError::Execution(format!(
+            "Can not convert {} to UTC millisecond timestamp",
+            v
+        ))),
+        chrono::LocalResult::Single(v) => Ok(v),
+        chrono::LocalResult::Ambiguous(_, _) => Err(DataFusionError::Execution(format!(
+            "Ambiguous timestamp when converting {} to UTC millisecond timestamp",
+            v
+        ))),
+    }
 }
 
 /// Extract the partition values for the given `file_path` (in the given `table_path`)
@@ -649,7 +665,7 @@ mod tests {
                     path: String::from("mybucket/tablepath/part1=val1/file.parquet"),
                     size: 100,
                 },
-                last_modified: Some(Utc.timestamp_millis(1634722979123)),
+                last_modified: Some(to_timestamp_millis(1634722979123).unwrap()),
             },
             FileMeta {
                 sized_file: SizedFile {
@@ -683,7 +699,7 @@ mod tests {
                     path: String::from("mybucket/tablepath/part1=val1/file.parquet"),
                     size: 100,
                 },
-                last_modified: Some(Utc.timestamp_millis(1634722979123)),
+                last_modified: Some(to_timestamp_millis(1634722979123).unwrap()),
             },
             FileMeta {
                 sized_file: SizedFile {
