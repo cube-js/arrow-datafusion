@@ -27,7 +27,7 @@ use crate::logical_plan::{
 use crate::optimizer::optimizer::OptimizerConfig;
 use crate::optimizer::optimizer::OptimizerRule;
 use crate::optimizer::utils;
-use datafusion_expr::Expr;
+use datafusion_expr::{Expr, Volatility};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -41,7 +41,7 @@ impl OptimizerRule for ProjectionDropOut {
         plan: &LogicalPlan,
         optimizer_config: &OptimizerConfig,
     ) -> Result<LogicalPlan> {
-        optimize_plan(plan, optimizer_config, false).map(|(p, _)| p)
+        optimize_plan(plan, optimizer_config, false, false).map(|(p, _)| p)
     }
 
     fn name(&self) -> &str {
@@ -61,6 +61,7 @@ fn optimize_plan(
     plan: &LogicalPlan,
     _optimizer_config: &OptimizerConfig,
     projection_child: bool,
+    aliased_projection: bool,
 ) -> Result<(LogicalPlan, Option<HashMap<Column, Expr>>)> {
     match plan {
         LogicalPlan::Projection(Projection {
@@ -70,7 +71,7 @@ fn optimize_plan(
             alias,
         }) => {
             let (new_input, rewritten_exprs) =
-                optimize_plan(input, _optimizer_config, true)?;
+                optimize_plan(input, _optimizer_config, true, alias.is_some())?;
 
             if let Some(rewritten_exprs) = rewritten_exprs {
                 if !rewritten_exprs.is_empty() {
@@ -92,8 +93,8 @@ fn optimize_plan(
             }
 
             if let LogicalPlan::Projection(projection) = &new_input {
-                match (rewrite_expr_map(projection)?, alias) {
-                    (Some(rewritten_exprs), Some(_)) => {
+                if alias.is_some() {
+                    if let Some(rewritten_exprs) = rewrite_expr_map(projection)? {
                         let new_input = projection.input.clone();
                         return Ok((
                             LogicalPlan::Projection(Projection {
@@ -110,7 +111,6 @@ fn optimize_plan(
                             None,
                         ));
                     }
-                    _ => (),
                 }
             }
 
@@ -130,69 +130,82 @@ fn optimize_plan(
             schema,
             input,
         }) => {
-            let new_input = optimize_plan(input, _optimizer_config, false)?.0;
+            let new_input =
+                optimize_plan(input, _optimizer_config, false, aliased_projection)?.0;
             if projection_child {
                 if let LogicalPlan::Projection(projection) = &new_input {
-                    let rewritten_exprs = rewrite_expr_map(projection)?;
+                    if let LogicalPlan::Aggregate(child_aggregate) = &*projection.input {
+                        if projection.alias.is_none() || aliased_projection {
+                            let rewritten_exprs = rewrite_expr_map(projection)?;
 
-                    if let Some(rewritten_exprs) = rewritten_exprs {
-                        let new_input = projection.input.as_ref().clone();
-                        let mut rewritten_expr = HashMap::new();
-                        let rewrite_map = rewritten_exprs.iter().collect();
+                            if let Some(rewritten_exprs) = rewritten_exprs {
+                                let new_input = projection.input.as_ref().clone();
+                                let mut rewritten_expr = HashMap::new();
+                                let rewrite_map = rewritten_exprs.iter().collect();
 
-                        let res = rewrite_aggregate_expr(
-                            group_expr,
-                            schema,
-                            &new_input,
-                            &rewrite_map,
-                        )?;
-                        let new_group_expr = res.0;
+                                let res = rewrite_aggregate_expr(
+                                    group_expr,
+                                    schema,
+                                    &new_input,
+                                    &rewrite_map,
+                                )?;
+                                let new_group_expr = res.0;
 
-                        rewritten_expr.extend(res.1.into_iter());
+                                rewritten_expr.extend(res.1.into_iter());
 
-                        let res = rewrite_aggregate_expr(
-                            aggr_expr,
-                            schema,
-                            &new_input,
-                            &rewrite_map,
-                        )?;
-                        let new_aggr_expr = res.0;
+                                let res = rewrite_aggregate_expr(
+                                    aggr_expr,
+                                    schema,
+                                    &new_input,
+                                    &rewrite_map,
+                                )?;
+                                let new_aggr_expr = res.0;
 
-                        rewritten_expr.extend(res.1.into_iter());
+                                rewritten_expr.extend(res.1.into_iter());
 
-                        let schema = Arc::new(DFSchema::new_with_metadata(
-                            schema
-                                .fields()
-                                .iter()
-                                .map(|f| {
-                                    if let Some(Expr::Column(value)) =
-                                        rewritten_expr.get(&Column::from_qualified_name(
-                                            f.qualified_name().as_str(),
-                                        ))
-                                    {
-                                        DFField::new(
-                                            value.relation.as_ref().map(|s| s.as_str()),
-                                            value.name.as_str(),
-                                            f.data_type().clone(),
-                                            f.is_nullable(),
-                                        )
-                                    } else {
-                                        f.clone()
-                                    }
-                                })
-                                .collect::<Vec<DFField>>(),
-                            HashMap::new(),
-                        )?);
+                                let schema = Arc::new(DFSchema::new_with_metadata(
+                                    schema
+                                        .fields()
+                                        .iter()
+                                        .map(|f| {
+                                            if let Some(Expr::Column(value)) =
+                                                rewritten_expr.get(
+                                                    &Column::from_qualified_name(
+                                                        f.qualified_name().as_str(),
+                                                    ),
+                                                )
+                                            {
+                                                DFField::new(
+                                                    value.relation.as_deref(),
+                                                    value.name.as_str(),
+                                                    f.data_type().clone(),
+                                                    f.is_nullable(),
+                                                )
+                                            } else {
+                                                f.clone()
+                                            }
+                                        })
+                                        .collect::<Vec<DFField>>(),
+                                    HashMap::new(),
+                                )?);
 
-                        return Ok((
-                            LogicalPlan::Aggregate(Aggregate {
-                                group_expr: new_group_expr,
-                                aggr_expr: new_aggr_expr,
-                                schema: schema,
-                                input: Arc::new(new_input),
-                            }),
-                            Some(rewritten_expr),
-                        ));
+                                let new_aggregate = Aggregate {
+                                    group_expr: new_group_expr,
+                                    aggr_expr: new_aggr_expr,
+                                    schema,
+                                    input: Arc::new(new_input),
+                                };
+
+                                if let Some(merged_aggregate) =
+                                    merge_aggregate(&new_aggregate, child_aggregate)
+                                {
+                                    return Ok((
+                                        LogicalPlan::Aggregate(merged_aggregate),
+                                        Some(rewritten_expr),
+                                    ));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -208,7 +221,8 @@ fn optimize_plan(
             ))
         }
         LogicalPlan::Filter(Filter { predicate, input }) => {
-            let (new_input, rewrite_map) = optimize_plan(input, _optimizer_config, true)?;
+            let (new_input, rewrite_map) =
+                optimize_plan(input, _optimizer_config, true, aliased_projection)?;
 
             let new_predicate = match (&new_input, &rewrite_map) {
                 (LogicalPlan::Aggregate(_), Some(rewrite_map)) => {
@@ -226,7 +240,8 @@ fn optimize_plan(
             ))
         }
         LogicalPlan::Sort(Sort { expr, input }) => {
-            let (new_input, _) = optimize_plan(input, _optimizer_config, true)?;
+            let (new_input, _) =
+                optimize_plan(input, _optimizer_config, true, aliased_projection)?;
 
             Ok((
                 LogicalPlan::Sort(Sort {
@@ -245,7 +260,13 @@ fn optimize_plan(
             Ok((
                 LogicalPlan::Subquery(Subquery {
                     input: Arc::new(
-                        optimize_plan(input, _optimizer_config, false).map(|(p, _)| p)?,
+                        optimize_plan(
+                            input,
+                            _optimizer_config,
+                            false,
+                            aliased_projection,
+                        )
+                        .map(|(p, _)| p)?,
                     ),
                     subqueries: subqueries.clone(),
                     schema: schema.clone(),
@@ -265,7 +286,10 @@ fn optimize_plan(
             let inputs = plan
                 .inputs()
                 .into_iter()
-                .map(|i| optimize_plan(i, _optimizer_config, false).map(|(p, _)| p))
+                .map(|i| {
+                    optimize_plan(i, _optimizer_config, false, aliased_projection)
+                        .map(|(p, _)| p)
+                })
                 .collect::<Result<Vec<LogicalPlan>>>()?;
 
             utils::from_plan(plan, &expr, &inputs).map(|p| (p, None))
@@ -319,11 +343,11 @@ fn rewrite_expr_map(projection: &Projection) -> Result<Option<HashMap<Column, Ex
         }
     }
 
-    return Ok(Some(rewritten_exprs));
+    Ok(Some(rewritten_exprs))
 }
 
 fn rewrite_projection_expr(
-    expr: &Vec<Expr>,
+    expr: &[Expr],
     schema: &Arc<DFSchema>,
     input: &LogicalPlan,
     rewrite_map: HashMap<&Column, &Expr>,
@@ -332,13 +356,13 @@ fn rewrite_projection_expr(
         .map(|e| match replace_col_to_expr(e.clone(), &rewrite_map) {
             Ok(expr) => {
                 let old_name = expr_name(e, schema)?;
-                let new_e = normalize_col(unnormalize_col(expr), &input)?;
+                let new_e = normalize_col(unnormalize_col(expr), input)?;
 
-                return Ok(if old_name != expr_name(&new_e, schema)? {
+                Ok(if old_name != expr_name(&new_e, schema)? {
                     Expr::Alias(Box::new(new_e), old_name)
                 } else {
                     new_e
-                });
+                })
             }
             Err(e) => Err(e),
         })
@@ -346,7 +370,7 @@ fn rewrite_projection_expr(
 }
 
 fn rewrite_aggregate_expr(
-    expr: &Vec<Expr>,
+    expr: &[Expr],
     schema: &Arc<DFSchema>,
     input: &LogicalPlan,
     rewrite_map: &HashMap<&Column, &Expr>,
@@ -373,13 +397,136 @@ fn rewrite_aggregate_expr(
         })
         .collect::<Result<Vec<Expr>>>()?;
 
-    return Ok((exprs, rewritten_map));
+    Ok((exprs, rewritten_map))
 }
 
 fn expr_name(e: &Expr, schema: &Arc<DFSchema>) -> Result<String> {
     match e {
         Expr::Column(col) => Ok(col.name.clone()),
         _ => e.name(schema),
+    }
+}
+
+fn merge_aggregate(parent: &Aggregate, child: &Aggregate) -> Option<Aggregate> {
+    // Aggregates can't be merged with parent having aggr_expr as child group_expr
+    // might change the aggregate result
+    if !parent.aggr_expr.is_empty() {
+        return None;
+    }
+
+    // If all values in child group_expr are part of parent group_expr,
+    // the grouping result will be equal
+    let can_merge_group_expr = child.group_expr.iter().all(|child_expr| {
+        let exact_contains = parent.group_expr.contains(child_expr);
+        if exact_contains {
+            return true;
+        }
+        let column = Expr::Column(child_expr.to_string().as_str().into());
+        parent.group_expr.contains(&column)
+    });
+    if !can_merge_group_expr {
+        return None;
+    }
+
+    // Collect new literal expressions from parent aggregate
+    let mut new_group_expr = child.group_expr.clone();
+    let mut new_schema_fields = Vec::new();
+    for (index, expr) in parent.group_expr.iter().enumerate() {
+        if child.group_expr.contains(expr) || !is_literal_expr(expr) {
+            continue;
+        }
+
+        new_group_expr.push(expr.clone());
+        new_schema_fields.push(parent.schema.field(index).clone())
+    }
+
+    // Join schema fields. aggr_expr fields from the child schema must go last
+    let new_schema_fields = child.schema.fields()[..child.group_expr.len()]
+        .iter()
+        .cloned()
+        .chain(new_schema_fields.into_iter())
+        .chain(
+            child.schema.fields()[child.group_expr.len()..]
+                .iter()
+                .cloned(),
+        )
+        .collect::<Vec<_>>();
+    let new_schema_metadata = child
+        .schema
+        .metadata()
+        .clone()
+        .into_iter()
+        .chain(parent.schema.metadata().clone().into_iter())
+        .collect();
+    let new_schema =
+        DFSchema::new_with_metadata(new_schema_fields, new_schema_metadata).ok()?;
+
+    Some(Aggregate {
+        input: child.input.clone(),
+        group_expr: new_group_expr,
+        aggr_expr: child.aggr_expr.clone(),
+        schema: Arc::new(new_schema),
+    })
+}
+
+// Recursively traverses the expression to figure out whether it's a literal
+fn is_literal_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Literal(_) => true,
+        Expr::Alias(expr, _)
+        | Expr::Not(expr)
+        | Expr::IsNotNull(expr)
+        | Expr::IsNull(expr)
+        | Expr::Negative(expr)
+        | Expr::Cast { expr, .. }
+        | Expr::TryCast { expr, .. } => is_literal_expr(expr),
+        Expr::BinaryExpr { left, right, .. } | Expr::AnyExpr { left, right, .. } => {
+            is_literal_expr(left) && is_literal_expr(right)
+        }
+        Expr::GetIndexedField { expr, key } => {
+            is_literal_expr(expr) && is_literal_expr(key)
+        }
+        Expr::Between {
+            expr, low, high, ..
+        } => is_literal_expr(expr) && is_literal_expr(low) && is_literal_expr(high),
+        Expr::Case {
+            expr,
+            when_then_expr,
+            else_expr,
+        } => {
+            expr.as_ref()
+                .map(|expr| is_literal_expr(expr))
+                .unwrap_or(true)
+                && when_then_expr
+                    .iter()
+                    .all(|(when, then)| is_literal_expr(when) && is_literal_expr(then))
+                && else_expr
+                    .as_ref()
+                    .map(|else_expr| is_literal_expr(else_expr))
+                    .unwrap_or(true)
+        }
+        Expr::ScalarFunction { fun, args } => match fun.volatility() {
+            Volatility::Immutable | Volatility::Stable => {
+                args.iter().all(is_literal_expr)
+            }
+            Volatility::Volatile => false,
+        },
+        Expr::ScalarUDF { fun, args } => match fun.signature.volatility {
+            Volatility::Immutable | Volatility::Stable => {
+                args.iter().all(is_literal_expr)
+            }
+            Volatility::Volatile => false,
+        },
+        Expr::TableUDF { fun, args } => match fun.signature.volatility {
+            Volatility::Immutable | Volatility::Stable => {
+                args.iter().all(is_literal_expr)
+            }
+            Volatility::Volatile => false,
+        },
+        Expr::InList { expr, list, .. } => {
+            is_literal_expr(expr) && list.iter().all(is_literal_expr)
+        }
+        _ => false,
     }
 }
 
@@ -592,7 +739,7 @@ mod tests {
         let table_scan = test_table_scan()?;
 
         // select * from (select round(id) first, num second, 2 third from (select a id, 1 num from table) a where id > 0) x;
-        let plan = LogicalPlanBuilder::from(table_scan.clone())
+        let plan = LogicalPlanBuilder::from(table_scan)
             .project_with_alias(
                 vec![col("a").alias("id"), lit(1).alias("n")],
                 Some("a".to_string()),
@@ -674,7 +821,7 @@ mod tests {
         let table_scan = test_table_scan()?;
 
         // select * from (select round(id) first, 2 second from (select a id from pg_class) a order by round(id)) x;
-        let plan = LogicalPlanBuilder::from(table_scan.clone())
+        let plan = LogicalPlanBuilder::from(table_scan)
             .project_with_alias(vec![col("a").alias("id")], Some("a".to_string()))?
             .project_with_alias(
                 vec![round(col("id")).alias("first"), lit(2).alias("second")],
@@ -706,9 +853,10 @@ mod tests {
             .project(vec![col("a")])?
             .build()?;
 
-        let expected = "Projection: #test.a\
-        \n  Aggregate: groupBy=[[#test.a]], aggr=[[]]\
-        \n    TableScan: test projection=None";
+        let expected = "Projection: #b.a\
+        \n  Aggregate: groupBy=[[#b.a]], aggr=[[]]\
+        \n    Projection: #test.a, alias=b\
+        \n      TableScan: test projection=None";
 
         assert_optimized_plan_eq(&plan, expected);
 
@@ -721,10 +869,12 @@ mod tests {
             .project(vec![col("a"), col("COUNT(b.a)")])?
             .build()?;
 
-        let expected = "Projection: #test.a, #COUNT(test.a) AS COUNT(b.a)\
-        \n  Aggregate: groupBy=[[#test.a]], aggr=[[COUNT(#test.a)]]\
-        \n    Aggregate: groupBy=[[#test.a]], aggr=[[]]\
-        \n      TableScan: test projection=None";
+        let expected = "Projection: #b.a, #COUNT(b.a)\
+        \n  Aggregate: groupBy=[[#b.a]], aggr=[[COUNT(#b.a)]]\
+        \n    Projection: #a.a, alias=b\
+        \n      Aggregate: groupBy=[[#a.a]], aggr=[[]]\
+        \n        Projection: #test.a, alias=a\
+        \n          TableScan: test projection=None";
 
         assert_optimized_plan_eq(&plan, expected);
 
@@ -767,9 +917,9 @@ mod tests {
             ])?
             .build()?;
 
-        let expected = "Projection: #test.a, #Int32(1), #COUNT(test.a), #Int32(2)\
-        \n  Aggregate: groupBy=[[#test.a, #Int32(1), #COUNT(test.a), Int32(2)]], aggr=[[]]\
-        \n    Aggregate: groupBy=[[#test.a, #Int32(1), #COUNT(test.a)]], aggr=[[]]\
+        let expected = "Projection: #b.a, #b.Int32(1), #b.COUNT(test.a), #b.Int32(2)\
+        \n  Aggregate: groupBy=[[#b.a, #b.Int32(1), #b.COUNT(test.a), #b.Int32(2)]], aggr=[[]]\
+        \n    Projection: #test.a, #Int32(1), #COUNT(test.a), Int32(2), alias=b\
         \n      Aggregate: groupBy=[[#test.a, Int32(1)]], aggr=[[COUNT(#test.a)]]\
         \n        TableScan: test projection=None";
 
@@ -808,10 +958,11 @@ mod tests {
             .build()?;
 
         let expected = "Projection: #b.first, #b.second, #b.third, #b.COUNT(a.id)\
-        \n  Projection: #id AS first, #num AS second, #Int32(2) AS third, #COUNT(id) AS COUNT(a.id), alias=b\
-        \n    Aggregate: groupBy=[[#id, #num, Int32(2)]], aggr=[[COUNT(#id)]]\
-        \n      Aggregate: groupBy=[[#test.a AS id, Int32(1) AS num]], aggr=[[]]\
-        \n        TableScan: test projection=None";
+        \n  Projection: #a.id AS first, #a.num AS second, #Int32(2) AS third, #COUNT(a.id), alias=b\
+        \n    Aggregate: groupBy=[[#a.id, #a.num, Int32(2)]], aggr=[[COUNT(#a.id)]]\
+        \n      Projection: #id, #num, alias=a\
+        \n        Aggregate: groupBy=[[#test.a AS id, Int32(1) AS num]], aggr=[[]]\
+        \n          TableScan: test projection=None";
 
         assert_optimized_plan_eq(&plan, expected);
 
@@ -897,9 +1048,10 @@ mod tests {
             .build()?;
 
         let expected = "Sort: #round(b.num)\
-        \n  Projection: #round(test.a) AS round(b.num)\
-        \n    Aggregate: groupBy=[[round(#test.a)]], aggr=[[]]\
-        \n      TableScan: test projection=None";
+        \n  Projection: #round(b.num)\
+        \n    Aggregate: groupBy=[[round(#b.num)]], aggr=[[]]\
+        \n      Projection: #test.a AS num, alias=b\
+        \n        TableScan: test projection=None";
 
         assert_optimized_plan_eq(&plan, expected);
 
@@ -917,9 +1069,10 @@ mod tests {
         let expected = "Projection: #x.round(b.num)\
         \n  Projection: #round(b.num), alias=x\
         \n    Sort: #round(b.num)\
-        \n      Projection: #round(test.a) AS round(b.num)\
-        \n        Aggregate: groupBy=[[round(#test.a)]], aggr=[[]]\
-        \n          TableScan: test projection=None";
+        \n      Projection: #round(b.num)\
+        \n        Aggregate: groupBy=[[round(#b.num)]], aggr=[[]]\
+        \n          Projection: #test.a AS num, alias=b\
+        \n            TableScan: test projection=None";
 
         assert_optimized_plan_eq(&plan, expected);
 

@@ -705,6 +705,151 @@ async fn csv_query_array_agg_distinct() -> Result<()> {
 }
 
 #[tokio::test]
+async fn csv_query_projection_drop_out_aggr_merge() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_aggregate_csv(&ctx).await?;
+
+    // Nested aggregate
+    let sql = "
+        SELECT c1, COUNT(c1)
+        FROM (
+            SELECT c1
+            FROM (
+                SELECT c1
+                FROM aggregate_test_100
+            ) t
+            GROUP BY 1
+        ) t
+        GROUP BY 1
+        ORDER BY c1
+    ";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----+-------------+",
+        "| c1 | COUNT(t.c1) |",
+        "+----+-------------+",
+        "| a  | 1           |",
+        "| b  | 1           |",
+        "| c  | 1           |",
+        "| d  | 1           |",
+        "| e  | 1           |",
+        "+----+-------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    // Aggregate with literals
+    // GROUP by exprs are swapped on purpose to test column index matching
+    let sql = "
+        SELECT *
+        FROM (
+            SELECT *, 2
+            FROM (
+                SELECT c1, 1, COUNT(c1)
+                FROM aggregate_test_100
+                GROUP BY 1, 2
+            ) t
+            GROUP BY 1, 2, 3
+        ) t
+        GROUP BY 2, 1, 3, 4
+        ORDER BY c1
+    ";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----+----------+------------------------------+----------+",
+        "| c1 | Int64(1) | COUNT(aggregate_test_100.c1) | Int64(2) |",
+        "+----+----------+------------------------------+----------+",
+        "| a  | 1        | 21                           | 2        |",
+        "| b  | 1        | 19                           | 2        |",
+        "| c  | 1        | 21                           | 2        |",
+        "| d  | 1        | 18                           | 2        |",
+        "| e  | 1        | 21                           | 2        |",
+        "+----+----------+------------------------------+----------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    // Aggregate with alias skip
+    let sql = "
+        SELECT *
+        FROM (
+            SELECT str first, num \"second\", 2 third, COUNT(str)
+            FROM (
+                SELECT c1 str, 1 num
+                FROM aggregate_test_100
+            ) t1
+            GROUP BY 1, 2, 3
+        ) t2
+        ORDER BY first
+    ";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------+--------+-------+---------------+",
+        "| first | second | third | COUNT(t1.str) |",
+        "+-------+--------+-------+---------------+",
+        "| a     | 1      | 2     | 21            |",
+        "| b     | 1      | 2     | 19            |",
+        "| c     | 1      | 2     | 21            |",
+        "| d     | 1      | 2     | 18            |",
+        "| e     | 1      | 2     | 21            |",
+        "+-------+--------+-------+---------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    // Aggregate with order, limit and offset
+    let sql = "
+        SELECT *
+        FROM (
+        SELECT str first, num \"second\", 2 third
+            FROM (
+                SELECT c1 str, 1 num
+                FROM aggregate_test_100
+                GROUP BY 1, 2
+                ORDER BY 1
+                LIMIT 4
+            ) t1
+            GROUP BY 1, 2, 3
+            ORDER BY 1 DESC
+            LIMIT 2
+            OFFSET 1
+        ) t2
+    ";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------+--------+-------+",
+        "| first | second | third |",
+        "+-------+--------+-------+",
+        "| c     | 1      | 2     |",
+        "| b     | 1      | 2     |",
+        "+-------+--------+-------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    // Aggregate with filter
+    let sql = "
+        SELECT round(num * 2.25)
+        FROM (
+            SELECT c2 num
+            FROM aggregate_test_100
+        ) t
+        WHERE num > 2
+        GROUP BY 1
+        ORDER BY 1
+    ";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------------------------+",
+        "| round(t.num Multiply Float64(2.25)) |",
+        "+-------------------------------------+",
+        "| 7                                   |",
+        "| 9                                   |",
+        "| 11                                  |",
+        "+-------------------------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn aggregate_timestamps_sum() -> Result<()> {
     let ctx = SessionContext::new();
     ctx.register_table("t", table_with_timestamps()).unwrap();
