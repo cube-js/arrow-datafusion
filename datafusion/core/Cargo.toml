@@ -55,7 +55,7 @@ unicode_expressions = ["datafusion-physical-expr/regex_expressions"]
 
 [dependencies]
 ahash = { version = "0.7", default-features = false }
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "9025ed8fe15569b60daa6a148775334289b2f442", features = ["prettyprint"] }
+arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "51f62a72c625cad48c8bd705e89834c3209744b3", features = ["prettyprint"] }
 async-trait = "0.1.41"
 avro-rs = { version = "0.13", features = ["snappy"], optional = true }
 chrono = { version = "0.4", default-features = false }
@@ -73,13 +73,13 @@ num-traits = { version = "0.2", optional = true }
 num_cpus = "1.13.0"
 ordered-float = "2.10"
 parking_lot = "0.12"
-parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "9025ed8fe15569b60daa6a148775334289b2f442", features = ["arrow"] }
+parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "51f62a72c625cad48c8bd705e89834c3209744b3", features = ["arrow"] }
 paste = "^1.0"
 pin-project-lite= "^0.2.7"
 pyo3 = { version = "0.16", optional = true }
 rand = "0.8"
 smallvec = { version = "1.6", features = ["union"] }
-sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "2b18e22a179770f1297896d52ae384f00949ab2a" }
+sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "883cc6a3cf8483ecdcba22ebf9ba8215c9abcb11" }
 tempfile = "3"
 tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync", "fs", "parking_lot"] }
 tokio-stream = "0.1"
