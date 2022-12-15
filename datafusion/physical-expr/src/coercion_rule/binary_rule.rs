@@ -504,6 +504,9 @@ fn temporal_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataTyp
 
             Some(Timestamp(unit, tz))
         }
+        (Timestamp(unit, tz), Date32) | (Date32, Timestamp(unit, tz)) => {
+            Some(Timestamp(unit.clone(), tz.clone()))
+        }
         _ => None,
     }
 }
