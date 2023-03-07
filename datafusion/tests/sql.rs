@@ -3461,6 +3461,14 @@ async fn test_interval_expressions() -> Result<()> {
         "0 years 1 mons 0 days 0 hours 0 mins 0.00 secs"
     );
     test_expression!(
+        "interval '1 quarter'",
+        "0 years 3 mons 0 days 0 hours 0 mins 0.00 secs"
+    );
+    test_expression!(
+        "interval '2 quarter'",
+        "0 years 6 mons 0 days 0 hours 0 mins 0.00 secs"
+    );
+    test_expression!(
         "interval '1' MONTH",
         "0 years 1 mons 0 days 0 hours 0 mins 0.00 secs"
     );

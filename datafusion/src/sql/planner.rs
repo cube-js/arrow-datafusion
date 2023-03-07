@@ -1616,6 +1616,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
             match interval_type.to_lowercase().as_str() {
                 "year" => Ok(align_interval_parts(interval_period * 12_f32, 0.0, 0.0)),
+                "quarter" => Ok(align_interval_parts(interval_period * 3_f32, 0.0, 0.0)),
                 "month" => Ok(align_interval_parts(interval_period, 0.0, 0.0)),
                 "week" | "weeks" => Ok(align_interval_parts(
                     0.0,
