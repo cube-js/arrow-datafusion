@@ -19,8 +19,9 @@
 
 use std::collections::HashSet;
 use std::iter;
+use std::ops::RangeFrom;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::{convert::TryInto, vec};
 
 use crate::catalog::TableReference;
@@ -32,7 +33,7 @@ use crate::logical_plan::{
     and, builder::expand_qualified_wildcard, builder::expand_wildcard, col, lit,
     normalize_col, rewrite_udtfs_to_columns, Column, CreateMemoryTable, DFSchema,
     DFSchemaRef, DropTable, Expr, ExprSchemable, Like, LogicalPlan, LogicalPlanBuilder,
-    Operator, PlanType, ToDFSchema, ToStringifiedPlan,
+    Operator, PlanType, SubqueryType, ToDFSchema, ToStringifiedPlan,
 };
 use crate::optimizer::utils::exprlist_to_columns;
 use crate::prelude::JoinType;
@@ -97,13 +98,14 @@ pub struct SqlToRel<'a, S: ContextProvider> {
     schema_provider: &'a S,
     table_columns_precedence_over_projection: bool,
     context: SqlToRelContext,
+    subquery_alias_iter: Arc<Mutex<RangeFrom<u32>>>,
 }
 
 /// Planning context
 #[derive(Default)]
 pub struct SqlToRelContext {
     outer_query_context_schema: Vec<DFSchemaRef>,
-    subqueries_plans: Option<RwLock<Vec<LogicalPlan>>>,
+    subqueries_plans: Option<RwLock<Vec<(LogicalPlan, SubqueryType)>>>,
 }
 
 impl SqlToRelContext {
@@ -115,12 +117,16 @@ impl SqlToRelContext {
         }
     }
 
-    fn add_subquery_plan(&self, plan: LogicalPlan) -> Result<()> {
-        self.subqueries_plans.as_ref().ok_or_else(|| DataFusionError::Plan(format!("Sub query {:?} planned outside of sub query context. This type of sub query isn't supported", plan)))?.write().unwrap().push(plan);
+    fn add_subquery_plan(
+        &self,
+        plan: LogicalPlan,
+        subquery_type: SubqueryType,
+    ) -> Result<()> {
+        self.subqueries_plans.as_ref().ok_or_else(|| DataFusionError::Plan(format!("Sub query {:?} planned outside of sub query context. This type of sub query isn't supported", plan)))?.write().unwrap().push((plan, subquery_type));
         Ok(())
     }
 
-    fn subqueries_plans(&self) -> Result<Option<Vec<LogicalPlan>>> {
+    fn subqueries_plans(&self) -> Result<Option<Vec<(LogicalPlan, SubqueryType)>>> {
         Ok(if let Some(subqueries) = self.subqueries_plans.as_ref() {
             Some(
                 subqueries
@@ -170,6 +176,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             schema_provider,
             table_columns_precedence_over_projection,
             context: SqlToRelContext::default(),
+            subquery_alias_iter: Arc::new(Mutex::new(0..)),
         }
     }
 
@@ -182,6 +189,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             table_columns_precedence_over_projection: self
                 .table_columns_precedence_over_projection,
             context,
+            subquery_alias_iter: Arc::clone(&self.subquery_alias_iter),
         }
     }
 
@@ -877,6 +885,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         selection: Option<SQLExpr>,
         plans: Vec<LogicalPlan>,
     ) -> Result<LogicalPlan> {
+        // TODO: enable subqueries for joins
         let plan = match selection {
             Some(predicate_expr) => {
                 // build join schema
@@ -978,6 +987,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 // remove join expressions from filter
                 match remove_join_expressions(&filter_expr, &all_join_keys)? {
                     Some(filter_expr) => {
+                        let left = self.wrap_with_subquery_plan_if_necessary(left)?;
                         LogicalPlanBuilder::from(left).filter(filter_expr)?.build()
                     }
                     _ => Ok(left),
@@ -1011,7 +1021,10 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         let empty_from = matches!(plans.first(), Some(LogicalPlan::EmptyRelation(_)));
 
         // process `where` clause
-        let plan = self.plan_selection(select.selection, plans)?;
+        let with_where_outer_query_context =
+            self.with_context(|c| c.subqueries_plans = Some(RwLock::new(Vec::new())));
+        let plan =
+            with_where_outer_query_context.plan_selection(select.selection, plans)?;
 
         // process the SELECT expressions, with wildcards expanded.
         let with_outer_query_context =
@@ -1200,8 +1213,10 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 .read()
                 .map_err(|e| DataFusionError::Plan(e.to_string()))?;
             if !subqueries.is_empty() {
+                let (subqueries, types): (Vec<_>, Vec<_>) =
+                    subqueries.clone().into_iter().unzip();
                 LogicalPlanBuilder::from(plan)
-                    .subquery(subqueries.clone())?
+                    .subquery(subqueries, types)?
                     .build()?
             } else {
                 plan
@@ -1439,7 +1454,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 Expr::Column(col) => match &col.relation {
                     Some(r) => {
                         if let Some(plans) = self.context.subqueries_plans()? {
-                            if plans.into_iter().any(|p| {
+                            if plans.into_iter().any(|(p, _)| {
                                 p.schema().field_with_qualified_name(r, &col.name).is_ok()
                             }) {
                                 return Ok(());
@@ -1450,7 +1465,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     }
                     None => {
                         if let Some(plans) = self.context.subqueries_plans()? {
-                            if plans.into_iter().any(|p| {
+                            if plans.into_iter().any(|(p, _)| {
                                 !p.schema()
                                     .fields_with_unqualified_name(&col.name)
                                     .is_empty()
@@ -2277,19 +2292,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
             SQLExpr::Nested(e) => self.sql_expr_to_logical_expr(*e, schema),
 
-            SQLExpr::Subquery(q) => {
-                let with_outer_query_context = self.with_context(|c| c.outer_query_context_schema.push(Arc::new(schema.clone())));
-                let alias_name = format!("subquery-{}", self.context.subqueries_plans().unwrap_or_default().unwrap_or_default().len());
-                let plan = with_outer_query_context.query_to_plan_with_alias(*q, Some(alias_name), &mut HashMap::new())?;
-
-                let fields = plan.schema().fields();
-                if fields.len() != 1 {
-                    return Err(DataFusionError::Plan(format!("Correlated sub query requires only one column in result set but found: {:?}", fields)));
-                }
-                let column = fields.iter().next().unwrap().qualified_column();
-                self.context.add_subquery_plan(plan)?;
-                Ok(Expr::Column(column))
-            }
+            SQLExpr::Subquery(q) => self.subquery_to_plan(q, SubqueryType::Scalar, schema),
 
             SQLExpr::DotExpr { expr, field } => {
                 Ok(Expr::GetIndexedField {
@@ -2713,6 +2716,46 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 Box::new(data_type),
             )))
         }
+    }
+
+    fn subquery_to_plan(
+        &self,
+        query: Box<Query>,
+        subquery_type: SubqueryType,
+        schema: &DFSchema,
+    ) -> Result<Expr> {
+        let with_outer_query_context = self.with_context(|c| {
+            c.outer_query_context_schema.push(Arc::new(schema.clone()))
+        });
+        let alias_name = {
+            let mut subquery_alias_iter = with_outer_query_context
+                .subquery_alias_iter
+                .lock()
+                .map_err(|_| {
+                    DataFusionError::Plan(
+                        "Unable to lock subquery alias iterator".to_string(),
+                    )
+                })?;
+            let alias_index = subquery_alias_iter.next().ok_or_else(|| {
+                DataFusionError::Plan(
+                    "Unable to assign an alias to a subquery".to_string(),
+                )
+            })?;
+            format!("__subquery-{}", alias_index)
+        };
+        let plan = with_outer_query_context.query_to_plan_with_alias(
+            *query,
+            Some(alias_name),
+            &mut HashMap::new(),
+        )?;
+
+        let fields = plan.schema().fields();
+        if fields.len() != 1 {
+            return Err(DataFusionError::Plan(format!("Correlated sub query requires only one column in result set but found: {:?}", fields)));
+        }
+        let column = fields.iter().next().unwrap().qualified_column();
+        self.context.add_subquery_plan(plan, subquery_type)?;
+        Ok(Expr::Column(column))
     }
 }
 
@@ -4877,25 +4920,81 @@ mod tests {
     }
 
     #[test]
-    fn subquery() {
+    fn subquery_select() {
         let sql = "select person.id, (select lineitem.l_item_id from lineitem where person.id = lineitem.l_item_id limit 1) from person";
-        let expected = "Projection: #person.id, #subquery-0.l_item_id\
-                        \n  Subquery\
+        let expected = "Projection: #person.id, #__subquery-0.l_item_id\
+                        \n  Subquery: types=[Scalar]\
                         \n    TableScan: person projection=None\
                         \n    Limit: skip=None, fetch=1\
-                        \n      Projection: #lineitem.l_item_id, alias=subquery-0\
+                        \n      Projection: #lineitem.l_item_id, alias=__subquery-0\
                         \n        Filter: ^#person.id = #lineitem.l_item_id\
                         \n          TableScan: lineitem projection=None";
         quick_test(sql, expected);
     }
 
     #[test]
-    fn subquery_no_from() {
+    fn subquery_select_without_from() {
         let sql = "select person.id, (select person.age + 1) from person";
-        let expected = "Projection: #person.id, #subquery-0.person.age + Int64(1)\
-                        \n  Subquery\
+        let expected = "Projection: #person.id, #__subquery-0.person.age + Int64(1)\
+                        \n  Subquery: types=[Scalar]\
                         \n    TableScan: person projection=None\
-                        \n    Projection: ^#person.age + Int64(1), alias=subquery-0\
+                        \n    Projection: ^#person.age + Int64(1), alias=__subquery-0\
+                        \n      EmptyRelation";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn subquery_where() {
+        let sql = "select person.id from person where person.id > (select lineitem.l_item_id from lineitem limit 1)";
+        let expected = "Projection: #person.id\
+                        \n  Filter: #person.id > #__subquery-0.l_item_id\
+                        \n    Subquery: types=[Scalar]\
+                        \n      TableScan: person projection=None\
+                        \n      Limit: skip=None, fetch=1\
+                        \n        Projection: #lineitem.l_item_id, alias=__subquery-0\
+                        \n          TableScan: lineitem projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn subquery_where_without_from() {
+        let sql = "select person.id from person where person.id = (select person.id)";
+        let expected = "Projection: #person.id\
+                        \n  Filter: #person.id = #__subquery-0.person.id\
+                        \n    Subquery: types=[Scalar]\
+                        \n      TableScan: person projection=None\
+                        \n      Projection: ^#person.id, alias=__subquery-0\
+                        \n        EmptyRelation";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn subquery_select_and_where() {
+        let sql = "select person.id, (select person.id) from person where person.id > (select lineitem.l_item_id from lineitem limit 1)";
+        let expected = "Projection: #person.id, #__subquery-1.person.id\
+                        \n  Subquery: types=[Scalar]\
+                        \n    Filter: #person.id > #__subquery-0.l_item_id\
+                        \n      Subquery: types=[Scalar]\
+                        \n        TableScan: person projection=None\
+                        \n        Limit: skip=None, fetch=1\
+                        \n          Projection: #lineitem.l_item_id, alias=__subquery-0\
+                        \n            TableScan: lineitem projection=None\
+                        \n    Projection: ^#person.id, alias=__subquery-1\
+                        \n      EmptyRelation";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn subquery_select_and_where_without_from() {
+        let sql = "select person.id, (select person.id) from person where person.id = (select person.id)";
+        let expected = "Projection: #person.id, #__subquery-1.person.id\
+                        \n  Subquery: types=[Scalar]\
+                        \n    Filter: #person.id = #__subquery-0.person.id\
+                        \n      Subquery: types=[Scalar]\
+                        \n        TableScan: person projection=None\
+                        \n        Projection: ^#person.id, alias=__subquery-0\
+                        \n          EmptyRelation\
+                        \n    Projection: ^#person.id, alias=__subquery-1\
                         \n      EmptyRelation";
         quick_test(sql, expected);
     }

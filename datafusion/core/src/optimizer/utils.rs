@@ -161,10 +161,11 @@ pub fn from_plan(
                 alias: alias.clone(),
             }))
         }
-        LogicalPlan::Subquery(Subquery { schema, .. }) => {
+        LogicalPlan::Subquery(Subquery { schema, types, .. }) => {
             Ok(LogicalPlan::Subquery(Subquery {
-                subqueries: inputs[1..inputs.len()].to_vec(),
                 input: Arc::new(inputs[0].clone()),
+                subqueries: inputs[1..inputs.len()].to_vec(),
+                types: types.clone(),
                 schema: schema.clone(),
             }))
         }

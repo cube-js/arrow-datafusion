@@ -917,7 +917,7 @@ impl DefaultPhysicalPlanner {
 
                     Ok(Arc::new(GlobalLimitExec::new(input, *skip, *fetch)))
                 }
-                LogicalPlan::Subquery(Subquery { subqueries, input, schema }) => {
+                LogicalPlan::Subquery(Subquery { input, subqueries, types, schema }) => {
                     let cursor = Arc::new(OuterQueryCursor::new(schema.as_ref().to_owned().into()));
                     let mut new_session_state = session_state.clone();
                     new_session_state.execution_props = new_session_state.execution_props.with_outer_query_cursor(cursor.clone());
@@ -931,7 +931,7 @@ impl DefaultPhysicalPlanner {
                         })
                         .collect::<Vec<_>>();
                     let input = self.create_initial_plan(input, &new_session_state).await?;
-                    Ok(Arc::new(SubqueryExec::try_new(subqueries, input, cursor)?))
+                    Ok(Arc::new(SubqueryExec::try_new(input, subqueries, types.clone(), cursor)?))
                 }
                 LogicalPlan::CreateExternalTable(_) => {
                     // There is no default plan for "CREATE EXTERNAL

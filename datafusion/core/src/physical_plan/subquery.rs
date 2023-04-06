@@ -28,6 +28,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use crate::error::{DataFusionError, Result};
+use crate::logical_plan::{Subquery, SubqueryType};
 use crate::physical_plan::{DisplayFormatType, ExecutionPlan, Partitioning};
 use arrow::array::new_null_array;
 use arrow::datatypes::{Schema, SchemaRef};
@@ -45,12 +46,14 @@ use futures::stream::StreamExt;
 /// Execution plan for a sub query
 #[derive(Debug)]
 pub struct SubqueryExec {
-    /// Sub queries
-    subqueries: Vec<Arc<dyn ExecutionPlan>>,
-    /// Merged schema
-    schema: SchemaRef,
     /// The input plan
     input: Arc<dyn ExecutionPlan>,
+    /// Sub queries
+    subqueries: Vec<Arc<dyn ExecutionPlan>>,
+    /// Subquery types
+    types: Vec<SubqueryType>,
+    /// Merged schema
+    schema: SchemaRef,
     /// Cursor used to send outer query column values to sub queries
     cursor: Arc<OuterQueryCursor>,
 }
@@ -58,15 +61,23 @@ pub struct SubqueryExec {
 impl SubqueryExec {
     /// Create a projection on an input
     pub fn try_new(
-        subqueries: Vec<Arc<dyn ExecutionPlan>>,
         input: Arc<dyn ExecutionPlan>,
+        subqueries: Vec<Arc<dyn ExecutionPlan>>,
+        types: Vec<SubqueryType>,
         cursor: Arc<OuterQueryCursor>,
     ) -> Result<Self> {
         let input_schema = input.schema();
 
         let mut total_fields = input_schema.fields().clone();
-        for q in subqueries.iter() {
-            total_fields.append(&mut q.schema().fields().clone());
+        for (q, t) in subqueries.iter().zip(types.iter()) {
+            total_fields.append(
+                &mut q
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|f| Subquery::transform_field(f, *t))
+                    .collect(),
+            );
         }
 
         let merged_schema = Schema::new_with_metadata(total_fields, HashMap::new());
@@ -78,9 +89,10 @@ impl SubqueryExec {
         }
 
         Ok(Self {
-            subqueries,
-            schema: Arc::new(merged_schema),
             input,
+            subqueries,
+            types,
+            schema: Arc::new(merged_schema),
             cursor,
         })
     }
@@ -134,8 +146,9 @@ impl ExecutionPlan for SubqueryExec {
         }
 
         Ok(Arc::new(SubqueryExec::try_new(
-            children.iter().skip(1).cloned().collect(),
             children[0].clone(),
+            children.iter().skip(1).cloned().collect(),
+            self.types.clone(),
             self.cursor.clone(),
         )?))
     }
@@ -148,74 +161,83 @@ impl ExecutionPlan for SubqueryExec {
         let stream = self.input.execute(partition, context.clone()).await?;
         let cursor = self.cursor.clone();
         let subqueries = self.subqueries.clone();
+        let types = self.types.clone();
         let context = context.clone();
         let size_hint = stream.size_hint();
         let schema = self.schema.clone();
-        let res_stream =
-            stream.then(move |batch| {
-                let cursor = cursor.clone();
-                let context = context.clone();
-                let subqueries = subqueries.clone();
-                let schema = schema.clone();
-                async move {
-                    let batch = batch?;
-                    let b = Arc::new(batch.clone());
-                    cursor.set_batch(b)?;
-                    let mut subquery_arrays = vec![Vec::new(); subqueries.len()];
-                    for i in 0..batch.num_rows() {
-                        cursor.set_position(i)?;
-                        for (subquery_i, subquery) in subqueries.iter().enumerate() {
-                            let null_array = || {
-                                let schema = subquery.schema();
-                                let fields = schema.fields();
-                                if fields.len() != 1 {
-                                    return Err(ArrowError::ComputeError(format!(
-                                    "Sub query should have only one column but got {}",
-                                    fields.len()
-                                )));
-                                }
+        let res_stream = stream.then(move |batch| {
+            let cursor = cursor.clone();
+            let context = context.clone();
+            let subqueries = subqueries.clone();
+            let types = types.clone();
+            let schema = schema.clone();
+            async move {
+                let batch = batch?;
+                let b = Arc::new(batch.clone());
+                cursor.set_batch(b)?;
+                let mut subquery_arrays = vec![Vec::new(); subqueries.len()];
+                for i in 0..batch.num_rows() {
+                    cursor.set_position(i)?;
+                    for (subquery_i, (subquery, subquery_type)) in
+                        subqueries.iter().zip(types.iter()).enumerate()
+                    {
+                        let schema = subquery.schema();
+                        let fields = schema.fields();
+                        if fields.len() != 1 {
+                            return Err(ArrowError::ComputeError(format!(
+                                "Sub query should have only one column but got {}",
+                                fields.len()
+                            )));
+                        }
+                        let data_type = fields.get(0).unwrap().data_type();
+                        let null_array = || new_null_array(data_type, 1);
 
-                                let data_type = fields.get(0).unwrap().data_type();
-                                Ok(new_null_array(data_type, 1))
-                            };
-
-                            if subquery.output_partitioning().partition_count() != 1 {
-                                return Err(ArrowError::ComputeError(format!(
-                                    "Sub query should have only one partition but got {}",
-                                    subquery.output_partitioning().partition_count()
-                                )));
-                            }
-                            let mut stream = subquery.execute(0, context.clone()).await?;
-                            let res = stream.next().await;
-                            if let Some(subquery_batch) = res {
-                                let subquery_batch = subquery_batch?;
-                                match subquery_batch.column(0).len() {
-                                    0 => subquery_arrays[subquery_i].push(null_array()?),
+                        if subquery.output_partitioning().partition_count() != 1 {
+                            return Err(ArrowError::ComputeError(format!(
+                                "Sub query should have only one partition but got {}",
+                                subquery.output_partitioning().partition_count()
+                            )));
+                        }
+                        let mut stream = subquery.execute(0, context.clone()).await?;
+                        let res = stream.next().await;
+                        if let Some(subquery_batch) = res {
+                            let subquery_batch = subquery_batch?;
+                            match subquery_type {
+                                SubqueryType::Scalar => match subquery_batch
+                                    .column(0)
+                                    .len()
+                                {
+                                    0 => subquery_arrays[subquery_i].push(null_array()),
                                     1 => subquery_arrays[subquery_i]
                                         .push(subquery_batch.column(0).clone()),
                                     _ => return Err(ArrowError::ComputeError(
                                         "Sub query should return no more than one row"
                                             .to_string(),
                                     )),
-                                };
-                            } else {
-                                subquery_arrays[subquery_i].push(null_array()?);
-                            }
+                                },
+                            };
+                        } else {
+                            match subquery_type {
+                                SubqueryType::Scalar => {
+                                    subquery_arrays[subquery_i].push(null_array())
+                                }
+                            };
                         }
                     }
-                    let mut new_columns = batch.columns().to_vec();
-                    for subquery_array in subquery_arrays {
-                        new_columns.push(concat(
-                            subquery_array
-                                .iter()
-                                .map(|a| a.as_ref())
-                                .collect::<Vec<_>>()
-                                .as_slice(),
-                        )?);
-                    }
-                    RecordBatch::try_new(schema.clone(), new_columns)
                 }
-            });
+                let mut new_columns = batch.columns().to_vec();
+                for subquery_array in subquery_arrays {
+                    new_columns.push(concat(
+                        subquery_array
+                            .iter()
+                            .map(|a| a.as_ref())
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    )?);
+                }
+                RecordBatch::try_new(schema.clone(), new_columns)
+            }
+        });
         Ok(Box::pin(SubQueryStream {
             schema: self.schema.clone(),
             stream: Box::pin(res_stream),

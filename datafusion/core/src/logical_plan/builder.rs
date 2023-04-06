@@ -47,7 +47,8 @@ use super::{dfschema::ToDFSchema, expr_rewriter::coerce_plan_expr_for_schema, Di
 use super::{exprlist_to_fields, Expr, JoinConstraint, JoinType, LogicalPlan, PlanType};
 use crate::logical_plan::{
     columnize_expr, normalize_col, normalize_cols, rewrite_sort_cols_by_aggs, Column,
-    CrossJoin, DFField, DFSchema, DFSchemaRef, Limit, Partitioning, Repartition, Values,
+    CrossJoin, DFField, DFSchema, DFSchemaRef, Limit, Partitioning, Repartition,
+    SubqueryType, Values,
 };
 use crate::sql::utils::group_window_expr_by_sort_keys;
 
@@ -528,12 +529,15 @@ impl LogicalPlanBuilder {
     pub fn subquery(
         &self,
         subqueries: impl IntoIterator<Item = impl Into<LogicalPlan>>,
+        types: impl IntoIterator<Item = SubqueryType>,
     ) -> Result<Self> {
         let subqueries = subqueries.into_iter().map(|l| l.into()).collect::<Vec<_>>();
-        let schema = Arc::new(Subquery::merged_schema(&self.plan, &subqueries));
+        let types = types.into_iter().collect::<Vec<_>>();
+        let schema = Arc::new(Subquery::merged_schema(&self.plan, &subqueries, &types));
         Ok(Self::from(LogicalPlan::Subquery(Subquery {
             input: Arc::new(self.plan.clone()),
             subqueries,
+            types,
             schema,
         })))
     }
