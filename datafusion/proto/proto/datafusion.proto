@@ -191,6 +191,7 @@ enum ScalarFunction {
   Coalesce=63;
   // Upstream
   CurrentDate=70;
+  Pi=80;
   // Cubesql
   UtcTimestamp=101;
   ToDayInterval=102;

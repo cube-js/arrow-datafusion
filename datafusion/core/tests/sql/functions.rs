@@ -594,3 +594,19 @@ async fn case_builtin_math_expression() {
 //         .unwrap();
 //     assert_batches_sorted_eq!(expected, &results);
 // }
+
+#[tokio::test]
+async fn pi_function() -> Result<()> {
+    let ctx = SessionContext::new();
+    let sql = "select pi(), pi() / 2, pi() / 3";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+-------------------+--------------------+--------------------+",
+        "| pi()              | pi() / Int64(2)    | pi() / Int64(3)    |",
+        "+-------------------+--------------------+--------------------+",
+        "| 3.141592653589793 | 1.5707963267948966 | 1.0471975511965976 |",
+        "+-------------------+--------------------+--------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}

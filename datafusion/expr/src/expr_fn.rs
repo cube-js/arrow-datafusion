@@ -134,6 +134,14 @@ pub fn concat_ws(sep: impl Into<String>, values: &[Expr]) -> Expr {
     }
 }
 
+/// Returns an approximate value of π
+pub fn pi() -> Expr {
+    Expr::ScalarFunction {
+        fun: built_in_function::BuiltinScalarFunction::Pi,
+        args: vec![],
+    }
+}
+
 /// Returns a random value in the range 0.0 <= x < 1.0
 pub fn random() -> Expr {
     Expr::ScalarFunction {

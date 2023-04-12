@@ -140,6 +140,7 @@ pub fn return_type(
         BuiltinScalarFunction::OctetLength => {
             utf8_to_int_type(&input_expr_types[0], "octet_length")
         }
+        BuiltinScalarFunction::Pi => Ok(DataType::Float64),
         BuiltinScalarFunction::Random => Ok(DataType::Float64),
         BuiltinScalarFunction::RegexpReplace => {
             utf8_to_str_type(&input_expr_types[0], "regex_replace")
@@ -646,6 +647,7 @@ fn signature(fun: &BuiltinScalarFunction) -> Signature {
             ],
             fun.volatility(),
         ),
+        BuiltinScalarFunction::Pi => Signature::exact(vec![], fun.volatility()),
         BuiltinScalarFunction::Random => Signature::exact(vec![], fun.volatility()),
         // math expressions expect 1 argument of type f64 or f32
         // priority is given to f64 because e.g. `sqrt(1i32)` is in IR (real numbers) and thus we
@@ -803,6 +805,7 @@ pub fn create_physical_fun(
         BuiltinScalarFunction::Sqrt => Arc::new(math_expressions::sqrt),
         BuiltinScalarFunction::Tan => Arc::new(math_expressions::tan),
         BuiltinScalarFunction::Trunc => Arc::new(math_expressions::trunc),
+        BuiltinScalarFunction::Pi => Arc::new(math_expressions::pi),
         // string functions
         BuiltinScalarFunction::MakeArray => Arc::new(array_expressions::array),
         BuiltinScalarFunction::Ascii => Arc::new(|args| match args[0].data_type() {
@@ -3549,7 +3552,11 @@ mod tests {
         let execution_props = ExecutionProps::new();
         let schema = Schema::new(vec![Field::new("a", DataType::Int32, false)]);
 
-        let funs = [BuiltinScalarFunction::Now, BuiltinScalarFunction::Random];
+        let funs = [
+            BuiltinScalarFunction::Now,
+            BuiltinScalarFunction::Pi,
+            BuiltinScalarFunction::Random,
+        ];
 
         for fun in funs.iter() {
             create_physical_expr(fun, &[], &schema, &execution_props)?;
