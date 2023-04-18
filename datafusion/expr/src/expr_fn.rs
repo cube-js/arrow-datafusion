@@ -443,6 +443,7 @@ mod test {
             replacement,
             flags
         );
+        test_nary_scalar_expr!(RegexpReplace, regexp_replace, string, pattern);
         test_scalar_expr!(Replace, replace, string, from, to);
         test_scalar_expr!(Repeat, repeat, string, count);
         test_scalar_expr!(Reverse, reverse, string);

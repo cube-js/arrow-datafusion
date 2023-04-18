@@ -837,6 +837,7 @@ async fn test_regex_expressions() -> Result<()> {
     test_expression!("regexp_replace('ABCabcABC', '(abc)', 'X', 'i')", "XabcABC");
     test_expression!("regexp_replace('foobarbaz', 'b..', 'X', 'g')", "fooXX");
     test_expression!("regexp_replace('foobarbaz', 'b..', 'X')", "fooXbaz");
+    test_expression!("regexp_replace('foobarbaz', 'b..')", "foobaz");
     test_expression!(
         "regexp_replace('foobarbaz', 'b(..)', 'X\\1Y', 'g')",
         "fooXarYXazY"

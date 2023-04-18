@@ -609,6 +609,7 @@ fn signature(fun: &BuiltinScalarFunction) -> Signature {
         }
         BuiltinScalarFunction::RegexpReplace => Signature::one_of(
             vec![
+                TypeSignature::Exact(vec![DataType::Utf8, DataType::Utf8]),
                 TypeSignature::Exact(vec![
                     DataType::Utf8,
                     DataType::Utf8,
@@ -2262,6 +2263,18 @@ mod tests {
                 lit(ScalarValue::Utf8(Some("i".to_string()))),
             ],
             Ok(Some("XabcABC")),
+            &str,
+            Utf8,
+            StringArray
+        );
+        #[cfg(feature = "regex_expressions")]
+        test_function!(
+            RegexpReplace,
+            &[
+                lit(ScalarValue::Utf8(Some("ABCabcABC".to_string()))),
+                lit(ScalarValue::Utf8(Some("(abc)".to_string()))),
+            ],
+            Ok(Some("ABCABC")),
             &str,
             Utf8,
             StringArray

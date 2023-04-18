@@ -84,6 +84,37 @@ pub fn regexp_replace<T: StringOffsetSizeTrait>(args: &[ArrayRef]) -> Result<Arr
     let mut patterns: HashMap<String, Regex> = HashMap::new();
 
     match args.len() {
+        2 => {
+            let string_array = downcast_string_arg!(args[0], "string", T);
+            let pattern_array = downcast_string_arg!(args[1], "pattern", T);
+
+            let result = string_array
+            .iter()
+            .zip(pattern_array.iter())
+            .map(|(string, pattern)| match (string, pattern) {
+                (Some(string), Some(pattern)) => {
+                    // if patterns hashmap already has regexp then use else else create and return
+                    let re = match patterns.get(pattern) {
+                        Some(re) => Ok(re.clone()),
+                        None => {
+                            match Regex::new(pattern) {
+                                Ok(re) => {
+                                    patterns.insert(pattern.to_string(), re.clone());
+                                    Ok(re)
+                                },
+                                Err(err) => Err(DataFusionError::Execution(err.to_string())),
+                            }
+                        }
+                    };
+
+                    Some(re.map(|re| re.replace(string, ""))).transpose()
+                }
+            _ => Ok(None)
+            })
+            .collect::<Result<GenericStringArray<T>>>()?;
+
+            Ok(Arc::new(result) as ArrayRef)
+        }
         3 => {
             let string_array = downcast_string_arg!(args[0], "string", T);
             let pattern_array = downcast_string_arg!(args[1], "pattern", T);
@@ -172,7 +203,7 @@ pub fn regexp_replace<T: StringOffsetSizeTrait>(args: &[ArrayRef]) -> Result<Arr
             Ok(Arc::new(result) as ArrayRef)
         }
         other => Err(DataFusionError::Internal(format!(
-            "regexp_replace was called with {} arguments. It requires at least 3 and at most 4.",
+            "regexp_replace was called with {} arguments. It requires at least 2 and at most 4.",
             other
         ))),
     }
