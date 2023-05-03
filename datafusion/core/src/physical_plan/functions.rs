@@ -515,6 +515,7 @@ fn signature(fun: &BuiltinScalarFunction) -> Signature {
                     DataType::Utf8,
                     DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".to_owned())),
                 ]),
+                TypeSignature::Exact(vec![DataType::Utf8, DataType::Date32]),
             ],
             fun.volatility(),
         ),

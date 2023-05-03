@@ -442,6 +442,11 @@ pub fn date_trunc(args: &[ColumnarValue]) -> Result<ColumnarValue> {
                 tz_opt.clone(),
             ))
         }
+        ColumnarValue::Scalar(ScalarValue::Date32(_)) => {
+            return Err(DataFusionError::Execution(
+                "`date_trunc` does not accept Date32 type, it's a stub".to_string(),
+            ));
+        }
         ColumnarValue::Array(array) => {
             let array = array
                 .as_any()
