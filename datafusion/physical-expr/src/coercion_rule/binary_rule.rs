@@ -56,6 +56,7 @@ pub(crate) fn coerce_types(
         Operator::Plus | Operator::Minus => {
             mathematics_numerical_coercion(op, lhs_type, rhs_type)
                 .or_else(|| interval_coercion(op, lhs_type, rhs_type))
+                .or_else(|| date_coercion(op, lhs_type, rhs_type))
         }
         // Same as Plus & Minus
         Operator::Modulo | Operator::Divide | Operator::Multiply => {
@@ -585,6 +586,25 @@ pub fn interval_coercion(
             (Int64, Interval(itype)) | (Interval(itype), Int64) => {
                 Some(Interval(itype.clone()))
             }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Coercion rule for dates
+pub fn date_coercion(
+    op: &Operator,
+    lhs_type: &DataType,
+    rhs_type: &DataType,
+) -> Option<DataType> {
+    use arrow::datatypes::DataType::*;
+
+    // these are ordered from most informative to least informative so
+    // that the coercion removes the least amount of information
+    match op {
+        Operator::Minus => match (lhs_type, rhs_type) {
+            (Date32, Date32) => Some(Int32),
             _ => None,
         },
         _ => None,
