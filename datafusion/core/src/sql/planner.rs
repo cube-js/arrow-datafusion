@@ -1845,7 +1845,22 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     Ok(Expr::ScalarVariable(ty, var_names))
                 } else {
                     match (var_names.pop(), var_names.pop()) {
-                        (Some(name), Some(relation)) if var_names.is_empty() || (var_names.len() == 1 && var_names.pop().unwrap().to_lowercase() == "public") => {
+                        (Some(name), Some(relation)) => {
+                            if let Some(schema) = var_names.pop() {
+                                if !var_names.is_empty() {
+                                    return Err(DataFusionError::NotImplemented(format!(
+                                        "Unsupported compound identifier '{:?}'",
+                                        var_names,
+                                    )));
+                                }
+                                let schema = schema.to_lowercase();
+                                if !["public", "pg_catalog"].contains(&schema.as_str()) {
+                                    return Err(DataFusionError::NotImplemented(format!(
+                                        "Unsupported compound identifier '{:?}'",
+                                        schema,
+                                    )));
+                                }
+                            }
                             if let Some(f) = self.context.outer_query_context_schema.iter().find_map(|s| s.field_with_qualified_name(&relation, &name).ok()) {
                                 return Ok(Expr::OuterColumn(f.data_type().clone(), Column {
                                     relation: Some(relation),
