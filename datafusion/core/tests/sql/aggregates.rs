@@ -705,6 +705,39 @@ async fn csv_query_array_agg_distinct() -> Result<()> {
 }
 
 #[tokio::test]
+async fn csv_query_array_agg_unsupported() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_aggregate_csv(&ctx).await?;
+
+    // FIXME: ORDER BY is not supported but we ignore it
+    /*let results = plan_and_collect(
+        &ctx,
+        "SELECT array_agg(c13 ORDER BY c1) FROM aggregate_test_100",
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        results.to_string(),
+        "This feature is not implemented: ORDER BY not supported in ARRAY_AGG: c1"
+    );*/
+
+    let results = plan_and_collect(
+        &ctx,
+        "SELECT array_agg(c13 LIMIT 1) FROM aggregate_test_100",
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        results.to_string(),
+        "This feature is not implemented: LIMIT not supported in ARRAY_AGG: 1"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn csv_query_projection_drop_out_aggr_merge() -> Result<()> {
     let ctx = SessionContext::new();
     register_aggregate_csv(&ctx).await?;
