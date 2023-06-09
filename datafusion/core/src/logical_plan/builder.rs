@@ -36,7 +36,7 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use datafusion_data_access::object_store::ObjectStore;
-use datafusion_physical_expr::coercion_rule::binary_rule::comparison_eq_coercion;
+use datafusion_expr::binary_rule::comparison_eq_coercion;
 use std::convert::TryFrom;
 use std::{
     collections::{HashMap, HashSet},
