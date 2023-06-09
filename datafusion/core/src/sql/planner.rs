@@ -40,15 +40,14 @@ use crate::scalar::ScalarValue;
 use crate::sql::utils::{find_udtf_exprs, make_decimal_type, normalize_ident};
 use crate::{
     error::{DataFusionError, Result},
+    physical_plan::aggregates,
     physical_plan::udaf::AggregateUDF,
-};
-use crate::{
     physical_plan::udf::ScalarUDF,
     physical_plan::udtf::TableUDF,
-    physical_plan::{aggregates, functions, window_functions},
     sql::parser::{CreateExternalTable, FileType, Statement as DFStatement},
 };
 use arrow::datatypes::*;
+use datafusion_expr::{window_function::WindowFunction, BuiltinScalarFunction};
 use hashbrown::HashMap;
 use log::warn;
 
@@ -75,7 +74,6 @@ use crate::logical_plan::builder::{project_with_alias, table_udfs};
 use crate::logical_plan::plan::{
     Analyze, CreateCatalogSchema, CreateExternalTable as PlanCreateExternalTable, Explain,
 };
-use crate::physical_plan::functions::BuiltinScalarFunction;
 
 /// The ContextProvider trait allows the query planner to obtain meta-data about tables and
 /// functions referenced in SQL statements
@@ -1711,7 +1709,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             SQLExpr::Value(Value::Boolean(n)) => Ok(lit(n)),
             SQLExpr::Value(Value::Null) => Ok(Expr::Literal(ScalarValue::Utf8(None))),
             SQLExpr::Extract { field, expr } => Ok(Expr::ScalarFunction {
-                fun: functions::BuiltinScalarFunction::DatePart,
+                fun: BuiltinScalarFunction::DatePart,
                 args: vec![
                     Expr::Literal(ScalarValue::Utf8(Some(format!("{}", field)))),
                     self.sql_expr_to_logical_expr(*expr, schema)?,
@@ -2120,7 +2118,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
 
                 Ok(Expr::ScalarFunction {
-                    fun: functions::BuiltinScalarFunction::Substr,
+                    fun: BuiltinScalarFunction::Substr,
                     args,
                 })
             }
@@ -2137,15 +2135,15 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             SQLExpr::Trim { expr, trim_where } => {
                 let (fun, where_expr) = match trim_where {
                     Some((TrimWhereField::Leading, expr)) => {
-                        (functions::BuiltinScalarFunction::Ltrim, Some(expr))
+                        (BuiltinScalarFunction::Ltrim, Some(expr))
                     }
                     Some((TrimWhereField::Trailing, expr)) => {
-                        (functions::BuiltinScalarFunction::Rtrim, Some(expr))
+                        (BuiltinScalarFunction::Rtrim, Some(expr))
                     }
                     Some((TrimWhereField::Both, expr)) => {
-                        (functions::BuiltinScalarFunction::Btrim, Some(expr))
+                        (BuiltinScalarFunction::Btrim, Some(expr))
                     }
-                    None => (functions::BuiltinScalarFunction::Trim, None),
+                    None => (BuiltinScalarFunction::Trim, None),
                 };
                 let arg = self.sql_expr_to_logical_expr(*expr, schema)?;
                 let args = match where_expr {
@@ -2168,7 +2166,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 };
 
                 // first, scalar built-in
-                if let Ok(fun) = functions::BuiltinScalarFunction::from_str(&name) {
+                if let Ok(fun) = BuiltinScalarFunction::from_str(&name) {
                     let args = self.function_args_to_expr(function.args, schema)?;
 
                     return Ok(Expr::ScalarFunction { fun, args });
@@ -2201,9 +2199,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                             }
                         })
                         .transpose()?;
-                    let fun = window_functions::WindowFunction::from_str(&name)?;
+                    let fun = WindowFunction::from_str(&name)?;
                     match fun {
-                        window_functions::WindowFunction::AggregateFunction(
+                        WindowFunction::AggregateFunction(
                             aggregate_fun,
                         ) => {
                             let (aggregate_fun, args) = self.aggregate_fn_to_expr(
@@ -2213,7 +2211,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                             )?;
 
                             return Ok(Expr::WindowFunction {
-                                fun: window_functions::WindowFunction::AggregateFunction(
+                                fun: WindowFunction::AggregateFunction(
                                     aggregate_fun,
                                 ),
                                 args,
@@ -2222,11 +2220,11 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                                 window_frame,
                             });
                         }
-                        window_functions::WindowFunction::BuiltInWindowFunction(
+                        WindowFunction::BuiltInWindowFunction(
                             window_fun,
                         ) => {
                             return Ok(Expr::WindowFunction {
-                                fun: window_functions::WindowFunction::BuiltInWindowFunction(
+                                fun: WindowFunction::BuiltInWindowFunction(
                                     window_fun,
                                 ),
                                 args: self.function_args_to_expr(function.args, schema)?,
@@ -2864,9 +2862,8 @@ fn parse_sql_number(n: &str) -> Result<Expr> {
 #[cfg(test)]
 mod tests {
     use crate::datasource::empty::EmptyTable;
-    use crate::physical_plan::functions::Volatility;
     use crate::{assert_contains, logical_plan::create_udf, sql::parser::DFParser};
-    use datafusion_expr::ScalarFunctionImplementation;
+    use datafusion_expr::{ScalarFunctionImplementation, Volatility};
 
     use super::*;
 

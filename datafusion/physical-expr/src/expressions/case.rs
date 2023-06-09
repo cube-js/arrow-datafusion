@@ -17,7 +17,6 @@
 
 use std::{any::Any, sync::Arc};
 
-use crate::coercion_rule::binary_rule::coerce_types;
 use crate::expressions::try_cast;
 use crate::PhysicalExpr;
 use arrow::array::{self, *};
@@ -25,7 +24,7 @@ use arrow::compute::{and, cast, eq_dyn, is_null, not, or, or_kleene};
 use arrow::datatypes::{DataType, Schema};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DataFusionError, Result};
-use datafusion_expr::{ColumnarValue, Operator};
+use datafusion_expr::{binary_rule::coerce_types, ColumnarValue, Operator};
 
 type WhenThen = (Arc<dyn PhysicalExpr>, Arc<dyn PhysicalExpr>);
 
