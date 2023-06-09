@@ -39,6 +39,8 @@ use std::{convert::TryFrom, fmt, iter::repeat, sync::Arc};
 /// This is the single-valued counter-part of arrow’s `Array`.
 #[derive(Clone)]
 pub enum ScalarValue {
+    /// represents `DataType::Null` (castable to/from any other type)
+    Null,
     /// true or false value
     Boolean(Option<bool>),
     /// 32bit float
@@ -170,6 +172,8 @@ impl PartialEq for ScalarValue {
             (IntervalMonthDayNano(_), _) => false,
             (Struct(v1, t1), Struct(v2, t2)) => v1.eq(v2) && t1.eq(t2),
             (Struct(_, _), _) => false,
+            (Null, Null) => true,
+            (Null, _) => false,
         }
     }
 }
@@ -270,6 +274,8 @@ impl PartialOrd for ScalarValue {
                 }
             }
             (Struct(_, _), _) => None,
+            (Null, Null) => Some(Ordering::Equal),
+            (Null, _) => None,
         }
     }
 }
@@ -325,6 +331,8 @@ impl std::hash::Hash for ScalarValue {
                 v.hash(state);
                 t.hash(state);
             }
+            // stable hash for Null value
+            Null => 1.hash(state),
         }
     }
 }
@@ -594,6 +602,7 @@ impl ScalarValue {
                 DataType::Interval(IntervalUnit::MonthDayNano)
             }
             ScalarValue::Struct(_, fields) => DataType::Struct(fields.as_ref().clone()),
+            ScalarValue::Null => DataType::Null,
         }
     }
 
@@ -623,7 +632,8 @@ impl ScalarValue {
     pub fn is_null(&self) -> bool {
         matches!(
             *self,
-            ScalarValue::Boolean(None)
+            ScalarValue::Null
+                | ScalarValue::Boolean(None)
                 | ScalarValue::UInt8(None)
                 | ScalarValue::UInt16(None)
                 | ScalarValue::UInt32(None)
@@ -847,6 +857,7 @@ impl ScalarValue {
                     ScalarValue::iter_to_decimal_array(scalars, precision, scale)?;
                 Arc::new(decimal_array)
             }
+            DataType::Null => ScalarValue::iter_to_null_array(scalars),
             DataType::Boolean => build_array_primitive!(BooleanArray, Boolean),
             DataType::Float32 => build_array_primitive!(Float32Array, Float32),
             DataType::Float64 => build_array_primitive!(Float64Array, Float64),
@@ -977,6 +988,17 @@ impl ScalarValue {
         };
 
         Ok(array)
+    }
+
+    fn iter_to_null_array(scalars: impl IntoIterator<Item = ScalarValue>) -> ArrayRef {
+        let length =
+            scalars
+                .into_iter()
+                .fold(0usize, |r, element: ScalarValue| match element {
+                    ScalarValue::Null => r + 1,
+                    _ => unreachable!(),
+                });
+        new_null_array(&DataType::Null, length)
     }
 
     fn iter_to_decimal_array(
@@ -1252,6 +1274,7 @@ impl ScalarValue {
                     Arc::new(StructArray::from(field_values))
                 }
             },
+            ScalarValue::Null => new_null_array(&DataType::Null, size),
         }
     }
 
@@ -1277,6 +1300,7 @@ impl ScalarValue {
         }
 
         Ok(match array.data_type() {
+            DataType::Null => ScalarValue::Null,
             DataType::Decimal(precision, scale) => {
                 ScalarValue::get_decimal_value_from_array(array, index, precision, scale)
             }
@@ -1530,6 +1554,7 @@ impl ScalarValue {
                 eq_array_primitive!(array, index, IntervalMonthDayNanoArray, val)
             }
             ScalarValue::Struct(_, _) => unimplemented!(),
+            ScalarValue::Null => array.data().is_null(index),
         }
     }
 
@@ -1760,6 +1785,7 @@ impl TryFrom<&DataType> for ScalarValue {
             DataType::Interval(IntervalUnit::MonthDayNano) => {
                 ScalarValue::IntervalMonthDayNano(None)
             }
+            DataType::Null => ScalarValue::Null,
             _ => {
                 return Err(DataFusionError::NotImplemented(format!(
                     "Can't create a scalar from data_type \"{:?}\"",
@@ -1852,6 +1878,7 @@ impl fmt::Display for ScalarValue {
                 )?,
                 None => write!(f, "NULL")?,
             },
+            ScalarValue::Null => write!(f, "NULL")?,
         };
         Ok(())
     }
@@ -1919,6 +1946,7 @@ impl fmt::Debug for ScalarValue {
                     None => write!(f, "Struct(NULL)"),
                 }
             }
+            ScalarValue::Null => write!(f, "NULL"),
         }
     }
 }

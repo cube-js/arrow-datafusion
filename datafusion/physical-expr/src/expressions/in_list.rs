@@ -453,6 +453,10 @@ impl PhysicalExpr for InListExpr {
             DataType::LargeUtf8 => {
                 self.compare_utf8::<i64>(array, list_values, self.negated)
             }
+            DataType::Null => {
+                let null_array = new_null_array(&DataType::Boolean, array.len());
+                Ok(ColumnarValue::Array(Arc::new(null_array)))
+            }
             DataType::Timestamp(unit, _) => match unit {
                 TimeUnit::Second => make_contains_primitive!(
                     array,

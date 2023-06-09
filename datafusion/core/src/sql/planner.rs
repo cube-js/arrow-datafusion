@@ -1681,7 +1681,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         SQLExpr::Value(Value::Number(n, _)) => parse_sql_number(&n),
                         SQLExpr::Value(Value::SingleQuotedString(s)) => Ok(lit(s)),
                         SQLExpr::Value(Value::Null) => {
-                            Ok(Expr::Literal(ScalarValue::Utf8(None)))
+                            Ok(Expr::Literal(ScalarValue::Null))
                         }
                         SQLExpr::Value(Value::Boolean(n)) => Ok(lit(n)),
                         SQLExpr::UnaryOp { op, expr } => {
@@ -1707,7 +1707,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             SQLExpr::Value(Value::SingleQuotedString(ref s)) => Ok(lit(s.clone())),
             SQLExpr::Value(Value::EscapedStringLiteral(ref s)) => Ok(lit(s.clone())),
             SQLExpr::Value(Value::Boolean(n)) => Ok(lit(n)),
-            SQLExpr::Value(Value::Null) => Ok(Expr::Literal(ScalarValue::Utf8(None))),
+            SQLExpr::Value(Value::Null) => Ok(Expr::Literal(ScalarValue::Null)),
             SQLExpr::Extract { field, expr } => Ok(Expr::ScalarFunction {
                 fun: BuiltinScalarFunction::DatePart,
                 args: vec![
@@ -4259,9 +4259,9 @@ mod tests {
     fn union_with_null() {
         let sql = "SELECT NULL a UNION ALL SELECT 1.1 a";
         let expected = "Union\
-            \n  Projection: Utf8(NULL) AS a\
+            \n  Projection: CAST(NULL AS Float64) AS a\
             \n    EmptyRelation\
-            \n  Projection: CAST(Float64(1.1) AS Utf8) AS a\
+            \n  Projection: Float64(1.1) AS a\
             \n    EmptyRelation";
         quick_test(sql, expected);
     }
