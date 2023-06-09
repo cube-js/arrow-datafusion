@@ -109,7 +109,12 @@ impl CaseExpr {
 
 macro_rules! if_then_else {
     ($BUILDER_TYPE:ty, $ARRAY_TYPE:ty, $BOOLS:expr, $TRUE:expr, $FALSE:expr) => {{
-        let true_values = $TRUE
+        let true_values = if $TRUE.data_type() == &DataType::Null {
+            Arc::new(<$ARRAY_TYPE>::from(vec![None; $TRUE.len()]))
+        } else {
+            $TRUE
+        };
+        let true_values = true_values
             .as_ref()
             .as_any()
             .downcast_ref::<$ARRAY_TYPE>()
@@ -118,7 +123,12 @@ macro_rules! if_then_else {
                 stringify!($ARRAY_TYPE)
             ));
 
-        let false_values = $FALSE
+        let false_values = if $FALSE.data_type() == &DataType::Null {
+            Arc::new(<$ARRAY_TYPE>::from(vec![None; $FALSE.len()]))
+        } else {
+            $FALSE
+        };
+        let false_values = false_values
             .as_ref()
             .as_any()
             .downcast_ref::<$ARRAY_TYPE>()
@@ -252,6 +262,23 @@ fn if_then_else(
 }
 
 impl CaseExpr {
+    /// This function returns the return type of CASE expression.
+    ///
+    /// The first non-Null THEN expr type is returned; if there are none, ELSE type is returned.
+    /// In the abscense of ELSE, Null is returned.
+    fn return_type(&self, schema: &Schema) -> Result<DataType> {
+        for (_, then) in self.when_then_expr.iter() {
+            match then.data_type(schema)? {
+                DataType::Null => continue,
+                dt => return Ok(dt),
+            };
+        }
+        if let Some(else_expr) = &self.else_expr {
+            return else_expr.data_type(schema);
+        }
+        Ok(DataType::Null)
+    }
+
     /// This function evaluates the form of CASE that matches an expression to fixed values.
     ///
     /// CASE expression
@@ -260,7 +287,7 @@ impl CaseExpr {
     ///     [ELSE result]
     /// END
     fn case_when_with_expr(&self, batch: &RecordBatch) -> Result<ColumnarValue> {
-        let return_type = self.when_then_expr[0].1.data_type(&batch.schema())?;
+        let return_type = self.return_type(&batch.schema())?;
         let expr = self.expr.as_ref().unwrap();
         let base_value = expr.evaluate(batch)?;
         let base_value = base_value.into_array(batch.num_rows());
@@ -339,7 +366,7 @@ impl CaseExpr {
     ///      [ELSE result]
     /// END
     fn case_when_no_expr(&self, batch: &RecordBatch) -> Result<ColumnarValue> {
-        let return_type = self.when_then_expr[0].1.data_type(&batch.schema())?;
+        let return_type = self.return_type(&batch.schema())?;
 
         // start with nulls as default output
         let mut current_value = new_null_array(&return_type, batch.num_rows());
@@ -392,7 +419,7 @@ impl PhysicalExpr for CaseExpr {
     }
 
     fn data_type(&self, input_schema: &Schema) -> Result<DataType> {
-        self.when_then_expr[0].1.data_type(input_schema)
+        self.return_type(input_schema)
     }
 
     fn nullable(&self, input_schema: &Schema) -> Result<bool> {
