@@ -109,6 +109,8 @@ pub enum Expr {
         op: Operator,
         /// Right-hand side of the expression
         right: Box<Expr>,
+        /// Whether it's an ALL expression (as opposed to ANY/SOME)
+        all: bool,
     },
     /// LIKE expression
     Like(Like),
@@ -248,6 +250,15 @@ pub enum Expr {
         expr: Box<Expr>,
         /// A list of values to compare against
         list: Vec<Expr>,
+        /// Whether the expression is negated
+        negated: bool,
+    },
+    /// IN subquery
+    InSubquery {
+        /// The expression to compare
+        expr: Box<Expr>,
+        /// subquery that will produce a single column of data to compare against
+        subquery: Box<Expr>,
         /// Whether the expression is negated
         negated: bool,
     },
@@ -516,8 +527,14 @@ impl fmt::Debug for Expr {
             Expr::BinaryExpr { left, op, right } => {
                 write!(f, "{:?} {} {:?}", left, op, right)
             }
-            Expr::AnyExpr { left, op, right } => {
-                write!(f, "{:?} {} ANY({:?})", left, op, right)
+            Expr::AnyExpr {
+                left,
+                op,
+                right,
+                all,
+            } => {
+                let keyword = if *all { "ALL" } else { "ANY" };
+                write!(f, "{:?} {} {}({:?})", left, op, keyword, right)
             }
             Expr::Sort {
                 expr,
@@ -649,6 +666,14 @@ impl fmt::Debug for Expr {
                     write!(f, "{:?} IN ({:?})", expr, list)
                 }
             }
+            Expr::InSubquery {
+                expr,
+                subquery,
+                negated,
+            } => {
+                let negated = if *negated { "NOT " } else { "" };
+                write!(f, "{:?} {}IN ({:?})", expr, negated, subquery)
+            }
             Expr::Wildcard => write!(f, "*"),
             Expr::QualifiedWildcard { qualifier } => write!(f, "{}.*", qualifier),
             Expr::GetIndexedField { ref expr, key } => {
@@ -709,10 +734,16 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             let right = create_name(right, input_schema)?;
             Ok(format!("{} {} {}", left, op, right))
         }
-        Expr::AnyExpr { left, op, right } => {
+        Expr::AnyExpr {
+            left,
+            op,
+            right,
+            all,
+        } => {
             let left = create_name(left, input_schema)?;
             let right = create_name(right, input_schema)?;
-            Ok(format!("{} {} ANY({})", left, op, right))
+            let keyword = if *all { "ALL" } else { "ANY" };
+            Ok(format!("{} {} {}({})", left, op, keyword, right))
         }
         Expr::Like(Like {
             negated,
@@ -883,6 +914,16 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             } else {
                 Ok(format!("{} IN ({:?})", expr, list))
             }
+        }
+        Expr::InSubquery {
+            expr,
+            subquery,
+            negated,
+        } => {
+            let expr = create_name(expr, input_schema)?;
+            let subquery = create_name(subquery, input_schema)?;
+            let negated = if *negated { "NOT " } else { "" };
+            Ok(format!("{} {}IN ({})", expr, negated, subquery))
         }
         Expr::Between {
             expr,

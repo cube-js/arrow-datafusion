@@ -293,15 +293,30 @@ where
                     .collect::<Result<Vec<Expr>>>()?,
                 negated: *negated,
             }),
+            Expr::InSubquery {
+                expr: nested_expr,
+                subquery,
+                negated,
+            } => Ok(Expr::InSubquery {
+                expr: Box::new(clone_with_replacement(&**nested_expr, replacement_fn)?),
+                subquery: Box::new(clone_with_replacement(&**subquery, replacement_fn)?),
+                negated: *negated,
+            }),
             Expr::BinaryExpr { left, right, op } => Ok(Expr::BinaryExpr {
                 left: Box::new(clone_with_replacement(&**left, replacement_fn)?),
                 op: *op,
                 right: Box::new(clone_with_replacement(&**right, replacement_fn)?),
             }),
-            Expr::AnyExpr { left, right, op } => Ok(Expr::AnyExpr {
+            Expr::AnyExpr {
+                left,
+                right,
+                op,
+                all,
+            } => Ok(Expr::AnyExpr {
                 left: Box::new(clone_with_replacement(&**left, replacement_fn)?),
                 op: *op,
                 right: Box::new(clone_with_replacement(&**right, replacement_fn)?),
+                all: *all,
             }),
             Expr::Like(Like {
                 negated,

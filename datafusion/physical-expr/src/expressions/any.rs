@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Any expression
+//! Any/All expression
 
 use std::any::Any;
 use std::sync::Arc;
@@ -38,45 +38,33 @@ use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::{ColumnarValue, Operator};
 
 macro_rules! compare_op_scalar {
-    ($LEFT: expr, $LIST_VALUES:expr, $OP:expr, $LIST_VALUES_TYPE:ty, $LIST_FROM_SCALAR: expr) => {{
-        let mut builder = BooleanBuilder::new($LEFT.len());
-
-        if $LIST_FROM_SCALAR {
-            for i in 0..$LEFT.len() {
-                if $LEFT.is_null(i) {
-                    builder.append_null()?;
-                } else {
-                    if $LIST_VALUES.is_null(0) {
-                        builder.append_null()?;
-                    } else {
-                        builder.append_value($OP(
-                            $LEFT.value(i),
-                            $LIST_VALUES
-                                .value(0)
-                                .as_any()
-                                .downcast_ref::<$LIST_VALUES_TYPE>()
-                                .unwrap(),
-                        ))?;
-                    }
-                }
-            }
+    ($LEFT:expr, $LIST_VALUES:expr, $OP:expr, $LIST_VALUES_TYPE:ty, $LIST_FROM_SCALAR:expr, $VALUE_FROM_SCALAR:expr) => {{
+        let len = if $VALUE_FROM_SCALAR {
+            $LIST_VALUES.len()
         } else {
-            for i in 0..$LEFT.len() {
-                if $LEFT.is_null(i) {
+            $LEFT.len()
+        };
+        let mut builder = BooleanBuilder::new(len);
+
+        for i in 0..len {
+            let left_i = if $VALUE_FROM_SCALAR { 0 } else { i };
+            let list_i = if $LIST_FROM_SCALAR { 0 } else { i };
+
+            if $LIST_VALUES.is_null(list_i) {
+                builder.append_value(false)?;
+            } else {
+                let list_values = $LIST_VALUES.value(list_i);
+                let list_values = list_values
+                    .as_any()
+                    .downcast_ref::<$LIST_VALUES_TYPE>()
+                    .unwrap();
+                if list_values.is_empty() {
+                    builder.append_value(false)?;
+                } else if $LEFT.is_null(left_i) {
                     builder.append_null()?;
                 } else {
-                    if $LIST_VALUES.is_null(i) {
-                        builder.append_null()?;
-                    } else {
-                        builder.append_value($OP(
-                            $LEFT.value(i),
-                            $LIST_VALUES
-                                .value(i)
-                                .as_any()
-                                .downcast_ref::<$LIST_VALUES_TYPE>()
-                                .unwrap(),
-                        ))?;
-                    }
+                    let result = $OP($LEFT.value(left_i), list_values);
+                    builder.append_option(result)?;
                 }
             }
         }
@@ -86,142 +74,207 @@ macro_rules! compare_op_scalar {
 }
 
 macro_rules! make_primitive {
-    ($VALUES:expr, $IN_VALUES:expr, $NEGATED:expr, $TYPE:ident, $LIST_FROM_SCALAR: expr) => {{
+    ($VALUES:expr, $IN_VALUES:expr, $OP:expr, $TYPE:ident, $LIST_FROM_SCALAR:expr, $VALUE_FROM_SCALAR:expr, $ALL:expr) => {{
         let left = $VALUES.as_any().downcast_ref::<$TYPE>().expect(&format!(
             "Unable to downcast values to {}",
             stringify!($TYPE)
         ));
 
-        if $NEGATED {
-            Ok(ColumnarValue::Array(Arc::new(neq_primitive(
-                left,
-                $IN_VALUES,
-                $LIST_FROM_SCALAR,
-            )?)))
-        } else {
-            Ok(ColumnarValue::Array(Arc::new(eq_primitive(
-                left,
-                $IN_VALUES,
-                $LIST_FROM_SCALAR,
-            )?)))
-        }
+        Ok(ColumnarValue::Array(Arc::new(compare_primitive(
+            left,
+            $IN_VALUES,
+            $LIST_FROM_SCALAR,
+            $VALUE_FROM_SCALAR,
+            $OP,
+            $ALL,
+        )?)))
     }};
 }
 
-fn eq_primitive<T: ArrowPrimitiveType>(
+fn compare_primitive<T: ArrowPrimitiveType>(
     array: &PrimitiveArray<T>,
     list: &ListArray,
     list_from_scalar: bool,
+    value_from_scalar: bool,
+    op: Operator,
+    all: bool,
 ) -> Result<BooleanArray> {
+    macro_rules! comparator_primitive {
+        ($($OP:pat = ($FN:tt),)*) => {
+            match op {
+                $(
+                    $OP => if all {
+                        |x, v: &PrimitiveArray<T>| wrap_option_primitive(v, true, v.values().iter().all(|y| &x $FN y))
+                    } else {
+                        |x, v: &PrimitiveArray<T>| wrap_option_primitive(v, false, v.values().iter().any(|y| &x $FN y))
+                    },
+                )*
+                op => return unsupported_op(op),
+            }
+        };
+    }
+    let fun = comparator_primitive!(
+        Operator::Eq = (==),
+        Operator::NotEq = (!=),
+        Operator::Lt = (<),
+        Operator::LtEq = (<=),
+        Operator::Gt = (>),
+        Operator::GtEq = (>=),
+    );
     compare_op_scalar!(
         array,
         list,
-        |x, v: &PrimitiveArray<T>| v.values().contains(&x),
+        fun,
         PrimitiveArray<T>,
-        list_from_scalar
+        list_from_scalar,
+        value_from_scalar
     )
 }
 
-fn neq_primitive<T: ArrowPrimitiveType>(
-    array: &PrimitiveArray<T>,
-    list: &ListArray,
-    list_from_scalar: bool,
-) -> Result<BooleanArray> {
-    compare_op_scalar!(
-        array,
-        list,
-        |x, v: &PrimitiveArray<T>| !v.values().contains(&x),
-        PrimitiveArray<T>,
-        list_from_scalar
-    )
+fn wrap_option_primitive<T: ArrowPrimitiveType>(
+    v: &PrimitiveArray<T>,
+    all: bool,
+    result: bool,
+) -> Option<bool> {
+    if result != all {
+        return Some(!all);
+    }
+    if v.null_count() > 0 {
+        return None;
+    }
+    Some(all)
 }
 
-fn eq_bool(
+fn compare_bool(
     array: &BooleanArray,
     list: &ListArray,
     list_from_scalar: bool,
+    value_from_scalar: bool,
+    op: Operator,
+    all: bool,
 ) -> Result<BooleanArray> {
+    macro_rules! comparator_bool {
+        ($($OP:pat = ($FN:tt inverted $IFN:tt),)*) => {
+            match op {
+                $(
+                    $OP => if all {
+                        |x, v: &BooleanArray| {
+                            for i in 0..v.len() {
+                                if !v.is_null(i) && x $IFN v.value(i) {
+                                    return Some(false)
+                                }
+                            }
+                            wrap_option_bool(v, true)
+                        }
+                    } else {
+                        |x, v: &BooleanArray| {
+                            for i in 0..v.len() {
+                                if !v.is_null(i) && x $FN v.value(i) {
+                                    return Some(true)
+                                }
+                            }
+                            wrap_option_bool(v, false)
+                        }
+                    }
+                )*
+                op => return unsupported_op(op),
+            }
+        };
+    }
+    let fun = comparator_bool!(
+        Operator::Eq = (== inverted !=),
+        Operator::NotEq = (!= inverted ==),
+        Operator::Lt = (< inverted >=),
+        Operator::LtEq = (<= inverted >),
+        Operator::Gt = (> inverted <=),
+        Operator::GtEq = (>= inverted <),
+    );
     compare_op_scalar!(
         array,
         list,
-        |x, v: &BooleanArray| unsafe {
-            for i in 0..v.len() {
-                if v.value_unchecked(i) == x {
-                    return true;
-                }
-            }
-
-            false
-        },
+        fun,
         BooleanArray,
-        list_from_scalar
+        list_from_scalar,
+        value_from_scalar
     )
 }
 
-fn neq_bool(
-    array: &BooleanArray,
-    list: &ListArray,
-    list_from_scalar: bool,
-) -> Result<BooleanArray> {
-    compare_op_scalar!(
-        array,
-        list,
-        |x, v: &BooleanArray| unsafe {
-            for i in 0..v.len() {
-                if v.value_unchecked(i) == x {
-                    return false;
-                }
-            }
-
-            true
-        },
-        BooleanArray,
-        list_from_scalar
-    )
+fn wrap_option_bool(v: &BooleanArray, all: bool) -> Option<bool> {
+    if v.null_count() > 0 {
+        return None;
+    }
+    Some(all)
 }
 
-fn eq_utf8<OffsetSize: StringOffsetSizeTrait>(
+fn compare_utf8<OffsetSize: StringOffsetSizeTrait>(
     array: &GenericStringArray<OffsetSize>,
     list: &ListArray,
     list_from_scalar: bool,
+    value_from_scalar: bool,
+    op: Operator,
+    all: bool,
 ) -> Result<BooleanArray> {
+    macro_rules! comparator_utf8 {
+        ($($OP:pat = ($FN:tt inverted $IFN:tt),)*) => {
+            match op {
+                $(
+                    $OP => if all {
+                        |x, v: &GenericStringArray<OffsetSize>| {
+                            for i in 0..v.len() {
+                                if !v.is_null(i) && x $IFN v.value(i) {
+                                    return Some(false)
+                                }
+                            }
+                            wrap_option_utf8(v, true)
+                        }
+                    } else {
+                        |x, v: &GenericStringArray<OffsetSize>| {
+                            for i in 0..v.len() {
+                                if !v.is_null(i) && x $FN v.value(i) {
+                                    return Some(true)
+                                }
+                            }
+                            wrap_option_utf8(v, false)
+                        }
+                    }
+                )*
+                op => return unsupported_op(op),
+            }
+        };
+    }
+    let fun = comparator_utf8!(
+        Operator::Eq = (== inverted !=),
+        Operator::NotEq = (!= inverted ==),
+        Operator::Lt = (< inverted >=),
+        Operator::LtEq = (<= inverted >),
+        Operator::Gt = (> inverted <=),
+        Operator::GtEq = (>= inverted <),
+    );
     compare_op_scalar!(
         array,
         list,
-        |x, v: &GenericStringArray<OffsetSize>| unsafe {
-            for i in 0..v.len() {
-                if v.value_unchecked(i) == x {
-                    return true;
-                }
-            }
-
-            false
-        },
+        fun,
         GenericStringArray<OffsetSize>,
-        list_from_scalar
+        list_from_scalar,
+        value_from_scalar
     )
 }
 
-fn neq_utf8<OffsetSize: StringOffsetSizeTrait>(
-    array: &GenericStringArray<OffsetSize>,
-    list: &ListArray,
-    list_from_scalar: bool,
-) -> Result<BooleanArray> {
-    compare_op_scalar!(
-        array,
-        list,
-        |x, v: &GenericStringArray<OffsetSize>| unsafe {
-            for i in 0..v.len() {
-                if v.value_unchecked(i) == x {
-                    return false;
-                }
-            }
+fn wrap_option_utf8<OffsetSize: StringOffsetSizeTrait>(
+    v: &GenericStringArray<OffsetSize>,
+    all: bool,
+) -> Option<bool> {
+    if v.null_count() > 0 {
+        return None;
+    }
+    Some(all)
+}
 
-            true
-        },
-        GenericStringArray<OffsetSize>,
-        list_from_scalar
-    )
+fn unsupported_op<T>(op: Operator) -> Result<T> {
+    Err(DataFusionError::Execution(format!(
+        "ANY/ALL does not support operator {}",
+        op
+    )))
 }
 
 /// AnyExpr
@@ -230,6 +283,7 @@ pub struct AnyExpr {
     value: Arc<dyn PhysicalExpr>,
     op: Operator,
     list: Arc<dyn PhysicalExpr>,
+    all: bool,
 }
 
 impl AnyExpr {
@@ -238,8 +292,14 @@ impl AnyExpr {
         value: Arc<dyn PhysicalExpr>,
         op: Operator,
         list: Arc<dyn PhysicalExpr>,
+        all: bool,
     ) -> Self {
-        Self { value, op, list }
+        Self {
+            value,
+            op,
+            list,
+            all,
+        }
     }
 
     /// Compare for specific utf8 types
@@ -247,27 +307,24 @@ impl AnyExpr {
         &self,
         array: ArrayRef,
         list: &ListArray,
-        negated: bool,
         list_from_scalar: bool,
+        value_from_scalar: bool,
+        op: Operator,
+        all: bool,
     ) -> Result<ColumnarValue> {
         let array = array
             .as_any()
             .downcast_ref::<GenericStringArray<T>>()
             .unwrap();
 
-        if negated {
-            Ok(ColumnarValue::Array(Arc::new(neq_utf8(
-                array,
-                list,
-                list_from_scalar,
-            )?)))
-        } else {
-            Ok(ColumnarValue::Array(Arc::new(eq_utf8(
-                array,
-                list,
-                list_from_scalar,
-            )?)))
-        }
+        Ok(ColumnarValue::Array(Arc::new(compare_utf8(
+            array,
+            list,
+            list_from_scalar,
+            value_from_scalar,
+            op,
+            all,
+        )?)))
     }
 
     /// Compare for specific utf8 types
@@ -275,30 +332,28 @@ impl AnyExpr {
         &self,
         array: ArrayRef,
         list: &ListArray,
-        negated: bool,
         list_from_scalar: bool,
+        value_from_scalar: bool,
+        op: Operator,
+        all: bool,
     ) -> Result<ColumnarValue> {
         let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
 
-        if negated {
-            Ok(ColumnarValue::Array(Arc::new(neq_bool(
-                array,
-                list,
-                list_from_scalar,
-            )?)))
-        } else {
-            Ok(ColumnarValue::Array(Arc::new(eq_bool(
-                array,
-                list,
-                list_from_scalar,
-            )?)))
-        }
+        Ok(ColumnarValue::Array(Arc::new(compare_bool(
+            array,
+            list,
+            list_from_scalar,
+            value_from_scalar,
+            op,
+            all,
+        )?)))
     }
 }
 
 impl std::fmt::Display for AnyExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{} {} ANY({})", self.value, self.op, self.list)
+        let keyword = if self.all { "ALL" } else { "ANY" };
+        write!(f, "{} {} {}({})", self.value, self.op, keyword, self.list)
     }
 }
 
@@ -312,14 +367,14 @@ impl PhysicalExpr for AnyExpr {
         Ok(DataType::Boolean)
     }
 
-    fn nullable(&self, input_schema: &Schema) -> Result<bool> {
-        self.value.nullable(input_schema)
+    fn nullable(&self, _: &Schema) -> Result<bool> {
+        Ok(true)
     }
 
     fn evaluate(&self, batch: &RecordBatch) -> Result<ColumnarValue> {
-        let value = match self.value.evaluate(batch)? {
-            ColumnarValue::Array(array) => array,
-            ColumnarValue::Scalar(scalar) => scalar.to_array(),
+        let (value, value_from_scalar) = match self.value.evaluate(batch)? {
+            ColumnarValue::Array(array) => (array, false),
+            ColumnarValue::Scalar(scalar) => (scalar.to_array(), true),
         };
 
         let (list, list_from_scalar) = match self.list.evaluate(batch)? {
@@ -331,60 +386,152 @@ impl PhysicalExpr for AnyExpr {
             .downcast_ref::<ListArray>()
             .expect("Unable to downcast list to ListArray");
 
-        let negated = match self.op {
-            Operator::Eq => false,
-            Operator::NotEq => true,
-            op => {
-                return Err(DataFusionError::NotImplemented(format!(
-                    "Operator for ANY expression, actual: {:?}",
-                    op
-                )));
-            }
-        };
-
         match value.data_type() {
             DataType::Float16 => {
-                make_primitive!(value, as_list, negated, Float16Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    Float16Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::Float32 => {
-                make_primitive!(value, as_list, negated, Float32Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    Float32Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::Float64 => {
-                make_primitive!(value, as_list, negated, Float64Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    Float64Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::Int8 => {
-                make_primitive!(value, as_list, negated, Int8Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    Int8Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::Int16 => {
-                make_primitive!(value, as_list, negated, Int16Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    Int16Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::Int32 => {
-                make_primitive!(value, as_list, negated, Int32Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    Int32Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::Int64 => {
-                make_primitive!(value, as_list, negated, Int64Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    Int64Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::UInt8 => {
-                make_primitive!(value, as_list, negated, UInt8Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    UInt8Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::UInt16 => {
-                make_primitive!(value, as_list, negated, UInt16Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    UInt16Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::UInt32 => {
-                make_primitive!(value, as_list, negated, UInt32Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    UInt32Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
             DataType::UInt64 => {
-                make_primitive!(value, as_list, negated, UInt64Array, list_from_scalar)
+                make_primitive!(
+                    value,
+                    as_list,
+                    self.op,
+                    UInt64Array,
+                    list_from_scalar,
+                    value_from_scalar,
+                    self.all
+                )
             }
-            DataType::Boolean => {
-                self.compare_bool(value, as_list, negated, list_from_scalar)
-            }
-            DataType::Utf8 => {
-                self.compare_utf8::<i32>(value, as_list, negated, list_from_scalar)
-            }
-            DataType::LargeUtf8 => {
-                self.compare_utf8::<i64>(value, as_list, negated, list_from_scalar)
-            }
+            DataType::Boolean => self.compare_bool(
+                value,
+                as_list,
+                list_from_scalar,
+                value_from_scalar,
+                self.op,
+                self.all,
+            ),
+            DataType::Utf8 => self.compare_utf8::<i32>(
+                value,
+                as_list,
+                list_from_scalar,
+                value_from_scalar,
+                self.op,
+                self.all,
+            ),
+            DataType::LargeUtf8 => self.compare_utf8::<i64>(
+                value,
+                as_list,
+                list_from_scalar,
+                value_from_scalar,
+                self.op,
+                self.all,
+            ),
             datatype => Result::Err(DataFusionError::NotImplemented(format!(
                 "AnyExpr does not support datatype {:?}.",
                 datatype
@@ -404,7 +551,11 @@ fn any_cast(
     let tmp = list.data_type(input_schema)?;
     let list_type = match &tmp {
         DataType::List(f) => f.data_type(),
-        _ => panic!("wtf"),
+        _ => {
+            return Err(DataFusionError::NotImplemented(
+                "ANY/ALL supports only literal arrays or subqueries".to_string(),
+            ))
+        }
     };
 
     Ok((try_cast(value, input_schema, list_type.clone())?, list))
@@ -415,10 +566,11 @@ pub fn any(
     value: Arc<dyn PhysicalExpr>,
     op: Operator,
     list: Arc<dyn PhysicalExpr>,
+    all: bool,
     input_schema: &Schema,
 ) -> Result<Arc<dyn PhysicalExpr>> {
     let (l, r) = any_cast(value, &op, list, input_schema)?;
-    Ok(Arc::new(AnyExpr::new(l, op, r)))
+    Ok(Arc::new(AnyExpr::new(l, op, r, all)))
 }
 
 #[cfg(test)]
@@ -431,8 +583,8 @@ mod tests {
 
     // applies the any expr to an input batch
     macro_rules! execute_any {
-        ($BATCH:expr, $OP:expr, $EXPECTED:expr, $COL_A:expr, $COL_B:expr, $SCHEMA:expr) => {{
-            let expr = any($COL_A, $OP, $COL_B, $SCHEMA).unwrap();
+        ($BATCH:expr, $OP:expr, $EXPECTED:expr, $COL_A:expr, $COL_B:expr, $ALL:expr, $SCHEMA:expr) => {{
+            let expr = any($COL_A, $OP, $COL_B, $ALL, $SCHEMA).unwrap();
             let result = expr.evaluate(&$BATCH)?.into_array($BATCH.num_rows());
             let result = result
                 .as_any()
@@ -480,6 +632,7 @@ mod tests {
             vec![Some(true), Some(false), None],
             col_a.clone(),
             col_b.clone(),
+            false,
             &schema
         );
 
@@ -488,8 +641,8 @@ mod tests {
 
     // applies the any expr to an input batch and list
     macro_rules! execute_any_with_list {
-        ($BATCH:expr, $LIST:expr, $OP:expr, $EXPECTED:expr, $COL:expr, $SCHEMA:expr) => {{
-            let expr = any($COL, $OP, $LIST, $SCHEMA).unwrap();
+        ($BATCH:expr, $LIST:expr, $OP:expr, $EXPECTED:expr, $COL:expr, $ALL:expr, $SCHEMA:expr) => {{
+            let expr = any($COL, $OP, $LIST, $ALL, $SCHEMA).unwrap();
             let result = expr.evaluate(&$BATCH)?.into_array($BATCH.num_rows());
             let result = result
                 .as_any()
@@ -532,6 +685,7 @@ mod tests {
             Operator::Eq,
             vec![Some(true), Some(false), None],
             col_a.clone(),
+            false,
             schema
         );
 
@@ -570,6 +724,7 @@ mod tests {
             Operator::Eq,
             vec![Some(true), Some(false), None],
             col_a.clone(),
+            false,
             schema
         );
 
@@ -604,6 +759,7 @@ mod tests {
             Operator::Eq,
             vec![Some(true), Some(false), None],
             col_a.clone(),
+            false,
             schema
         );
 

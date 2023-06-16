@@ -392,6 +392,7 @@ impl<'a> ConstEvaluator<'a> {
             | Expr::OuterColumn(_, _)
             | Expr::WindowFunction { .. }
             | Expr::Sort { .. }
+            | Expr::InSubquery { .. }
             | Expr::Wildcard
             | Expr::QualifiedWildcard { .. } => false,
             Expr::ScalarFunction { fun, .. } => Self::volatility_ok(fun.volatility()),

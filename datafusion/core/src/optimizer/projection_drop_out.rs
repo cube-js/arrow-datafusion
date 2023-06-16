@@ -254,6 +254,7 @@ fn optimize_plan(
         LogicalPlan::Subquery(Subquery {
             input,
             subqueries,
+            types,
             schema,
         }) => {
             // TODO: subqueries are not optimized
@@ -269,6 +270,7 @@ fn optimize_plan(
                         .map(|(p, _)| p)?,
                     ),
                     subqueries: subqueries.clone(),
+                    types: types.clone(),
                     schema: schema.clone(),
                 }),
                 None,

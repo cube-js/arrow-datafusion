@@ -93,6 +93,7 @@ impl ExpressionVisitor for ColumnNameVisitor<'_> {
             | Expr::AggregateFunction { .. }
             | Expr::AggregateUDF { .. }
             | Expr::InList { .. }
+            | Expr::InSubquery { .. }
             | Expr::Wildcard
             | Expr::QualifiedWildcard { .. }
             | Expr::GetIndexedField { .. } => {}
@@ -161,10 +162,11 @@ pub fn from_plan(
                 alias: alias.clone(),
             }))
         }
-        LogicalPlan::Subquery(Subquery { schema, .. }) => {
+        LogicalPlan::Subquery(Subquery { types, schema, .. }) => {
             Ok(LogicalPlan::Subquery(Subquery {
-                subqueries: inputs[1..inputs.len()].to_vec(),
                 input: Arc::new(inputs[0].clone()),
+                subqueries: inputs[1..inputs.len()].to_vec(),
+                types: types.clone(),
                 schema: schema.clone(),
             }))
         }
@@ -390,6 +392,9 @@ pub fn expr_sub_expressions(expr: &Expr) -> Result<Vec<Expr>> {
             }
             Ok(expr_list)
         }
+        Expr::InSubquery { expr, subquery, .. } => {
+            Ok(vec![expr.as_ref().to_owned(), subquery.as_ref().to_owned()])
+        }
         Expr::Wildcard { .. } => Err(DataFusionError::Internal(
             "Wildcard expressions are not valid in a logical query plan".to_owned(),
         )),
@@ -410,10 +415,11 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
             op: *op,
             right: Box::new(expressions[1].clone()),
         }),
-        Expr::AnyExpr { op, .. } => Ok(Expr::AnyExpr {
+        Expr::AnyExpr { op, all, .. } => Ok(Expr::AnyExpr {
             left: Box::new(expressions[0].clone()),
             op: *op,
             right: Box::new(expressions[1].clone()),
+            all: *all,
         }),
         Expr::Like(Like {
             negated,
@@ -597,6 +603,11 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
                 Ok(expr)
             }
         }
+        Expr::InSubquery { negated, .. } => Ok(Expr::InSubquery {
+            expr: Box::new(expressions[0].clone()),
+            subquery: Box::new(expressions[1].clone()),
+            negated: *negated,
+        }),
         Expr::Wildcard => Err(DataFusionError::Internal(
             "Wildcard expressions are not valid in a logical query plan".to_owned(),
         )),

@@ -114,10 +114,16 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
             let right = create_physical_name(right, false)?;
             Ok(format!("{} {:?} {}", left, op, right))
         }
-        Expr::AnyExpr { left, op, right } => {
+        Expr::AnyExpr {
+            left,
+            op,
+            right,
+            all,
+        } => {
             let left = create_physical_name(left, false)?;
             let right = create_physical_name(right, false)?;
-            Ok(format!("{} {:?} ANY({})", left, op, right))
+            let keyword = if *all { "ALL" } else { "ANY" };
+            Ok(format!("{} {:?} {}({})", left, op, keyword, right))
         }
         Expr::Case {
             expr,
@@ -203,6 +209,16 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
             } else {
                 Ok(format!("{} IN ({:?})", expr, list))
             }
+        }
+        Expr::InSubquery {
+            expr,
+            subquery,
+            negated,
+        } => {
+            let expr = create_physical_name(expr, false)?;
+            let subquery = create_physical_name(subquery, false)?;
+            let negated = if *negated { "NOT " } else { "" };
+            Ok(format!("{} {}IN ({})", expr, negated, subquery))
         }
         Expr::Between {
             expr,
@@ -917,7 +933,7 @@ impl DefaultPhysicalPlanner {
 
                     Ok(Arc::new(GlobalLimitExec::new(input, *skip, *fetch)))
                 }
-                LogicalPlan::Subquery(Subquery { subqueries, input, schema }) => {
+                LogicalPlan::Subquery(Subquery { input, subqueries, types, schema }) => {
                     let cursor = Arc::new(OuterQueryCursor::new(schema.as_ref().to_owned().into()));
                     let mut new_session_state = session_state.clone();
                     new_session_state.execution_props = new_session_state.execution_props.with_outer_query_cursor(cursor.clone());
@@ -931,7 +947,7 @@ impl DefaultPhysicalPlanner {
                         })
                         .collect::<Vec<_>>();
                     let input = self.create_initial_plan(input, &new_session_state).await?;
-                    Ok(Arc::new(SubqueryExec::try_new(subqueries, input, cursor)?))
+                    Ok(Arc::new(SubqueryExec::try_new(input, subqueries, types.clone(), cursor)?))
                 }
                 LogicalPlan::CreateExternalTable(_) => {
                     // There is no default plan for "CREATE EXTERNAL
@@ -1290,7 +1306,12 @@ pub fn create_physical_expr(
                 binary_expr
             }
         }
-        Expr::AnyExpr { left, op, right } => {
+        Expr::AnyExpr {
+            left,
+            op,
+            right,
+            all,
+        } => {
             let lhs = create_physical_expr(
                 left,
                 input_dfschema,
@@ -1303,7 +1324,7 @@ pub fn create_physical_expr(
                 input_schema,
                 execution_props,
             )?;
-            any(lhs, *op, rhs, input_schema)
+            any(lhs, *op, rhs, *all, input_schema)
         }
         Expr::InList {
             expr,

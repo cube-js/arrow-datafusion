@@ -1015,7 +1015,6 @@ async fn test_extract_date_part() -> Result<()> {
 
 #[tokio::test]
 async fn test_binary_any() -> Result<()> {
-    // =
     // int64
     test_expression!("1 = ANY([1, 2])", "true");
     test_expression!("3 = ANY([1, 2])", "false");
@@ -1026,17 +1025,140 @@ async fn test_binary_any() -> Result<()> {
     // utf8
     test_expression!("'a' = ANY(['a', 'b'])", "true");
     test_expression!("'c' = ANY(['a', 'b'])", "false");
+    test_expression!("'c' = ANY(['a', NULL])", "NULL");
     // bool
     test_expression!("true = ANY([true, false])", "true");
     test_expression!("false = ANY([true, false])", "true");
     test_expression!("false = ANY([true, true])", "false");
+    // =
+    test_expression!("3 = ANY([1, 2])", "false");
+    test_expression!("1 = ANY([1, 2])", "true");
+    test_expression!("NULL = ANY([1, 2])", "NULL");
+    test_expression!("'c' = ANY(['a', 'b'])", "false");
+    test_expression!("'a' = ANY(['a', 'a'])", "true");
+    test_expression!("'b' = ANY([NULL, 'b'])", "true");
+    test_expression!("true = ANY([false, true])", "true");
+    test_expression!("false = ANY([false, true])", "true");
     // <>
     test_expression!("3 <> ANY([1, 2])", "true");
-    test_expression!("1 <> ANY([1, 2])", "false");
-    test_expression!("2 <> ANY([1, 2])", "false");
-    test_expression!("NULL = ANY([1, 2])", "NULL");
+    test_expression!("1 <> ANY([1, 2])", "true");
+    test_expression!("NULL <> ANY([1, 2])", "NULL");
     test_expression!("'c' <> ANY(['a', 'b'])", "true");
-    test_expression!("'a' <> ANY(['a', 'b'])", "false");
+    test_expression!("'a' <> ANY(['a', 'a'])", "false");
+    test_expression!("'b' <> ANY([NULL, 'b'])", "NULL");
+    test_expression!("true <> ANY([false, true])", "true");
+    test_expression!("false <> ANY([false, true])", "true");
+    // <
+    test_expression!("3 < ANY([1, 2])", "false");
+    test_expression!("1 < ANY([1, 2])", "true");
+    test_expression!("NULL < ANY([1, 2])", "NULL");
+    test_expression!("'c' < ANY(['a', 'b'])", "false");
+    test_expression!("'a' < ANY(['a', 'a'])", "false");
+    test_expression!("'b' < ANY([NULL, 'b'])", "NULL");
+    test_expression!("true < ANY([false, true])", "false");
+    test_expression!("false < ANY([false, true])", "true");
+    // <=
+    test_expression!("3 <= ANY([1, 2])", "false");
+    test_expression!("1 <= ANY([1, 2])", "true");
+    test_expression!("NULL <= ANY([1, 2])", "NULL");
+    test_expression!("'c' <= ANY(['a', 'b'])", "false");
+    test_expression!("'a' <= ANY(['a', 'a'])", "true");
+    test_expression!("'b' <= ANY([NULL, 'b'])", "true");
+    test_expression!("true <= ANY([false, true])", "true");
+    test_expression!("false <= ANY([false, true])", "true");
+    // >
+    test_expression!("3 > ANY([1, 2])", "true");
+    test_expression!("1 > ANY([1, 2])", "false");
+    test_expression!("NULL > ANY([1, 2])", "NULL");
+    test_expression!("'c' > ANY(['a', 'b'])", "true");
+    test_expression!("'a' > ANY(['a', 'a'])", "false");
+    test_expression!("'b' > ANY([NULL, 'b'])", "NULL");
+    test_expression!("true > ANY([false, true])", "true");
+    test_expression!("false > ANY([false, true])", "false");
+    // >=
+    test_expression!("3 >= ANY([1, 2])", "true");
+    test_expression!("1 >= ANY([1, 2])", "true");
+    test_expression!("NULL >= ANY([1, 2])", "NULL");
+    test_expression!("'c' >= ANY(['a', 'b'])", "true");
+    test_expression!("'a' >= ANY(['a', 'a'])", "true");
+    test_expression!("'b' >= ANY([NULL, 'b'])", "true");
+    test_expression!("true >= ANY([false, true])", "true");
+    test_expression!("false >= ANY([false, true])", "true");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_binary_all() -> Result<()> {
+    // int64
+    test_expression!("1 = ALL([1, 2])", "false");
+    test_expression!("3 = ALL([3, 3])", "true");
+    test_expression!("NULL = ALL([1, 2])", "NULL");
+    // float
+    test_expression!("1.0 = ALL([1.0, 2.0])", "false");
+    test_expression!("3.0 = ALL([3.0, 3.0])", "true");
+    // utf8
+    test_expression!("'a' = ALL(['a', 'b'])", "false");
+    test_expression!("'c' = ALL(['c', 'c'])", "true");
+    test_expression!("'c' = ALL(['a', NULL])", "false");
+    // bool
+    test_expression!("true = ALL([true, false])", "false");
+    test_expression!("false = ALL([true, false])", "false");
+    test_expression!("true = ALL([true, true])", "true");
+    // =
+    test_expression!("3 = ALL([1, 2])", "false");
+    test_expression!("1 = ALL([1, 2])", "false");
+    test_expression!("NULL = ALL([1, 2])", "NULL");
+    test_expression!("'c' = ALL(['a', 'b'])", "false");
+    test_expression!("'a' = ALL(['a', 'a'])", "true");
+    test_expression!("'b' = ALL([NULL, 'b'])", "NULL");
+    test_expression!("true = ALL([false, true])", "false");
+    test_expression!("false = ALL([false, true])", "false");
+    // <>
+    test_expression!("3 <> ALL([1, 2])", "true");
+    test_expression!("1 <> ALL([1, 2])", "false");
+    test_expression!("NULL <> ALL([1, 2])", "NULL");
+    test_expression!("'c' <> ALL(['a', 'b'])", "true");
+    test_expression!("'a' <> ALL(['a', 'a'])", "false");
+    test_expression!("'b' <> ALL([NULL, 'b'])", "false");
+    test_expression!("true <> ALL([false, true])", "false");
+    test_expression!("false <> ALL([false, true])", "false");
+    // <
+    test_expression!("3 < ALL([1, 2])", "false");
+    test_expression!("1 < ALL([1, 2])", "false");
+    test_expression!("NULL < ALL([1, 2])", "NULL");
+    test_expression!("'c' < ALL(['a', 'b'])", "false");
+    test_expression!("'a' < ALL(['a', 'a'])", "false");
+    test_expression!("'b' < ALL([NULL, 'b'])", "false");
+    test_expression!("true < ALL([false, true])", "false");
+    test_expression!("false < ALL([false, true])", "false");
+    // <=
+    test_expression!("3 <= ALL([1, 2])", "false");
+    test_expression!("1 <= ALL([1, 2])", "true");
+    test_expression!("NULL <= ALL([1, 2])", "NULL");
+    test_expression!("'c' <= ALL(['a', 'b'])", "false");
+    test_expression!("'a' <= ALL(['a', 'a'])", "true");
+    test_expression!("'b' <= ALL([NULL, 'b'])", "NULL");
+    test_expression!("true <= ALL([false, true])", "false");
+    test_expression!("false <= ALL([false, true])", "true");
+    // >
+    test_expression!("3 > ALL([1, 2])", "true");
+    test_expression!("1 > ALL([1, 2])", "false");
+    test_expression!("NULL > ALL([1, 2])", "NULL");
+    test_expression!("'c' > ALL(['a', 'b'])", "true");
+    test_expression!("'a' > ALL(['a', 'a'])", "false");
+    test_expression!("'b' > ALL([NULL, 'b'])", "false");
+    test_expression!("true > ALL([false, true])", "false");
+    test_expression!("false > ALL([false, true])", "false");
+    // >=
+    test_expression!("3 >= ALL([1, 2])", "true");
+    test_expression!("1 >= ALL([1, 2])", "false");
+    test_expression!("NULL >= ALL([1, 2])", "NULL");
+    test_expression!("'c' >= ALL(['a', 'b'])", "true");
+    test_expression!("'a' >= ALL(['a', 'a'])", "true");
+    test_expression!("'b' >= ALL([NULL, 'b'])", "NULL");
+    test_expression!("true >= ALL([false, true])", "true");
+    test_expression!("false >= ALL([false, true])", "false");
 
     Ok(())
 }

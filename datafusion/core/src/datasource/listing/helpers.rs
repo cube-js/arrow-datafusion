@@ -97,6 +97,7 @@ impl ExpressionVisitor for ApplicabilityVisitor<'_> {
             | Expr::ILike { .. }
             | Expr::SimilarTo { .. }
             | Expr::InList { .. }
+            | Expr::InSubquery { .. }
             | Expr::GetIndexedField { .. }
             | Expr::Case { .. } => Recursion::Continue(self),
 

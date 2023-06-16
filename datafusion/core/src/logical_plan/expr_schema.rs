@@ -110,6 +110,7 @@ impl ExprSchemable for Expr {
             | Expr::IsNull(_)
             | Expr::Between { .. }
             | Expr::InList { .. }
+            | Expr::InSubquery { .. }
             | Expr::AnyExpr { .. }
             | Expr::IsNotNull(_) => Ok(DataType::Boolean),
             Expr::BinaryExpr {
@@ -157,7 +158,7 @@ impl ExprSchemable for Expr {
             | Expr::Between { expr, .. }
             | Expr::InList { expr, .. } => expr.nullable(input_schema),
             Expr::Column(c) => input_schema.nullable(c),
-            Expr::OuterColumn(_, _) => Ok(true),
+            Expr::OuterColumn(_, _) | Expr::InSubquery { .. } => Ok(true),
             Expr::Literal(value) => Ok(value.is_null()),
             Expr::Case {
                 when_then_expr,

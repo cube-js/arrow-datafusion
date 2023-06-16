@@ -122,10 +122,16 @@ impl ExprRewritable for Expr {
                 op,
                 right: rewrite_boxed(right, rewriter)?,
             },
-            Expr::AnyExpr { left, op, right } => Expr::AnyExpr {
+            Expr::AnyExpr {
+                left,
+                op,
+                right,
+                all,
+            } => Expr::AnyExpr {
                 left: rewrite_boxed(left, rewriter)?,
                 op,
                 right: rewrite_boxed(right, rewriter)?,
+                all,
             },
             Expr::Like(Like {
                 negated,
@@ -261,6 +267,15 @@ impl ExprRewritable for Expr {
             } => Expr::InList {
                 expr: rewrite_boxed(expr, rewriter)?,
                 list: rewrite_vec(list, rewriter)?,
+                negated,
+            },
+            Expr::InSubquery {
+                expr,
+                subquery,
+                negated,
+            } => Expr::InSubquery {
+                expr: rewrite_boxed(expr, rewriter)?,
+                subquery: rewrite_boxed(subquery, rewriter)?,
                 negated,
             },
             Expr::Wildcard => Expr::Wildcard,

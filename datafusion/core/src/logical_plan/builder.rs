@@ -26,7 +26,7 @@ use crate::error::{DataFusionError, Result};
 use crate::logical_plan::expr_schema::ExprSchemable;
 use crate::logical_plan::plan::{
     Aggregate, Analyze, EmptyRelation, Explain, Filter, Join, Projection, Sort, Subquery,
-    TableScan, TableUDFs, ToStringifiedPlan, Union, Window,
+    SubqueryType, TableScan, TableUDFs, ToStringifiedPlan, Union, Window,
 };
 use crate::optimizer::utils;
 use crate::prelude::*;
@@ -528,12 +528,15 @@ impl LogicalPlanBuilder {
     pub fn subquery(
         &self,
         subqueries: impl IntoIterator<Item = impl Into<LogicalPlan>>,
+        types: impl IntoIterator<Item = SubqueryType>,
     ) -> Result<Self> {
         let subqueries = subqueries.into_iter().map(|l| l.into()).collect::<Vec<_>>();
-        let schema = Arc::new(Subquery::merged_schema(&self.plan, &subqueries));
+        let types = types.into_iter().collect::<Vec<_>>();
+        let schema = Arc::new(Subquery::merged_schema(&self.plan, &subqueries, &types));
         Ok(Self::from(LogicalPlan::Subquery(Subquery {
             input: Arc::new(self.plan.clone()),
             subqueries,
+            types,
             schema,
         })))
     }

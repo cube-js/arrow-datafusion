@@ -453,7 +453,10 @@ fn optimize_plan(
             }))
         }
         LogicalPlan::Subquery(Subquery {
-            input, subqueries, ..
+            input,
+            subqueries,
+            types,
+            ..
         }) => {
             let mut subquery_required_columns = HashSet::new();
             for subquery in subqueries.iter() {
@@ -484,11 +487,12 @@ fn optimize_plan(
                 has_projection,
                 _optimizer_config,
             )?;
-            let new_schema = Subquery::merged_schema(&input, subqueries);
+            let new_schema = Subquery::merged_schema(&input, subqueries, types);
             Ok(LogicalPlan::Subquery(Subquery {
                 input: Arc::new(input),
-                schema: Arc::new(new_schema),
                 subqueries: subqueries.clone(),
+                types: types.clone(),
+                schema: Arc::new(new_schema),
             }))
         }
         // all other nodes: Add any additional columns used by

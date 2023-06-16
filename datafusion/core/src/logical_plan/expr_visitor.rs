@@ -191,6 +191,10 @@ impl ExprVisitable for Expr {
                 list.iter()
                     .try_fold(visitor, |visitor, arg| arg.accept(visitor))
             }
+            Expr::InSubquery { expr, subquery, .. } => {
+                let visitor = expr.accept(visitor)?;
+                subquery.accept(visitor)
+            }
         }?;
 
         visitor.post_visit(self)
