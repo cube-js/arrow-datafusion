@@ -846,3 +846,34 @@ async fn test_current_date() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn date_trunc_date32_test() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    let sql = "select date_trunc('month', cast('2023-02-28' as date)) as dt";
+    let results = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+---------------------+",
+        "| dt                  |",
+        "+---------------------+",
+        "| 2023-02-01 00:00:00 |",
+        "+---------------------+",
+    ];
+    assert_batches_eq!(expected, &results);
+
+    let sql = "with w as (select cast('2023-02-28' as date) d) select date_trunc('month', d) as dt from w";
+    let results = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+---------------------+",
+        "| dt                  |",
+        "+---------------------+",
+        "| 2023-02-01 00:00:00 |",
+        "+---------------------+",
+    ];
+    assert_batches_eq!(expected, &results);
+
+    Ok(())
+}
