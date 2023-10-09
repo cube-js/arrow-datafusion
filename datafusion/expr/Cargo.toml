@@ -38,4 +38,4 @@ path = "src/lib.rs"
 ahash = { version = "0.7", default-features = false }
 arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "096ef28dde6b1ae43ce89ba2c3a9d98295f2972e", features = ["prettyprint"] }
 datafusion-common = { path = "../common", version = "7.0.0" }
-sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "ac5fc7cbf4368cd4c9e6c2af0e0e35d2eff7cc16" }
+sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "037562f7975fcc92b725efbfbaaf050272668593" }
