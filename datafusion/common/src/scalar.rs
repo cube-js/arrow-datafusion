@@ -644,6 +644,9 @@ impl ScalarValue {
                 | ScalarValue::TimestampMicrosecond(None, _)
                 | ScalarValue::TimestampNanosecond(None, _)
                 | ScalarValue::Struct(None, _)
+                | ScalarValue::IntervalDayTime(None)
+                | ScalarValue::IntervalYearMonth(None)
+                | ScalarValue::IntervalMonthDayNano(None)
                 | ScalarValue::Decimal128(None, _, _) // For decimal type, the value is null means ScalarValue::Decimal128 is null.
         )
     }
@@ -1739,6 +1742,15 @@ impl TryFrom<&DataType> for ScalarValue {
             }
             DataType::Struct(fields) => {
                 ScalarValue::Struct(None, Box::new(fields.clone()))
+            }
+            DataType::Interval(IntervalUnit::DayTime) => {
+                ScalarValue::IntervalDayTime(None)
+            }
+            DataType::Interval(IntervalUnit::YearMonth) => {
+                ScalarValue::IntervalYearMonth(None)
+            }
+            DataType::Interval(IntervalUnit::MonthDayNano) => {
+                ScalarValue::IntervalMonthDayNano(None)
             }
             _ => {
                 return Err(DataFusionError::NotImplemented(format!(

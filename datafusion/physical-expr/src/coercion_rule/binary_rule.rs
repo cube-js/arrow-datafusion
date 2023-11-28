@@ -605,30 +605,24 @@ pub fn interval_coercion(
             _ => None,
         },
         Operator::Multiply => match (lhs_type, rhs_type) {
-            (Int64, Interval(itype)) | (Interval(itype), Int64) => {
-                Some(Interval(itype.clone()))
-            }
-            (Int32, Interval(itype)) | (Interval(itype), Int32) => {
-                Some(Interval(itype.clone()))
-            }
-            (Int16, Interval(itype)) | (Interval(itype), Int16) => {
-                Some(Interval(itype.clone()))
-            }
-            (Int8, Interval(itype)) | (Interval(itype), Int8) => {
-                Some(Interval(itype.clone()))
-            }
-            (UInt64, Interval(itype)) | (Interval(itype), UInt64) => {
-                Some(Interval(itype.clone()))
-            }
-            (UInt32, Interval(itype)) | (Interval(itype), UInt32) => {
-                Some(Interval(itype.clone()))
-            }
-            (UInt16, Interval(itype)) | (Interval(itype), UInt16) => {
-                Some(Interval(itype.clone()))
-            }
-            (UInt8, Interval(itype)) | (Interval(itype), UInt8) => {
-                Some(Interval(itype.clone()))
-            }
+            (Utf8, Interval(itype))
+            | (Interval(itype), Utf8)
+            | (Int64, Interval(itype))
+            | (Interval(itype), Int64)
+            | (Int32, Interval(itype))
+            | (Interval(itype), Int32)
+            | (Int16, Interval(itype))
+            | (Interval(itype), Int16)
+            | (Int8, Interval(itype))
+            | (Interval(itype), Int8)
+            | (UInt64, Interval(itype))
+            | (Interval(itype), UInt64)
+            | (UInt32, Interval(itype))
+            | (Interval(itype), UInt32)
+            | (UInt16, Interval(itype))
+            | (Interval(itype), UInt16)
+            | (UInt8, Interval(itype))
+            | (Interval(itype), UInt8) => Some(Interval(itype.clone())),
             _ => None,
         },
         _ => None,
