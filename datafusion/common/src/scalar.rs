@@ -1339,6 +1339,14 @@ impl ScalarValue {
             DataType::Interval(IntervalUnit::YearMonth) => {
                 typed_cast!(array, index, IntervalYearMonthArray, IntervalYearMonth)
             }
+            DataType::Interval(IntervalUnit::MonthDayNano) => {
+                typed_cast!(
+                    array,
+                    index,
+                    IntervalMonthDayNanoArray,
+                    IntervalMonthDayNano
+                )
+            }
             DataType::Timestamp(TimeUnit::Millisecond, tz_opt) => {
                 typed_cast_tz!(
                     array,

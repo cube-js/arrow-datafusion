@@ -79,7 +79,7 @@ checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 [[package]]
 name = "arrow"
 version = "11.1.0"
-source = "git+https://github.com/cube-js/arrow-rs.git?rev=096ef28dde6b1ae43ce89ba2c3a9d98295f2972e#096ef28dde6b1ae43ce89ba2c3a9d98295f2972e"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=7e9519cbe4a994094c142a0a3e254c114df5c9ab#7e9519cbe4a994094c142a0a3e254c114df5c9ab"
 dependencies = [
  "bitflags",
  "chrono",
@@ -93,7 +93,7 @@ dependencies = [
  "lexical-core",
  "multiversion",
  "num",
- "packed_simd_2",
+ "packed_simd",
  "pyo3",
  "rand 0.8.5",
  "regex",
@@ -123,7 +123,7 @@ dependencies = [
 [[package]]
 name = "arrow-flight"
 version = "11.1.0"
-source = "git+https://github.com/cube-js/arrow-rs.git?rev=096ef28dde6b1ae43ce89ba2c3a9d98295f2972e#096ef28dde6b1ae43ce89ba2c3a9d98295f2972e"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=7e9519cbe4a994094c142a0a3e254c114df5c9ab#7e9519cbe4a994094c142a0a3e254c114df5c9ab"
 dependencies = [
  "arrow",
  "base64",
@@ -1373,9 +1373,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.1.4"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fc7aa29613bd6a620df431842069224d8bc9011086b1db4c0e0cd47fa03ec9a"
+checksum = "4ec2a862134d2a7d32d7983ddcdd1c4923530833c9f2ea1a44fc5fa473989058"
 
 [[package]]
 name = "libmimalloc-sys"
@@ -1609,6 +1609,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "578ede34cf02f8924ab9447f50c28075b4d3e5b269972345e7e0372b38c6cdcd"
 dependencies = [
  "autocfg",
+ "libm",
 ]
 
 [[package]]
@@ -1652,13 +1653,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "packed_simd_2"
-version = "0.3.8"
+name = "packed_simd"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1914cd452d8fccd6f9db48147b29fd4ae05bea9dc5d9ad578509f72415de282"
+checksum = "1f9f08af0c877571712e2e3e686ad79efad9657dbf0f7c3c8ba943ff6c38932d"
 dependencies = [
  "cfg-if",
- "libm",
+ "num-traits",
 ]
 
 [[package]]
@@ -1687,7 +1688,7 @@ dependencies = [
 [[package]]
 name = "parquet"
 version = "11.1.0"
-source = "git+https://github.com/cube-js/arrow-rs.git?rev=096ef28dde6b1ae43ce89ba2c3a9d98295f2972e#096ef28dde6b1ae43ce89ba2c3a9d98295f2972e"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=7e9519cbe4a994094c142a0a3e254c114df5c9ab#7e9519cbe4a994094c142a0a3e254c114df5c9ab"
 dependencies = [
  "arrow",
  "base64",
@@ -2274,7 +2275,7 @@ dependencies = [
 [[package]]
 name = "sqlparser"
 version = "0.16.0"
-source = "git+https://github.com/cube-js/sqlparser-rs.git?rev=037562f7975fcc92b725efbfbaaf050272668593#037562f7975fcc92b725efbfbaaf050272668593"
+source = "git+https://github.com/cube-js/sqlparser-rs.git?rev=2c1becf622f2283514ecbb7e3f01bd858edeaa71#2c1becf622f2283514ecbb7e3f01bd858edeaa71"
 dependencies = [
  "log",
 ]

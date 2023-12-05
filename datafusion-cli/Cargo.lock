@@ -58,7 +58,7 @@ checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 [[package]]
 name = "arrow"
 version = "11.1.0"
-source = "git+https://github.com/cube-js/arrow-rs.git?rev=096ef28dde6b1ae43ce89ba2c3a9d98295f2972e#096ef28dde6b1ae43ce89ba2c3a9d98295f2972e"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=7e9519cbe4a994094c142a0a3e254c114df5c9ab#7e9519cbe4a994094c142a0a3e254c114df5c9ab"
 dependencies = [
  "bitflags",
  "chrono",
@@ -1175,7 +1175,7 @@ dependencies = [
 [[package]]
 name = "parquet"
 version = "11.1.0"
-source = "git+https://github.com/cube-js/arrow-rs.git?rev=096ef28dde6b1ae43ce89ba2c3a9d98295f2972e#096ef28dde6b1ae43ce89ba2c3a9d98295f2972e"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=7e9519cbe4a994094c142a0a3e254c114df5c9ab#7e9519cbe4a994094c142a0a3e254c114df5c9ab"
 dependencies = [
  "arrow",
  "base64",
@@ -1477,7 +1477,7 @@ checksum = "45456094d1983e2ee2a18fdfebce3189fa451699d0502cb8e3b49dba5ba41451"
 [[package]]
 name = "sqlparser"
 version = "0.16.0"
-source = "git+https://github.com/cube-js/sqlparser-rs.git?rev=037562f7975fcc92b725efbfbaaf050272668593#037562f7975fcc92b725efbfbaaf050272668593"
+source = "git+https://github.com/cube-js/sqlparser-rs.git?rev=2c1becf622f2283514ecbb7e3f01bd858edeaa71#2c1becf622f2283514ecbb7e3f01bd858edeaa71"
 dependencies = [
  "log",
 ]
