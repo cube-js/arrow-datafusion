@@ -283,6 +283,7 @@ fn in_mem_partial_sort(
         let pre_sort = if buffered_batches.len() == 1 {
             buffered_batches.pop()
         } else {
+            #[allow(clippy::iter_with_drain)]
             let batches = buffered_batches.drain(..).collect::<Vec<_>>();
             // combine all record batches into one for each column
             common::combine_batches(&batches, schema.clone())?

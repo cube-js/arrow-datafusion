@@ -126,7 +126,7 @@ fn get_projected_schema(
 
 /// Recursively transverses the logical plan removing expressions and that are not needed.
 fn optimize_plan(
-    optimizer: &ProjectionPushDown,
+    _optimizer: &ProjectionPushDown,
     plan: &LogicalPlan,
     required_columns: &HashSet<Column>, // set of columns required up to this step
     has_projection: bool,
@@ -165,7 +165,7 @@ fn optimize_plan(
                 })?;
 
             let new_input = optimize_plan(
-                optimizer,
+                _optimizer,
                 input,
                 &new_required_columns,
                 true,
@@ -219,7 +219,7 @@ fn optimize_plan(
             }
 
             let optimized_left = Arc::new(optimize_plan(
-                optimizer,
+                _optimizer,
                 left,
                 &new_required_columns,
                 true,
@@ -227,7 +227,7 @@ fn optimize_plan(
             )?);
 
             let optimized_right = Arc::new(optimize_plan(
-                optimizer,
+                _optimizer,
                 right,
                 &new_required_columns,
                 true,
@@ -276,7 +276,7 @@ fn optimize_plan(
             // none columns in window expr are needed, remove the window expr
             if new_window_expr.is_empty() {
                 return LogicalPlanBuilder::from(optimize_plan(
-                    optimizer,
+                    _optimizer,
                     input,
                     required_columns,
                     true,
@@ -292,7 +292,7 @@ fn optimize_plan(
             )?;
 
             LogicalPlanBuilder::from(optimize_plan(
-                optimizer,
+                _optimizer,
                 input,
                 &new_required_columns,
                 true,
@@ -344,7 +344,7 @@ fn optimize_plan(
                 group_expr: group_expr.clone(),
                 aggr_expr: new_aggr_expr,
                 input: Arc::new(optimize_plan(
-                    optimizer,
+                    _optimizer,
                     input,
                     &new_required_columns,
                     true,
@@ -393,7 +393,7 @@ fn optimize_plan(
 
             Ok(LogicalPlan::Analyze(Analyze {
                 input: Arc::new(optimize_plan(
-                    optimizer,
+                    _optimizer,
                     &a.input,
                     &required_columns,
                     false,
@@ -429,7 +429,7 @@ fn optimize_plan(
                             new_required_columns.insert(f.qualified_column());
                         });
                     optimize_plan(
-                        optimizer,
+                        _optimizer,
                         input_plan,
                         &new_required_columns,
                         has_projection,
@@ -478,7 +478,7 @@ fn optimize_plan(
                     .filter(|c| schema.index_of_column(c).is_ok()),
             );
             let input = optimize_plan(
-                optimizer,
+                _optimizer,
                 input,
                 &new_required_columns,
                 has_projection,
@@ -517,7 +517,7 @@ fn optimize_plan(
                 .iter()
                 .map(|input_plan| {
                     optimize_plan(
-                        optimizer,
+                        _optimizer,
                         input_plan,
                         &new_required_columns,
                         has_projection,

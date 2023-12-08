@@ -260,6 +260,7 @@ impl<'a> CodeBlock<'a> {
                 Ok(Stmt::IfElse(Box::new(condition.clone()), stmts, Vec::new()))
             } else {
                 assert!(!then_stmts.is_empty());
+                #[allow(clippy::iter_with_drain)]
                 let then_stmts = then_stmts.drain(..).collect::<Vec<_>>();
                 let else_stmts = self.stmts.drain(..).collect::<Vec<_>>();
                 Ok(Stmt::IfElse(
