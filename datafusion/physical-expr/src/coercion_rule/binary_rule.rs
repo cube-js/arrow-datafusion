@@ -622,7 +622,9 @@ pub fn interval_coercion(
             | (UInt16, Interval(itype))
             | (Interval(itype), UInt16)
             | (UInt8, Interval(itype))
-            | (Interval(itype), UInt8) => Some(Interval(itype.clone())),
+            | (Interval(itype), UInt8)
+            | (Decimal(_, _), Interval(itype))
+            | (Interval(itype), Decimal(_, _)) => Some(Interval(itype.clone())),
             _ => None,
         },
         _ => None,
