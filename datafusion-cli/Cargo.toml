@@ -28,7 +28,7 @@ repository = "https://github.com/apache/arrow-datafusion"
 rust-version = "1.59"
 
 [dependencies]
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "7e9519cbe4a994094c142a0a3e254c114df5c9ab" }
+arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "9f2e2862f3f5e5efb1f83364b3ac8492f776a92d" }
 clap = { version = "3", features = ["derive", "cargo"] }
 datafusion = { path = "../datafusion/core", version = "7.0.0" }
 dirs = "4.0.0"
