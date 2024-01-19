@@ -87,7 +87,9 @@ pub fn coerce_types(
         | Operator::BitwiseShiftRight => bitwise_coercion(lhs_type, rhs_type),
         Operator::And | Operator::Or => match (lhs_type, rhs_type) {
             // logical binary boolean operators can only be evaluated in bools
-            (DataType::Boolean, DataType::Boolean) => Some(DataType::Boolean),
+            (DataType::Boolean, DataType::Boolean)
+            | (DataType::Boolean, DataType::Null)
+            | (DataType::Null, DataType::Boolean) => Some(DataType::Boolean),
             _ => None,
         },
         // logical equality operators have their own rules, and always return a boolean
@@ -164,6 +166,11 @@ pub fn comparison_eq_coercion(
         // same type => equality is possible
         return Some(lhs_type.clone());
     }
+    match (lhs_type, rhs_type) {
+        (_, DataType::Null) if !is_dictionary(lhs_type) => return Some(lhs_type.clone()),
+        (DataType::Null, _) if !is_dictionary(rhs_type) => return Some(rhs_type.clone()),
+        _ => (),
+    };
     comparison_binary_numeric_coercion(lhs_type, rhs_type)
         .or_else(|| string_boolean_equality_coercion(lhs_type, rhs_type))
         .or_else(|| dictionary_coercion(lhs_type, rhs_type))
@@ -205,6 +212,11 @@ fn comparison_order_coercion(
         // same type => all good
         return Some(lhs_type.clone());
     }
+    match (lhs_type, rhs_type) {
+        (_, DataType::Null) if !is_dictionary(lhs_type) => return Some(lhs_type.clone()),
+        (DataType::Null, _) if !is_dictionary(rhs_type) => return Some(rhs_type.clone()),
+        _ => (),
+    };
     comparison_binary_numeric_coercion(lhs_type, rhs_type)
         .or_else(|| string_coercion(lhs_type, rhs_type))
         .or_else(|| dictionary_coercion(lhs_type, rhs_type))
@@ -314,6 +326,9 @@ fn mathematics_numerical_coercion(
         (Decimal(_, _), Decimal(_, _)) => {
             coercion_decimal_mathematics_type(mathematics_op, lhs_type, rhs_type)
         }
+        (Decimal(precision, scale), Null) | (Null, Decimal(precision, scale)) => {
+            Some(Decimal(*precision, *scale))
+        }
         (Decimal(_, _), _) => {
             let converted_decimal_type = coerce_numeric_type_to_decimal(rhs_type);
             match converted_decimal_type {
@@ -415,6 +430,7 @@ pub fn is_signed_numeric(dt: &DataType) -> bool {
             | DataType::Float32
             | DataType::Float64
             | DataType::Decimal(_, _)
+            | DataType::Null
     )
 }
 
@@ -498,6 +514,8 @@ fn string_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType>
         (LargeUtf8, Utf8) => Some(LargeUtf8),
         (Utf8, LargeUtf8) => Some(LargeUtf8),
         (LargeUtf8, LargeUtf8) => Some(LargeUtf8),
+        (Utf8, Null) | (Null, Utf8) => Some(Utf8),
+        (LargeUtf8, Null) | (Null, LargeUtf8) => Some(LargeUtf8),
         _ => None,
     }
 }
@@ -622,6 +640,11 @@ fn eq_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
         // same type => equality is possible
         return Some(lhs_type.clone());
     }
+    match (lhs_type, rhs_type) {
+        (_, DataType::Null) if !is_dictionary(lhs_type) => return Some(lhs_type.clone()),
+        (DataType::Null, _) if !is_dictionary(rhs_type) => return Some(rhs_type.clone()),
+        _ => (),
+    };
     numerical_coercion(lhs_type, rhs_type)
         .or_else(|| dictionary_coercion(lhs_type, rhs_type))
         .or_else(|| temporal_coercion(lhs_type, rhs_type))
@@ -642,14 +665,22 @@ pub fn interval_coercion(
     match op {
         Operator::Plus | Operator::Minus => match (lhs_type, rhs_type) {
             (Timestamp(unit, zone), Interval(_))
-            | (Interval(_), Timestamp(unit, zone)) => {
+            | (Interval(_), Timestamp(unit, zone))
+            | (Timestamp(unit, zone), Null)
+            | (Null, Timestamp(unit, zone)) => {
                 Some(Timestamp(unit.clone(), zone.clone()))
             }
-            (Date32, Interval(_)) | (Interval(_), Date32) => {
+            (Date32, Interval(_))
+            | (Interval(_), Date32)
+            | (Date32, Null)
+            | (Null, Date32) => {
                 // TODO: this is not correct and should be replaced with correctly typed timestamp
                 Some(Date32)
             }
-            (Date64, Interval(_)) | (Interval(_), Date64) => {
+            (Date64, Interval(_))
+            | (Interval(_), Date64)
+            | (Date64, Null)
+            | (Null, Date64) => {
                 // TODO: this is not correct and should be replaced with correctly typed timestamp
                 Some(Date64)
             }
@@ -679,7 +710,9 @@ pub fn interval_coercion(
             | (UInt8, Interval(itype))
             | (Interval(itype), UInt8)
             | (Decimal(_, _), Interval(itype))
-            | (Interval(itype), Decimal(_, _)) => Some(Interval(itype.clone())),
+            | (Interval(itype), Decimal(_, _))
+            | (Null, Interval(itype))
+            | (Interval(itype), Null) => Some(Interval(itype.clone())),
             _ => None,
         },
         _ => None,
@@ -699,7 +732,7 @@ pub fn date_coercion(
     // that the coercion removes the least amount of information
     match op {
         Operator::Minus => match (lhs_type, rhs_type) {
-            (Date32, Date32) => Some(Int32),
+            (Date32, Date32) | (Date32, Null) | (Null, Date32) => Some(Int32),
             (Timestamp(_, _), Timestamp(_, _)) => Some(Interval(MonthDayNano)),
             _ => None,
         },

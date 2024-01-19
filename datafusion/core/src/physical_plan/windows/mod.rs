@@ -30,7 +30,7 @@ use crate::physical_plan::{
 use crate::scalar::ScalarValue;
 use arrow::datatypes::Schema;
 use datafusion_expr::{
-    window_function::{signature_for_built_in, BuiltInWindowFunction, WindowFunction},
+    window_function::{signature_for_built_in, BuiltInWindowFunction},
     WindowFrame,
 };
 use datafusion_physical_expr::window::BuiltInWindowFunctionExpr;
@@ -39,6 +39,7 @@ use std::sync::Arc;
 
 mod window_agg_exec;
 
+pub use datafusion_expr::window_function::WindowFunction;
 pub use datafusion_physical_expr::window::{
     AggregateWindowExpr, BuiltInWindowExpr, WindowExpr,
 };
