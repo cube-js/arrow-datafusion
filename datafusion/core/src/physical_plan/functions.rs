@@ -120,7 +120,14 @@ pub fn return_type(
         }
         BuiltinScalarFunction::Concat => Ok(DataType::Utf8),
         BuiltinScalarFunction::ConcatWithSeparator => Ok(DataType::Utf8),
-        BuiltinScalarFunction::DatePart => Ok(DataType::Int32),
+        BuiltinScalarFunction::DatePart => {
+            match &input_expr_types[1] {
+                // FIXME: DatePart should *always* return a numeric but this might break things
+                // so since interval wasn't supported in the first place, this is safe
+                DataType::Interval(_) => Ok(DataType::Float64),
+                _ => Ok(DataType::Int32),
+            }
+        }
         BuiltinScalarFunction::DateTrunc => {
             Ok(DataType::Timestamp(TimeUnit::Nanosecond, None))
         }
@@ -539,6 +546,10 @@ fn signature(fun: &BuiltinScalarFunction) -> Signature {
                 TypeSignature::Exact(vec![
                     DataType::Utf8,
                     DataType::Timestamp(TimeUnit::Nanosecond, None),
+                ]),
+                TypeSignature::Exact(vec![
+                    DataType::Utf8,
+                    DataType::Interval(IntervalUnit::MonthDayNano),
                 ]),
             ],
             fun.volatility(),
