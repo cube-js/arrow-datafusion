@@ -585,6 +585,7 @@ pub fn interval_coercion(
     rhs_type: &DataType,
 ) -> Option<DataType> {
     use arrow::datatypes::DataType::*;
+    use arrow::datatypes::IntervalUnit::*;
 
     // these are ordered from most informative to least informative so
     // that the coercion removes the least amount of information
@@ -605,6 +606,10 @@ pub fn interval_coercion(
             _ => None,
         },
         Operator::Multiply => match (lhs_type, rhs_type) {
+            (Float64, Interval(_))
+            | (Interval(_), Float64)
+            | (Float32, Interval(_))
+            | (Interval(_), Float32) => Some(Interval(MonthDayNano)),
             (Utf8, Interval(itype))
             | (Interval(itype), Utf8)
             | (Int64, Interval(itype))
