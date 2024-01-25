@@ -638,12 +638,14 @@ pub fn date_coercion(
     rhs_type: &DataType,
 ) -> Option<DataType> {
     use arrow::datatypes::DataType::*;
+    use arrow::datatypes::IntervalUnit::*;
 
     // these are ordered from most informative to least informative so
     // that the coercion removes the least amount of information
     match op {
         Operator::Minus => match (lhs_type, rhs_type) {
             (Date32, Date32) => Some(Int32),
+            (Timestamp(_, _), Timestamp(_, _)) => Some(Interval(MonthDayNano)),
             _ => None,
         },
         _ => None,
