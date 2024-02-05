@@ -104,19 +104,19 @@ async fn subquery_where_with_from() -> Result<()> {
 }
 
 // TODO: plans but does not execute
-#[ignore]
 #[tokio::test]
 async fn subquery_select_and_where_no_from() -> Result<()> {
     let ctx = SessionContext::new();
     register_aggregate_simple_csv(&ctx).await?;
 
-    let sql = "SELECT c1, (SELECT c1 + 1) FROM aggregate_simple o WHERE (SELECT NOT c3) ORDER BY c1 LIMIT 2";
+    let sql = "SELECT c1, (SELECT c1 + 1) FROM aggregate_simple o WHERE (SELECT NOT c3) ORDER BY c1 LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
 
     let expected = vec![
         "+---------+------------------+",
         "| c1      | c1 Plus Int64(1) |",
         "+---------+------------------+",
+        "| 0.00002 | 1.00002          |",
         "| 0.00002 | 1.00002          |",
         "| 0.00004 | 1.00004          |",
         "+---------+------------------+",
@@ -127,7 +127,6 @@ async fn subquery_select_and_where_no_from() -> Result<()> {
 }
 
 // TODO: plans but does not execute
-#[ignore]
 #[tokio::test]
 async fn subquery_select_and_where_with_from() -> Result<()> {
     let ctx = SessionContext::new();

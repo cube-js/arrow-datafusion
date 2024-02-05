@@ -1033,6 +1033,7 @@ pub fn create_physical_expr(
             let cursors = execution_props.outer_query_cursors.clone();
             let cursor = cursors
                 .iter()
+                .rev()
                 .find(|cur| cur.schema().field_with_name(c.name.as_str()).is_ok())
                 .ok_or_else(|| {
                     DataFusionError::Execution(format!(
