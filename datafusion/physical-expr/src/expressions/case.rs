@@ -21,7 +21,7 @@ use crate::expressions::try_cast;
 use crate::PhysicalExpr;
 use arrow::array::{self, *};
 use arrow::compute::{and, cast, eq_dyn, is_null, not, or, or_kleene};
-use arrow::datatypes::{DataType, Schema};
+use arrow::datatypes::{DataType, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::{binary_rule::coerce_types, ColumnarValue, Operator};
@@ -250,6 +250,13 @@ fn if_then_else(
         DataType::Boolean => if_then_else!(
             array::BooleanBuilder,
             array::BooleanArray,
+            bools,
+            true_values,
+            false_values
+        ),
+        DataType::Timestamp(TimeUnit::Nanosecond, None) => if_then_else!(
+            array::TimestampNanosecondBuilder,
+            array::TimestampNanosecondArray,
             bools,
             true_values,
             false_values
