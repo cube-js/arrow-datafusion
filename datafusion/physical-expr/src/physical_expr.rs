@@ -26,7 +26,7 @@ use datafusion_expr::ColumnarValue;
 use std::fmt::{Debug, Display};
 
 use arrow::array::{
-    make_array, Array, ArrayRef, BooleanArray, MutableArrayData, UInt64Array,
+    make_array, Array, ArrayRef, BooleanArray, MutableArrayData, NullArray, UInt64Array,
 };
 use arrow::compute::{and_kleene, is_not_null, take, SlicesIterator};
 use std::any::Any;
@@ -85,6 +85,10 @@ pub trait PhysicalExpr: Send + Sync + Display + Debug {
 /// * `mask` - Boolean values used to determine where to put the `truthy` values
 /// * `truthy` - All values of this array are to scatter according to `mask` into final result.
 fn scatter(mask: &BooleanArray, truthy: &dyn Array) -> Result<ArrayRef> {
+    if truthy.data_type() == &DataType::Null {
+        return Ok(Arc::new(NullArray::new(mask.len())));
+    }
+
     let truthy = truthy.data();
 
     // update the mask so that any null values become false
@@ -188,6 +192,20 @@ mod tests {
         ]);
         let result = scatter(&mask, truthy.as_ref())?;
         let result = result.as_any().downcast_ref::<BooleanArray>().unwrap();
+
+        assert_eq!(&expected, result);
+        Ok(())
+    }
+
+    #[test]
+    fn scatter_null() -> Result<()> {
+        let truthy = Arc::new(NullArray::new(3));
+        let mask = BooleanArray::from(vec![true, true, false, false, true]);
+
+        // the output array is expected to be the same length as the mask array
+        let expected = NullArray::new(5);
+        let result = scatter(&mask, truthy.as_ref())?;
+        let result = result.as_any().downcast_ref::<NullArray>().unwrap();
 
         assert_eq!(&expected, result);
         Ok(())
