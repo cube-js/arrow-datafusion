@@ -54,8 +54,8 @@ use log::warn;
 
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator, DataType as SQLDataType, DateTimeField, Expr as SQLExpr,
-    FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator, ObjectName,
-    Offset as SQLOffset, Query, Select, SelectItem, SetExpr, SetOperator,
+    Fetch, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator,
+    ObjectName, Offset as SQLOffset, Query, Select, SelectItem, SetExpr, SetOperator,
     ShowStatementFilter, TableFactor, TableWithJoins, TrimWhereField, UnaryOperator,
     Value, Values as SQLValues,
 };
@@ -349,7 +349,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         let plan = with_cte_context.set_expr_to_plan(set_expr, alias)?;
 
         let plan = with_cte_context.order_by(plan, query.order_by)?;
-        with_cte_context.limit(plan, query.offset, query.limit)
+        with_cte_context.limit(plan, query.offset, query.limit, query.fetch)
     }
 
     fn set_expr_to_plan(
@@ -1320,9 +1320,10 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         &self,
         input: LogicalPlan,
         skip: Option<SQLOffset>,
-        fetch: Option<SQLExpr>,
+        limit: Option<SQLExpr>,
+        fetch: Option<Fetch>,
     ) -> Result<LogicalPlan> {
-        if skip.is_none() && fetch.is_none() {
+        if skip.is_none() && limit.is_none() && fetch.is_none() {
             return Ok(input);
         }
 
@@ -1347,15 +1348,56 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             _ => None,
         };
 
-        let fetch = match fetch {
-            Some(limit_expr) => {
+        let fetch = match (limit, fetch) {
+            (Some(limit_expr), None) => {
                 let n = match self.sql_to_rex(limit_expr, input.schema())? {
-                    Expr::Literal(ScalarValue::Int64(Some(n))) => Ok(n as usize),
+                    Expr::Literal(ScalarValue::Int64(Some(n))) => {
+                        if n < 0 {
+                            return Err(DataFusionError::Plan(
+                                "LIMIT must not be negative".to_string(),
+                            ));
+                        }
+                        Ok(n as usize)
+                    }
                     _ => Err(DataFusionError::Plan(
                         "Unexpected expression for LIMIT clause".to_string(),
                     )),
                 }?;
                 Some(n)
+            }
+            (None, Some(fetch_expr)) => {
+                if fetch_expr.with_ties {
+                    return Err(DataFusionError::Plan(
+                        "FETCH ... WITH TIES is not supported".to_string(),
+                    ));
+                }
+                if fetch_expr.percent {
+                    return Err(DataFusionError::Plan(
+                        "FETCH ... n PERCENT ROWS is not supported".to_string(),
+                    ));
+                }
+                let n = match fetch_expr.quantity {
+                    Some(quantity) => match self.sql_to_rex(quantity, input.schema())? {
+                        Expr::Literal(ScalarValue::Int64(Some(n))) => {
+                            if n < 0 {
+                                return Err(DataFusionError::Plan(
+                                    "LIMIT must not be negative".to_string(),
+                                ));
+                            }
+                            Ok(n as usize)
+                        }
+                        _ => Err(DataFusionError::Plan(
+                            "Unexpected expression for LIMIT clause".to_string(),
+                        )),
+                    },
+                    None => Ok(1),
+                }?;
+                Some(n)
+            }
+            (Some(_), Some(_)) => {
+                return Err(DataFusionError::Plan(
+                    "Only LIMIT or FETCH must be provided".to_string(),
+                ))
             }
             _ => None,
         };
@@ -5160,6 +5202,10 @@ mod tests {
 
         // Flip the order of LIMIT and OFFSET in the query. Plan should remain the same.
         let sql = "SELECT id FROM person WHERE person.id > 100 OFFSET 0 LIMIT 5;";
+        quick_test(sql, expected);
+
+        // Replace LIMIT with FETCH ROWS in the query. Plan should remain the same.
+        let sql = "SELECT id FROM person WHERE person.id > 100 OFFSET 0 FETCH NEXT 5 ROWS ONLY;";
         quick_test(sql, expected);
     }
 
