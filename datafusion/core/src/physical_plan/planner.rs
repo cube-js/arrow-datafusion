@@ -69,6 +69,7 @@ use arrow::{compute::can_cast_types, datatypes::DataType};
 use async_trait::async_trait;
 use datafusion_common::OuterQueryCursor;
 use datafusion_expr::expr_fn::binary_expr;
+use datafusion_expr::WindowFrameBound;
 use datafusion_physical_expr::expressions::{any, OuterColumn};
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
@@ -1479,12 +1480,16 @@ pub fn create_window_expr_with_name(
                     )),
                 })
                 .collect::<Result<Vec<_>>>()?;
-            if window_frame.is_some() {
-                return Err(DataFusionError::NotImplemented(
-                    "window expression with window frame definition is not yet supported"
-                        .to_owned(),
-                ));
-            }
+            let window_frame = match window_frame {
+                Some(window_frame) => match (&window_frame.start_bound, &window_frame.end_bound) {
+                    (WindowFrameBound::Preceding(None), WindowFrameBound::CurrentRow) => &None,
+                    (_, _) => return Err(DataFusionError::NotImplemented(
+                        "window expression with window frame definition is not yet supported"
+                            .to_owned(),
+                    )),
+                },
+                None => &None,
+            };
             windows::create_window_expr(
                 fun,
                 name,
