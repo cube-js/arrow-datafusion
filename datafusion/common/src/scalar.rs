@@ -617,7 +617,9 @@ impl ScalarValue {
             | ScalarValue::Int16(None)
             | ScalarValue::Int32(None)
             | ScalarValue::Int64(None)
-            | ScalarValue::Float32(None) => self.clone(),
+            | ScalarValue::Float32(None)
+            | ScalarValue::IntervalYearMonth(None)
+            | ScalarValue::IntervalDayTime(None) => self.clone(),
             ScalarValue::Float64(Some(v)) => ScalarValue::Float64(Some(-v)),
             ScalarValue::Float32(Some(v)) => ScalarValue::Float32(Some(-v)),
             ScalarValue::Int8(Some(v)) => ScalarValue::Int8(Some(-v)),
@@ -626,6 +628,12 @@ impl ScalarValue {
             ScalarValue::Int64(Some(v)) => ScalarValue::Int64(Some(-v)),
             ScalarValue::Decimal128(Some(v), precision, scale) => {
                 ScalarValue::Decimal128(Some(-v), *precision, *scale)
+            }
+            ScalarValue::IntervalYearMonth(Some(v)) => {
+                ScalarValue::IntervalYearMonth(Some(-v))
+            }
+            ScalarValue::IntervalDayTime(Some(v)) => {
+                ScalarValue::IntervalDayTime(Some(scalar_negate_interval_day_time(*v)))
             }
             _ => panic!("Cannot run arithmetic negate on scalar value: {:?}", self),
         }
@@ -1988,4 +1996,13 @@ impl ScalarType<i64> for TimestampNanosecondType {
     fn scalar(r: Option<i64>) -> ScalarValue {
         ScalarValue::TimestampNanosecond(r, None)
     }
+}
+
+pub fn scalar_negate_interval_day_time(value: i64) -> i64 {
+    let value = value as u64;
+    let days: i32 = ((value & 0xFFFFFFFF00000000) >> 32) as i32;
+    let milliseconds: i32 = (value & 0xFFFFFFFF) as i32;
+    let days = -days; // TODO: panics on i32::MIN
+    let milliseconds = -milliseconds; // TODO: panics on i32::MIN
+    (((days as u64) << 32) | (milliseconds as u64)) as i64
 }

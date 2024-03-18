@@ -22,6 +22,7 @@ mod approx_percentile_cont;
 mod approx_percentile_cont_with_weight;
 mod array_agg;
 mod average;
+mod binary_distinct;
 #[macro_use]
 mod binary;
 mod bool_and_or;

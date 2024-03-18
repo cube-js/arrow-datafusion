@@ -56,6 +56,9 @@ use arrow::datatypes::{ArrowNumericType, DataType, Schema, TimeUnit};
 use arrow::error::ArrowError::DivideByZero;
 use arrow::record_batch::RecordBatch;
 
+use super::binary_distinct::{
+    coerce_types_distinct, distinct_types_allowed, evaluate_distinct_with_resolved_args,
+};
 use crate::expressions::try_cast;
 use crate::string_expressions;
 use crate::PhysicalExpr;
@@ -1281,7 +1284,9 @@ impl PhysicalExpr for BinaryExpr {
         let left_data_type = left_value.data_type();
         let right_data_type = right_value.data_type();
 
-        if left_data_type != right_data_type {
+        if left_data_type != right_data_type
+            && !distinct_types_allowed(&left_data_type, &self.op, &right_data_type)
+        {
             return Err(DataFusionError::Internal(format!(
                 "Cannot evaluate binary expression {:?} with types {:?} and {:?}",
                 self.op, left_data_type, right_data_type
@@ -1488,6 +1493,17 @@ impl BinaryExpr {
         right: Arc<dyn Array>,
         right_data_type: &DataType,
     ) -> Result<ArrayRef> {
+        // first try to evaluate expressions with distinct types
+        if let Some(result) = evaluate_distinct_with_resolved_args(
+            Arc::clone(&left),
+            left_data_type,
+            &self.op,
+            Arc::clone(&right),
+            right_data_type,
+        ) {
+            return result;
+        }
+
         match &self.op {
             Operator::Like => binary_string_array_op!(left, right, like),
             Operator::NotLike => binary_string_array_op!(left, right, nlike),
@@ -1641,6 +1657,17 @@ fn binary_cast(
 ) -> Result<(Arc<dyn PhysicalExpr>, Arc<dyn PhysicalExpr>)> {
     let lhs_type = &lhs.data_type(input_schema)?;
     let rhs_type = &rhs.data_type(input_schema)?;
+
+    // first try to coerce types for expressions that must have distinct
+    // left and right types
+    if let Some((lhs_result_type, rhs_result_type)) =
+        coerce_types_distinct(lhs_type, op, rhs_type)
+    {
+        return Ok((
+            try_cast(lhs, input_schema, lhs_result_type)?,
+            try_cast(rhs, input_schema, rhs_result_type)?,
+        ));
+    }
 
     let result_type = coerce_types(lhs_type, op, rhs_type)?;
 

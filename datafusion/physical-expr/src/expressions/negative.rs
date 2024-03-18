@@ -21,16 +21,22 @@ use std::any::Any;
 use std::sync::Arc;
 
 use arrow::array::ArrayRef;
-use arrow::compute::kernels::arithmetic::negate;
+use arrow::compute::kernels::{arithmetic::negate, arity::unary};
 use arrow::{
-    array::{Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array},
-    datatypes::{DataType, Schema},
+    array::{
+        Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+        IntervalDayTimeArray, IntervalYearMonthArray,
+    },
+    datatypes::{DataType, IntervalDayTimeType, IntervalUnit, Schema},
     record_batch::RecordBatch,
 };
 
 use crate::PhysicalExpr;
-use datafusion_common::{DataFusionError, Result};
-use datafusion_expr::{binary_rule::is_signed_numeric, ColumnarValue};
+use datafusion_common::{scalar_negate_interval_day_time, DataFusionError, Result};
+use datafusion_expr::{
+    binary_rule::{is_interval, is_signed_numeric},
+    ColumnarValue,
+};
 
 /// Invoke a compute kernel on array(s)
 macro_rules! compute_op {
@@ -94,8 +100,13 @@ impl PhysicalExpr for NegativeExpr {
                     DataType::Int64 => compute_op!(array, negate, Int64Array),
                     DataType::Float32 => compute_op!(array, negate, Float32Array),
                     DataType::Float64 => compute_op!(array, negate, Float64Array),
+                    DataType::Interval(IntervalUnit::YearMonth) => compute_op!(array, negate, IntervalYearMonthArray),
+                    DataType::Interval(IntervalUnit::DayTime) => {
+                        let array = array.as_any().downcast_ref::<IntervalDayTimeArray>().unwrap();
+                        Ok(Arc::new(unary::<_, _, IntervalDayTimeType>(array, scalar_negate_interval_day_time)))
+                    }
                     _ => Err(DataFusionError::Internal(format!(
-                        "(- '{:?}') can't be evaluated because the expression's type is {:?}, not signed numeric",
+                        "(- '{:?}') can't be evaluated because the expression's type is {:?}, which is not supported",
                         self,
                         array.data_type(),
                     ))),
@@ -119,10 +130,10 @@ pub fn negative(
     input_schema: &Schema,
 ) -> Result<Arc<dyn PhysicalExpr>> {
     let data_type = arg.data_type(input_schema)?;
-    if !is_signed_numeric(&data_type) {
+    if !is_signed_numeric(&data_type) && !is_interval(&data_type) {
         Err(DataFusionError::Internal(
             format!(
-                "(- '{:?}') can't be evaluated because the expression's type is {:?}, not signed numeric",
+                "(- '{:?}') can't be evaluated because the expression's type is {:?}, which is not supported",
                 arg, data_type,
             ),
         ))

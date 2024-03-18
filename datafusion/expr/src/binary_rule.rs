@@ -32,6 +32,12 @@ pub fn binary_operator_data_type(
     op: &Operator,
     rhs_type: &DataType,
 ) -> Result<DataType> {
+    // before coercing types, check expressions which are allowed
+    // to have different lhs and rhs types by design
+    if let Some(result_data_type) = distinct_coercion(lhs_type, op, rhs_type) {
+        return Ok(result_data_type);
+    }
+
     // validate that it is possible to perform the operation on incoming types.
     // (or the return datatype cannot be inferred)
     let result_type = coerce_types(lhs_type, op, rhs_type)?;
@@ -106,13 +112,10 @@ pub fn coerce_types(
         // because coercion favours higher information types
         Operator::Plus | Operator::Minus => {
             mathematics_numerical_coercion(op, lhs_type, rhs_type)
-                .or_else(|| interval_coercion(op, lhs_type, rhs_type))
-                .or_else(|| date_coercion(op, lhs_type, rhs_type))
         }
         // Same as Plus & Minus
         Operator::Modulo | Operator::Divide | Operator::Multiply => {
             mathematics_numerical_coercion(op, lhs_type, rhs_type)
-                .or_else(|| interval_coercion(op, lhs_type, rhs_type))
         }
         Operator::RegexMatch
         | Operator::RegexIMatch
@@ -445,6 +448,11 @@ pub fn is_numeric(dt: &DataType) -> bool {
         }
 }
 
+/// Determine if a DataType is interval or not
+pub fn is_interval(dt: &DataType) -> bool {
+    matches!(dt, DataType::Interval(_))
+}
+
 /// Coercion rules for dictionary values (aka the type of the  dictionary itself)
 fn dictionary_value_coercion(
     lhs_type: &DataType,
@@ -651,89 +659,81 @@ fn eq_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
         .or_else(|| null_coercion(lhs_type, rhs_type))
 }
 
-/// Coercion rule for interval
-pub fn interval_coercion(
-    op: &Operator,
+pub fn distinct_coercion(
     lhs_type: &DataType,
+    op: &Operator,
     rhs_type: &DataType,
 ) -> Option<DataType> {
-    use arrow::datatypes::DataType::*;
     use arrow::datatypes::IntervalUnit::*;
+    use arrow::datatypes::TimeUnit::*;
+    use DataType::*;
 
     // these are ordered from most informative to least informative so
     // that the coercion removes the least amount of information
     match op {
-        Operator::Plus | Operator::Minus => match (lhs_type, rhs_type) {
-            (Timestamp(unit, zone), Interval(_))
-            | (Interval(_), Timestamp(unit, zone))
-            | (Timestamp(unit, zone), Null)
-            | (Null, Timestamp(unit, zone)) => {
-                Some(Timestamp(unit.clone(), zone.clone()))
-            }
-            (Date32, Interval(_))
+        Operator::Plus => match (lhs_type, rhs_type) {
+            (Interval(_), Timestamp(_, tz))
+            | (Null, Timestamp(_, tz))
+            | (Timestamp(_, tz), Interval(_))
+            | (Timestamp(_, tz), Null) => Some(Timestamp(Nanosecond, tz.clone())),
+            (Interval(_), Date64)
             | (Interval(_), Date32)
-            | (Date32, Null)
-            | (Null, Date32) => {
-                // TODO: this is not correct and should be replaced with correctly typed timestamp
-                Some(Date32)
+            | (Date64, Interval(_))
+            | (Date32, Interval(_)) => Some(Timestamp(Nanosecond, None)),
+            _ => None,
+        },
+        Operator::Minus => match (lhs_type, rhs_type) {
+            (Timestamp(_, tz), Interval(_)) => Some(Timestamp(Nanosecond, tz.clone())),
+            (Date64, Interval(_)) | (Date32, Interval(_)) => {
+                Some(Timestamp(Nanosecond, None))
             }
-            (Date64, Interval(_))
-            | (Interval(_), Date64)
+            // TODO: we only plan this but do not execute
+            (Date64, Date64)
+            | (Date64, Date32)
+            | (Date32, Date64)
+            | (Date32, Date32)
             | (Date64, Null)
-            | (Null, Date64) => {
-                // TODO: this is not correct and should be replaced with correctly typed timestamp
-                Some(Date64)
-            }
+            | (Date32, Null)
+            | (Null, Date64)
+            | (Null, Date32) => Some(Int64),
+            // TODO: we only plan this but do not execute
+            (Timestamp(_, _), Timestamp(_, _))
+            | (Timestamp(_, _), Date64)
+            | (Timestamp(_, _), Date32)
+            | (Date64, Timestamp(_, _))
+            | (Date32, Timestamp(_, _))
+            | (Timestamp(_, _), Null)
+            | (Null, Timestamp(_, _)) => Some(Interval(MonthDayNano)),
             _ => None,
         },
         Operator::Multiply => match (lhs_type, rhs_type) {
-            (Float64, Interval(_))
-            | (Interval(_), Float64)
-            | (Float32, Interval(_))
-            | (Interval(_), Float32) => Some(Interval(MonthDayNano)),
-            (Utf8, Interval(itype))
-            | (Interval(itype), Utf8)
-            | (Int64, Interval(itype))
-            | (Interval(itype), Int64)
-            | (Int32, Interval(itype))
-            | (Interval(itype), Int32)
-            | (Int16, Interval(itype))
-            | (Interval(itype), Int16)
-            | (Int8, Interval(itype))
-            | (Interval(itype), Int8)
-            | (UInt64, Interval(itype))
-            | (Interval(itype), UInt64)
-            | (UInt32, Interval(itype))
-            | (Interval(itype), UInt32)
-            | (UInt16, Interval(itype))
-            | (Interval(itype), UInt16)
-            | (UInt8, Interval(itype))
-            | (Interval(itype), UInt8)
-            | (Decimal(_, _), Interval(itype))
-            | (Interval(itype), Decimal(_, _))
-            | (Null, Interval(itype))
-            | (Interval(itype), Null) => Some(Interval(itype.clone())),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// Coercion rule for dates
-pub fn date_coercion(
-    op: &Operator,
-    lhs_type: &DataType,
-    rhs_type: &DataType,
-) -> Option<DataType> {
-    use arrow::datatypes::DataType::*;
-    use arrow::datatypes::IntervalUnit::*;
-
-    // these are ordered from most informative to least informative so
-    // that the coercion removes the least amount of information
-    match op {
-        Operator::Minus => match (lhs_type, rhs_type) {
-            (Date32, Date32) | (Date32, Null) | (Null, Date32) => Some(Int32),
-            (Timestamp(_, _), Timestamp(_, _)) => Some(Interval(MonthDayNano)),
+            // TODO: this isn't exactly correct and Utf8 should go the Float64 route,
+            // but will crash rather than yield incorrect results, so is acceptable
+            (Utf8, Interval(unit)) | (Interval(unit), Utf8) => {
+                Some(Interval(unit.clone()))
+            }
+            // TODO: we only plan this but do not execute
+            (Decimal(_, _), Interval(_)) | (Interval(_), Decimal(_, _)) => {
+                Some(Interval(MonthDayNano))
+            }
+            (Int64, Interval(unit))
+            | (Interval(unit), Int64)
+            | (Int32, Interval(unit))
+            | (Interval(unit), Int32)
+            | (Int16, Interval(unit))
+            | (Interval(unit), Int16)
+            | (Int8, Interval(unit))
+            | (Interval(unit), Int8)
+            | (UInt64, Interval(unit))
+            | (Interval(unit), UInt64)
+            | (UInt32, Interval(unit))
+            | (Interval(unit), UInt32)
+            | (UInt16, Interval(unit))
+            | (Interval(unit), UInt16)
+            | (UInt8, Interval(unit))
+            | (Interval(unit), UInt8)
+            | (Null, Interval(unit))
+            | (Interval(unit), Null) => Some(Interval(unit.clone())),
             _ => None,
         },
         _ => None,
