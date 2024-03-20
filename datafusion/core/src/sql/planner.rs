@@ -1664,6 +1664,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             BinaryOperator::PGBitwiseShiftRight => Ok(Operator::BitwiseShiftRight),
             BinaryOperator::PGBitwiseShiftLeft => Ok(Operator::BitwiseShiftLeft),
             BinaryOperator::StringConcat => Ok(Operator::StringConcat),
+            // TODO: PGExponentiation needs to be introduced, but DF doesn't pass dialect
+            // so using BitwiseXor is safe for now since it's not implemented anyway
+            BinaryOperator::BitwiseXor => Ok(Operator::Exponentiate),
             _ => Err(DataFusionError::NotImplemented(format!(
                 "Unsupported SQL binary operator {:?}",
                 op

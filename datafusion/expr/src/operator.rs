@@ -47,6 +47,8 @@ pub enum Operator {
     Divide,
     /// Remainder operator, like `%`
     Modulo,
+    /// Exponentiation operator, like `^`
+    Exponentiate,
     /// Logical AND, like `&&`
     And,
     /// Logical OR, like `||`
@@ -97,6 +99,7 @@ impl fmt::Display for Operator {
             Operator::Multiply => "*",
             Operator::Divide => "/",
             Operator::Modulo => "%",
+            Operator::Exponentiate => "^",
             Operator::And => "AND",
             Operator::Or => "OR",
             Operator::Like => "LIKE",

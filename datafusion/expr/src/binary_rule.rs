@@ -72,7 +72,8 @@ pub fn binary_operator_data_type(
         | Operator::Minus
         | Operator::Divide
         | Operator::Multiply
-        | Operator::Modulo => Ok(result_type),
+        | Operator::Modulo
+        | Operator::Exponentiate => Ok(result_type),
         // string operations return the same values as the common coerced type
         Operator::StringConcat => Ok(result_type),
     }
@@ -117,6 +118,8 @@ pub fn coerce_types(
         Operator::Modulo | Operator::Divide | Operator::Multiply => {
             mathematics_numerical_coercion(op, lhs_type, rhs_type)
         }
+        // Exponentiate is fixed type, handled inside function
+        Operator::Exponentiate => mathematics_numerical_coercion(op, lhs_type, rhs_type),
         Operator::RegexMatch
         | Operator::RegexIMatch
         | Operator::RegexNotMatch
@@ -317,6 +320,11 @@ fn mathematics_numerical_coercion(
     if !is_numeric(lhs_type) || !is_numeric(rhs_type) {
         return None;
     };
+
+    // exponentiation is always Float64
+    if mathematics_op == &Operator::Exponentiate {
+        return Some(Float64);
+    }
 
     // same type => all good
     if lhs_type == rhs_type {

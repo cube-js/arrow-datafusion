@@ -22,7 +22,7 @@ use arrow::array::TimestampMillisecondArray;
 use arrow::array::*;
 use arrow::compute::kernels::arithmetic::{
     add, add_scalar, divide, divide_scalar, modulus, modulus_scalar, multiply,
-    multiply_scalar, subtract, subtract_scalar,
+    multiply_scalar, powf, subtract, subtract_scalar,
 };
 use arrow::compute::kernels::boolean::{and_kleene, not, or_kleene};
 use arrow::compute::kernels::comparison::{
@@ -1533,6 +1533,7 @@ impl BinaryExpr {
             Operator::Multiply => binary_primitive_array_op!(left, right, multiply),
             Operator::Divide => binary_primitive_array_op!(left, right, divide),
             Operator::Modulo => binary_primitive_array_op!(left, right, modulus),
+            Operator::Exponentiate => compute_op!(left, right, powf, Float64Array),
             Operator::And => {
                 if left_data_type == &DataType::Boolean {
                     boolean_op!(left, right, and_kleene)
@@ -1694,7 +1695,7 @@ pub fn binary(
 mod tests {
     use super::*;
     use crate::expressions::{col, lit};
-    use arrow::datatypes::{ArrowNumericType, Field, Int32Type, SchemaRef};
+    use arrow::datatypes::{ArrowNumericType, Field, Float64Type, Int32Type, SchemaRef};
     use arrow::util::display::array_value_to_string;
     use datafusion_common::Result;
 
@@ -1883,6 +1884,18 @@ mod tests {
             Float32Array,
             DataType::Float32,
             vec![2f32]
+        );
+        test_coercion!(
+            Int64Array,
+            DataType::Int64,
+            vec![2i64],
+            Int64Array,
+            DataType::Int64,
+            vec![3i64],
+            Operator::Exponentiate,
+            Float64Array,
+            DataType::Float64,
+            vec![8f64]
         );
         test_coercion!(
             StringArray,
@@ -2264,6 +2277,25 @@ mod tests {
             vec![a, b],
             Operator::Modulo,
             Int32Array::from(vec![0, 0, 2, 8, 0]),
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn exponentiate_op() -> Result<()> {
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32, false),
+            Field::new("b", DataType::Float64, false),
+        ]);
+        let a = Int32Array::from(vec![2, 3, 4, -5, 16]);
+        let b = Float64Array::from(vec![2.0, 5.0, -0.5, 2.0, 1.5]);
+
+        apply_arithmetic::<Float64Type>(
+            Arc::new(schema),
+            vec![Arc::new(a), Arc::new(b)],
+            Operator::Exponentiate,
+            Float64Array::from(vec![4.0, 243.0, 0.5, 25.0, 64.0]),
         )?;
 
         Ok(())
