@@ -4873,6 +4873,17 @@ mod tests {
     }
 
     #[test]
+    fn window_function_with_window_frame() {
+        let sql =
+            "SELECT order_id, AVG(qty) OVER(PARTITION BY order_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) from orders";
+        let expected = "\
+        Projection: #orders.order_id, #AVG(orders.qty) PARTITION BY [#orders.order_id] ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\
+        \n  WindowAggr: windowExpr=[[AVG(#orders.qty) PARTITION BY [#orders.order_id] ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW]]\
+        \n    TableScan: orders projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
     fn select_typedstring() {
         let sql = "SELECT date '2020-12-10' AS date FROM person";
         let expected = "Projection: CAST(Utf8(\"2020-12-10\") AS Date32) AS date\
