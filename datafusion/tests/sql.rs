@@ -702,7 +702,12 @@ async fn all_where_empty() -> Result<()> {
                FROM aggregate_test_100
                WHERE 1=2";
     let actual = execute_to_batches(&mut ctx, sql).await;
-    let expected = vec!["++", "||", "++", "++"];
+    let expected = vec![
+        "+----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+",
+        "| c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 | c11 | c12 | c13 |",
+        "+----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+",
+        "+----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+",
+    ];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }

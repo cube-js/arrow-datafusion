@@ -1555,6 +1555,10 @@ mod tests {
         // Since ScalarValues are used in a non trivial number of places,
         // making it larger means significant more memory consumption
         // per distinct value.
+        #[cfg(target_arch = "aarch64")]
+        assert_eq!(std::mem::size_of::<ScalarValue>(), 48);
+
+        #[cfg(target_arch = "amd64")]
         assert_eq!(std::mem::size_of::<ScalarValue>(), 32);
     }
 
