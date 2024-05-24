@@ -699,6 +699,28 @@ async fn test_interval_expressions() -> Result<()> {
         "interval '1 year 1 day 1 hour 1 minute 1 second'",
         "0 years 12 mons 1 days 1 hours 1 mins 1.000000000 secs"
     );
+    test_expression!(
+        "interval '23 years 123 months 75 days 25 hours 73 mins 125 secs 1234 ms'",
+        "0 years 399 mons 75 days 26 hours 15 mins 6.234000000 secs"
+    );
+    test_expression!(
+        "11 * interval '0 years 2 months 75 days 25 hours 73 mins 125 secs 1234 ms'",
+        "0 years 22 mons 825 days 288 hours 46 mins 8.574000000 secs"
+    );
+    // TODO: f32 persicion problem in `fn sql_interval_to_literal`
+    // test_expression!(
+    //     "interval '1 mon 87654321 ms'",
+    //     "0 years 1 mons 0 days 24 hours 20 mins 54.321000000 secs"
+    // );
+    test_expression!(
+        "12345 * interval '2 years 2 months 3 days 13 hours 3 mins 3 secs 7654321 ms'",
+        "0 years 320970 mons 37035 days 187360 hours 28 mins 47.745000000 secs"
+    );
+    // NOTE: only fractional output is incorrect, the calculations under the hood are correct
+    test_expression!(
+        "5 * interval '-1 month -1 day -1 millisecond'",
+        "0 years -5 mons -5 days 0 hours 0 mins 0.-05000000 secs"
+    );
 
     Ok(())
 }

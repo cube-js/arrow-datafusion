@@ -2615,21 +2615,33 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             }
 
             match interval_type.to_lowercase().as_str() {
-                "year" => Ok(align_interval_parts(interval_period * 12_f32, 0.0, 0.0)),
-                "quarter" => Ok(align_interval_parts(interval_period * 3_f32, 0.0, 0.0)),
-                "month" => Ok(align_interval_parts(interval_period, 0.0, 0.0)),
-                "week" | "weeks" => {
+                "years" | "year" | "y" => {
+                    Ok(align_interval_parts(interval_period * 12_f32, 0.0, 0.0))
+                }
+                "quarter" | "qtr" => {
+                    Ok(align_interval_parts(interval_period * 3_f32, 0.0, 0.0))
+                }
+                "months" | "month" | "mons" | "mon" => {
+                    Ok(align_interval_parts(interval_period, 0.0, 0.0))
+                }
+                "weeks" | "week" | "w" => {
                     Ok(align_interval_parts(0.0, interval_period * 7_f32, 0.0))
                 }
-                "day" | "days" => Ok(align_interval_parts(0.0, interval_period, 0.0)),
-                "hour" | "hours" => {
+                "days" | "day" | "d" => {
+                    Ok(align_interval_parts(0.0, interval_period, 0.0))
+                }
+                "hours" | "hour" | "h" => {
                     Ok((0, 0, interval_period * SECONDS_PER_HOUR * MILLIS_PER_SECOND))
                 }
-                "minutes" | "minute" => {
+                "minutes" | "minute" | "mins" | "min" | "m" => {
                     Ok((0, 0, interval_period * 60_f32 * MILLIS_PER_SECOND))
                 }
-                "seconds" | "second" => Ok((0, 0, interval_period * MILLIS_PER_SECOND)),
-                "milliseconds" | "millisecond" => Ok((0, 0, interval_period)),
+                "seconds" | "second" | "secs" | "sec" | "s" => {
+                    Ok((0, 0, interval_period * MILLIS_PER_SECOND))
+                }
+                "milliseconds" | "millisecond" | "msecs" | "msec" | "ms" => {
+                    Ok((0, 0, interval_period))
+                }
                 _ => Err(DataFusionError::NotImplemented(format!(
                     "Invalid input syntax for type interval: {:?}",
                     value

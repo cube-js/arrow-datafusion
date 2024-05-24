@@ -232,10 +232,18 @@ fn interval_multiply_int(
                 .collect::<Result<IntervalDayTimeArray>>()?;
             Ok(Arc::new(result))
         }
-        DataType::Interval(unit) => Err(DataFusionError::Execution(format!(
-            "multiplication of interval type {:?} is not supported",
-            unit
-        ))),
+        DataType::Interval(IntervalUnit::MonthDayNano) => {
+            let intervals = intervals
+                .as_any()
+                .downcast_ref::<IntervalMonthDayNanoArray>()
+                .unwrap();
+            let result = intervals
+                .iter()
+                .zip(multipliers.iter())
+                .map(|(i, m)| scalar_interval_month_day_nano_time_mul_int(i, m))
+                .collect::<Result<IntervalMonthDayNanoArray>>()?;
+            Ok(Arc::new(result))
+        }
         t => Err(DataFusionError::Execution(format!(
             "multiplication expected Interval, got {}",
             t
@@ -293,6 +301,55 @@ fn scalar_interval_day_time_mul_int(
     let interval_product =
         (((days_product as u64) << 32) | (milliseconds_product as u64)) as i64;
     Ok(Some(interval_product))
+}
+
+fn scalar_interval_month_day_nano_time_mul_int(
+    interval: Option<i128>,
+    multiplier: Option<i64>,
+) -> Result<Option<i128>> {
+    if interval.is_none() || multiplier.is_none() {
+        return Ok(None);
+    }
+    let interval = interval.unwrap();
+    let multiplier = multiplier.unwrap();
+
+    const _MONTHS_MASK: u128 = 0xFFFF_FFFF_0000_0000_0000_0000_0000_0000;
+    const DAYS_MASK: u128 = 0x0000_0000_FFFF_FFFF_0000_0000_0000_0000;
+    const NANOS_MASK: u128 = 0x0000_0000_0000_0000_FFFF_FFFF_FFFF_FFFF;
+    const _MONTHS_BITS: i32 = 32;
+    const DAYS_BITS: i32 = 32;
+    const NANOS_BITS: i32 = 64;
+    const DAYS_OFFSET: i32 = NANOS_BITS;
+    const MONTHS_OFFSET: i32 = DAYS_OFFSET + DAYS_BITS;
+
+    let interval = interval as u128;
+    let months = (interval >> MONTHS_OFFSET) as i32;
+    let days = (interval >> DAYS_OFFSET) as i32;
+    let nanos = interval as i64;
+
+    let multiplier = i32::try_from(multiplier).map_err(|err| {
+        DataFusionError::Execution(format!(
+            "unable to convert interval multiplier to Int32: {}",
+            err
+        ))
+    })?;
+
+    let months = months.checked_mul(multiplier).ok_or_else(|| {
+        DataFusionError::Execution("interval out of range (months)".to_string())
+    })? as u128;
+    let days = days.checked_mul(multiplier).ok_or_else(|| {
+        DataFusionError::Execution("interval out of range (days)".to_string())
+    })? as u128;
+    let nanos = nanos.checked_mul(multiplier as i64).ok_or_else(|| {
+        DataFusionError::Execution("interval out of range (nanos)".to_string())
+    })? as u128;
+
+    let months_bits = months << MONTHS_OFFSET;
+    let days_bits = (days << DAYS_OFFSET) & DAYS_MASK;
+    let nanos_bits = nanos & NANOS_MASK;
+
+    let interval = (months_bits | days_bits | nanos_bits) as i128;
+    Ok(Some(interval))
 }
 
 fn timestamp_add_interval(
@@ -467,28 +524,24 @@ fn scalar_timestamp_add_interval_month_day_nano(
 
     let timestamp = timestamp_ns_to_datetime(timestamp);
 
-    // TODO: legacy code, check validity
-    let month = (interval >> (64 + 32)) & 0xFFFFFFFF;
-    let day = (interval >> 64) & 0xFFFFFFFF;
-    let nano = interval & 0xFFFFFFFFFFFFFFFF;
+    let negated = if negated { -1 } else { 1 };
+    let month = ((interval >> (64 + 32)) & 0xFFFFFFFF) as i32 * negated;
+    let day = ((interval >> 64) & 0xFFFFFFFF) as i32 * negated;
+    let nano = (interval & 0xFFFFFFFFFFFFFFFF) as i64 * negated as i64;
 
-    let result = if month > 0 && !negated || month < 0 && negated {
+    let result = if month >= 0 {
         timestamp.checked_add_months(Months::new(month as u32))
     } else {
         timestamp.checked_sub_months(Months::new(month.abs() as u32))
     };
 
-    let result = if day > 0 && !negated || day < 0 && negated {
+    let result = if day >= 0 {
         result.and_then(|t| t.checked_add_days(Days::new(day as u64)))
     } else {
         result.and_then(|t| t.checked_sub_days(Days::new(day.abs() as u64)))
     };
 
-    let result = result.and_then(|t| {
-        t.checked_add_signed(Duration::nanoseconds(
-            (nano as i64) * (if negated { -1 } else { 1 }),
-        ))
-    });
+    let result = result.and_then(|t| t.checked_add_signed(Duration::nanoseconds(nano)));
 
     let result = result.ok_or_else(|| {
         DataFusionError::Execution(format!(
