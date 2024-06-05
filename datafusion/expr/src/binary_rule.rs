@@ -109,6 +109,11 @@ pub fn coerce_types(
         Operator::Like | Operator::NotLike | Operator::ILike | Operator::NotILike => {
             like_coercion(lhs_type, rhs_type)
         }
+        Operator::Plus | Operator::Minus
+            if is_interval(lhs_type) && is_interval(rhs_type) =>
+        {
+            interval_add_coercion(lhs_type, rhs_type)
+        }
         // for math expressions, the final value of the coercion is also the return type
         // because coercion favours higher information types
         Operator::Plus | Operator::Minus => {
@@ -765,6 +770,22 @@ fn null_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
             } else {
                 None
             }
+        }
+        _ => None,
+    }
+}
+/// coercion rules for `DataType::Interval <op> DataType::Interval` case, where `<op>` in `{+, -}`
+fn interval_add_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
+    use arrow::datatypes::IntervalUnit::*;
+    match (lhs_type, rhs_type) {
+        (DataType::Interval(l_unit), DataType::Interval(r_unit)) => {
+            let coercion_unit = match (l_unit, r_unit) {
+                (MonthDayNano, _) | (_, MonthDayNano) => Some(MonthDayNano),
+                (DayTime, YearMonth) | (YearMonth, DayTime) => Some(MonthDayNano),
+                (l_unit, r_unit) if l_unit == r_unit => Some(l_unit.clone()),
+                _ => None,
+            };
+            Some(DataType::Interval(coercion_unit?))
         }
         _ => None,
     }
