@@ -48,6 +48,7 @@ pub fn distinct_types_allowed(
         Operator::Minus => matches!(
             (left_type, right_type),
             (Timestamp(Nanosecond, _), Interval(_))
+                | (Timestamp(Nanosecond, _), Timestamp(Nanosecond, _))
         ),
         Operator::Multiply => matches!(
             (left_type, right_type),
@@ -100,6 +101,10 @@ pub fn coerce_types_distinct(
             (Date64, Interval(iunit)) | (Date32, Interval(iunit)) => {
                 Some((Timestamp(Nanosecond, None), Interval(iunit.clone())))
             }
+            (Timestamp(_, tz), Timestamp(_, tz2)) => Some((
+                Timestamp(Nanosecond, tz.clone()),
+                Timestamp(Nanosecond, tz2.clone()),
+            )),
             _ => None,
         },
         Operator::Multiply => match (lhs_type, rhs_type) {
@@ -165,6 +170,10 @@ pub fn evaluate_distinct_with_resolved_args(
             }
             (Timestamp(Nanosecond, Some(tz)), Interval(_)) if tz == "UTC" => {
                 Some(timestamp_add_interval(left, right, true))
+            }
+            (Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)) => {
+                // TODO: Implement postgres behavior with time zones
+                Some(timestamp_subtract_timestamp(left, right))
             }
             _ => None,
         },
@@ -334,6 +343,27 @@ fn timestamp_add_interval(
     }
 }
 
+fn timestamp_subtract_timestamp(
+    left: Arc<dyn Array>,
+    right: Arc<dyn Array>,
+) -> Result<ArrayRef> {
+    let left = left
+        .as_any()
+        .downcast_ref::<TimestampNanosecondArray>()
+        .unwrap();
+    let right = right
+        .as_any()
+        .downcast_ref::<TimestampNanosecondArray>()
+        .unwrap();
+
+    let result = left
+        .iter()
+        .zip(right.iter())
+        .map(|(t_l, t_r)| scalar_timestamp_subtract_timestamp(t_l, t_r))
+        .collect::<Result<IntervalMonthDayNanoArray>>()?;
+    Ok(Arc::new(result))
+}
+
 fn scalar_timestamp_add_interval_year_month(
     timestamp: Option<i64>,
     interval: Option<i32>,
@@ -443,6 +473,34 @@ fn scalar_timestamp_add_interval_month_day_nano(
         ))
     })?;
     Ok(Some(result.timestamp_nanos()))
+}
+
+fn scalar_timestamp_subtract_timestamp(
+    timestamp_left: Option<i64>,
+    timestamp_right: Option<i64>,
+) -> Result<Option<i128>> {
+    if timestamp_left.is_none() || timestamp_right.is_none() {
+        return Ok(None);
+    }
+
+    let datetime_left: NaiveDateTime = timestamp_ns_to_datetime(timestamp_left.unwrap());
+    let datetime_right: NaiveDateTime =
+        timestamp_ns_to_datetime(timestamp_right.unwrap());
+    let duration = datetime_left.signed_duration_since(datetime_right);
+    // TODO: What is Postgres behavior?  E.g. if these timestamp values are i64::MAX and i64::MIN,
+    // we needlessly have a range error.
+    let nanos: i64 = duration.num_nanoseconds().ok_or_else(|| {
+        DataFusionError::Execution("Interval value is out of range".to_string())
+    })?;
+
+    let days = nanos / 86_400_000_000_000;
+    let nanos_rem = nanos % 86_400_000_000_000;
+    Ok(Some(
+        (((days as i128) & 0xFFFF_FFFF) << 64)
+            | ((nanos_rem as i128) & 0xFFFF_FFFF_FFFF_FFFF),
+    ))
+
+    // TODO: How can day, above, in scalar_timestamp_add_interval_month_day_nano, be negative?
 }
 
 fn change_ym(t: NaiveDateTime, y: i32, m: u32) -> Result<NaiveDateTime> {

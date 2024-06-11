@@ -22,12 +22,14 @@ use ahash::RandomState;
 
 use arrow::{
     array::{
-        ArrayData, ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray,
-        TimestampMicrosecondArray, TimestampMillisecondArray, TimestampSecondArray,
-        UInt32BufferBuilder, UInt32Builder, UInt64BufferBuilder, UInt64Builder,
+        ArrayData, ArrayRef, BooleanArray, IntervalDayTimeArray,
+        IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray,
+        PrimitiveArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+        TimestampSecondArray, UInt32BufferBuilder, UInt32Builder, UInt64BufferBuilder,
+        UInt64Builder,
     },
     compute,
-    datatypes::{UInt32Type, UInt64Type},
+    datatypes::{IntervalUnit, UInt32Type, UInt64Type},
 };
 use smallvec::{smallvec, SmallVec};
 use std::sync::Arc;
@@ -917,6 +919,38 @@ fn equal_rows(
                 TimeUnit::Nanosecond => {
                     equal_rows_elem!(
                         TimestampNanosecondArray,
+                        l,
+                        r,
+                        left,
+                        right,
+                        null_equals_null
+                    )
+                }
+            },
+            DataType::Interval(interval_unit) => match interval_unit {
+                IntervalUnit::YearMonth => {
+                    equal_rows_elem!(
+                        IntervalYearMonthArray,
+                        l,
+                        r,
+                        left,
+                        right,
+                        null_equals_null
+                    )
+                }
+                IntervalUnit::DayTime => {
+                    equal_rows_elem!(
+                        IntervalDayTimeArray,
+                        l,
+                        r,
+                        left,
+                        right,
+                        null_equals_null
+                    )
+                }
+                IntervalUnit::MonthDayNano => {
+                    equal_rows_elem!(
+                        IntervalMonthDayNanoArray,
                         l,
                         r,
                         left,

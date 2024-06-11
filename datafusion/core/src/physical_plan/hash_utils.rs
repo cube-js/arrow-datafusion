@@ -22,13 +22,14 @@ use ahash::{CallHasher, RandomState};
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Date32Array, Date64Array, DecimalArray,
     DictionaryArray, Float32Array, Float64Array, GenericListArray, Int16Array,
-    Int32Array, Int64Array, Int8Array, LargeStringArray, OffsetSizeTrait, StringArray,
+    Int32Array, Int64Array, Int8Array, IntervalDayTimeArray, IntervalMonthDayNanoArray,
+    IntervalYearMonthArray, LargeStringArray, OffsetSizeTrait, StringArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
 };
 use arrow::datatypes::{
     ArrowDictionaryKeyType, ArrowNativeType, DataType, Int16Type, Int32Type, Int64Type,
-    Int8Type, TimeUnit, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
+    Int8Type, IntervalUnit, TimeUnit, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
 use std::sync::Arc;
 
@@ -464,6 +465,36 @@ pub fn create_hashes<'a>(
                     TimestampNanosecondArray,
                     col,
                     i64,
+                    hashes_buffer,
+                    random_state,
+                    multi_col
+                );
+            }
+            DataType::Interval(IntervalUnit::YearMonth) => {
+                hash_array_primitive!(
+                    IntervalYearMonthArray,
+                    col,
+                    i32,
+                    hashes_buffer,
+                    random_state,
+                    multi_col
+                );
+            }
+            DataType::Interval(IntervalUnit::DayTime) => {
+                hash_array_primitive!(
+                    IntervalDayTimeArray,
+                    col,
+                    i64,
+                    hashes_buffer,
+                    random_state,
+                    multi_col
+                );
+            }
+            DataType::Interval(IntervalUnit::MonthDayNano) => {
+                hash_array_primitive!(
+                    IntervalMonthDayNanoArray,
+                    col,
+                    i128,
                     hashes_buffer,
                     random_state,
                     multi_col

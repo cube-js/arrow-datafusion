@@ -904,6 +904,9 @@ impl ScalarValue {
             DataType::Interval(IntervalUnit::YearMonth) => {
                 build_array_primitive!(IntervalYearMonthArray, IntervalYearMonth)
             }
+            DataType::Interval(IntervalUnit::MonthDayNano) => {
+                build_array_primitive!(IntervalMonthDayNanoArray, IntervalMonthDayNano)
+            }
             DataType::List(fields) if fields.data_type() == &DataType::Int8 => {
                 build_array_list_primitive!(Int8Type, Int8, i8)
             }
