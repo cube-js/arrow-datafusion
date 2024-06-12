@@ -1303,6 +1303,21 @@ impl PhysicalExpr for BinaryExpr {
                 // if right is literal and left is array - reverse operator and parameters
                 self.evaluate_scalar_array(scalar, array)?
             }
+            (ColumnarValue::Array(first_arr), ColumnarValue::Array(second_arr))
+                if first_arr.len() != second_arr.len() =>
+            {
+                if first_arr.len() == 1 {
+                    match ScalarValue::try_from_array(first_arr, 0) {
+                        Ok(scalar) => self.evaluate_scalar_array(&scalar, second_arr)?,
+                        _ => None,
+                    }
+                } else {
+                    match ScalarValue::try_from_array(second_arr, 0) {
+                        Ok(scalar) => self.evaluate_array_scalar(first_arr, &scalar)?,
+                        _ => None,
+                    }
+                }
+            }
             (_, _) => None, // default to array implementation
         };
 
