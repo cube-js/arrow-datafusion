@@ -17,7 +17,9 @@
 
 //! DateTime expressions
 
-use arrow::array::{Int64Array, IntervalDayTimeArray, IntervalYearMonthArray};
+use arrow::array::{
+    Int64Array, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
+};
 use arrow::compute::cast;
 use arrow::{
     array::{Array, ArrayRef, GenericStringArray, PrimitiveArray, StringOffsetSizeTrait},
@@ -33,7 +35,7 @@ use arrow::{
         TimestampNanosecondArray, TimestampSecondArray,
     },
     compute::kernels::temporal,
-    datatypes::TimeUnit,
+    datatypes::{IntervalUnit, TimeUnit},
     temporal_conversions::timestamp_ns_to_datetime,
 };
 use chrono::prelude::*;
@@ -482,7 +484,7 @@ pub fn date_trunc(args: &[ColumnarValue]) -> Result<ColumnarValue> {
 }
 
 macro_rules! extract_date_part {
-    ($ARRAY: expr, $FN:expr, $RT: expr) => {
+    ($ARRAY: expr, $PART_STRING: expr, $FN: expr, $RT: expr) => {
         match $ARRAY.data_type() {
             DataType::Date32 => {
                 let array = $ARRAY.as_any().downcast_ref::<Date32Array>().unwrap();
@@ -523,8 +525,80 @@ macro_rules! extract_date_part {
                 }
             },
             datatype => Err(DataFusionError::Internal(format!(
-                "Extract does not support datatype {:?}",
-                datatype
+                "Extract with date part '{}' does not support datatype {:?}",
+                $PART_STRING, datatype
+            ))),
+        }
+    };
+}
+
+macro_rules! extract_date_part_from_date_or_interval {
+    ($ARRAY: expr, $PART_STRING: expr, $FN: expr, $RT: expr) => {
+        match $ARRAY.data_type() {
+            DataType::Date32 => {
+                let array = $ARRAY.as_any().downcast_ref::<Date32Array>().unwrap();
+                Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+            }
+            DataType::Date64 => {
+                let array = $ARRAY.as_any().downcast_ref::<Date64Array>().unwrap();
+                Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+            }
+            DataType::Timestamp(time_unit, None) => match time_unit {
+                TimeUnit::Second => {
+                    let array = $ARRAY
+                        .as_any()
+                        .downcast_ref::<TimestampSecondArray>()
+                        .unwrap();
+                    Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+                }
+                TimeUnit::Millisecond => {
+                    let array = $ARRAY
+                        .as_any()
+                        .downcast_ref::<TimestampMillisecondArray>()
+                        .unwrap();
+                    Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+                }
+                TimeUnit::Microsecond => {
+                    let array = $ARRAY
+                        .as_any()
+                        .downcast_ref::<TimestampMicrosecondArray>()
+                        .unwrap();
+                    Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+                }
+                TimeUnit::Nanosecond => {
+                    let array = $ARRAY
+                        .as_any()
+                        .downcast_ref::<TimestampNanosecondArray>()
+                        .unwrap();
+                    Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+                }
+            },
+            DataType::Interval(interval_unit) => match interval_unit {
+                IntervalUnit::YearMonth => {
+                    let array = $ARRAY
+                        .as_any()
+                        .downcast_ref::<IntervalYearMonthArray>()
+                        .unwrap();
+                    Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+                }
+                IntervalUnit::DayTime => {
+                    let array = $ARRAY
+                        .as_any()
+                        .downcast_ref::<IntervalDayTimeArray>()
+                        .unwrap();
+                    Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+                }
+                IntervalUnit::MonthDayNano => {
+                    let array = $ARRAY
+                        .as_any()
+                        .downcast_ref::<IntervalMonthDayNanoArray>()
+                        .unwrap();
+                    Ok($FN(array).map(|v| cast(&(Arc::new(v) as ArrayRef), &$RT))?)
+                }
+            },
+            datatype => Err(DataFusionError::Internal(format!(
+                "Extract with date part '{}' does not support datatype {:?}",
+                $PART_STRING, datatype
             ))),
         }
     };
@@ -555,18 +629,33 @@ pub fn date_part(args: &[ColumnarValue]) -> Result<ColumnarValue> {
     };
 
     let arr = match date_part.to_lowercase().as_str() {
-        "doy" => extract_date_part!(array, cube_ext::temporal::doy, DataType::Int32),
-        "dow" => extract_date_part!(array, cube_ext::temporal::dow, DataType::Int32),
-        "year" => extract_date_part!(array, temporal::year, DataType::Int32),
-        "quarter" => extract_date_part!(array, temporal::quarter, DataType::Int32),
-        "month" => extract_date_part!(array, temporal::month, DataType::Int32),
-        "week" => extract_date_part!(array, temporal::week, DataType::Int32),
-        "day" => extract_date_part!(array, temporal::day, DataType::Int32),
-        "hour" => extract_date_part!(array, temporal::hour, DataType::Int32),
-        "minute" => extract_date_part!(array, temporal::minute, DataType::Int32),
-        "second" => extract_date_part!(array, temporal::second, DataType::Int32),
+        "doy" => {
+            extract_date_part!(array, date_part, cube_ext::temporal::doy, DataType::Int32)
+        }
+        "dow" => {
+            extract_date_part!(array, date_part, cube_ext::temporal::dow, DataType::Int32)
+        }
+        "year" => extract_date_part!(array, date_part, temporal::year, DataType::Int32),
+        "quarter" => {
+            extract_date_part!(array, date_part, temporal::quarter, DataType::Int32)
+        }
+        "month" => extract_date_part!(array, date_part, temporal::month, DataType::Int32),
+        "week" => extract_date_part!(array, date_part, temporal::week, DataType::Int32),
+        "day" => extract_date_part!(array, date_part, temporal::day, DataType::Int32),
+        "hour" => extract_date_part!(array, date_part, temporal::hour, DataType::Int32),
+        "minute" => {
+            extract_date_part!(array, date_part, temporal::minute, DataType::Int32)
+        }
+        "second" => {
+            extract_date_part!(array, date_part, temporal::second, DataType::Int32)
+        }
         "epoch" => {
-            extract_date_part!(array, cube_ext::temporal::epoch, DataType::Float64)
+            extract_date_part_from_date_or_interval!(
+                array,
+                date_part,
+                cube_ext::temporal::epoch,
+                DataType::Float64
+            )
         }
         _ => Err(DataFusionError::Execution(format!(
             "Date part '{}' not supported",

@@ -17,7 +17,12 @@
 
 use arrow::array::{Array, Float64Array, Int32Array, Int32Builder, PrimitiveArray};
 use arrow::compute::kernels::arity::unary;
-use arrow::datatypes::{ArrowNumericType, ArrowTemporalType, DataType, TimeUnit};
+use arrow::datatypes::{
+    ArrowNumericType, ArrowPrimitiveType, ArrowTemporalType, DataType, Date32Type,
+    Date64Type, Float64Type, IntervalDayTimeType, IntervalMonthDayNanoType,
+    IntervalYearMonthType, TimestampMicrosecondType, TimestampMillisecondType,
+    TimestampNanosecondType, TimestampSecondType,
+};
 use arrow::error::{ArrowError, Result};
 
 use chrono::format::strftime::StrftimeItems;
@@ -145,39 +150,117 @@ where
     Ok(b.finish())
 }
 
+fn postgres_months_epoch(n: i32) -> f64 {
+    let years = n / 12;
+    let remainder = n % 12;
+    // Note that this arithmetic produces exact integer calculations with no floating point error.
+    let seconds_in_a_day = 86400_f64;
+    (years as f64) * (seconds_in_a_day * 365.25)
+        + (remainder as f64) * (seconds_in_a_day * 30.0)
+}
+
+pub trait Epochable: ArrowPrimitiveType + Sized {
+    fn get_epoch(array: &PrimitiveArray<Self>) -> PrimitiveArray<Float64Type>;
+}
+
+impl Epochable for TimestampSecondType {
+    fn get_epoch(
+        array: &PrimitiveArray<TimestampSecondType>,
+    ) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| n as f64)
+    }
+}
+
+impl Epochable for TimestampMillisecondType {
+    fn get_epoch(
+        array: &PrimitiveArray<TimestampMillisecondType>,
+    ) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| n as f64 / 1_000.0)
+    }
+}
+
+impl Epochable for TimestampMicrosecondType {
+    fn get_epoch(
+        array: &PrimitiveArray<TimestampMicrosecondType>,
+    ) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| n as f64 / 1_000_000.0)
+    }
+}
+
+impl Epochable for TimestampNanosecondType {
+    fn get_epoch(
+        array: &PrimitiveArray<TimestampNanosecondType>,
+    ) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| n as f64 / 1_000_000_000.0)
+    }
+}
+
+impl Epochable for Date32Type {
+    fn get_epoch(array: &PrimitiveArray<Date32Type>) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| {
+            let seconds_in_a_day = 86400.0;
+            n as f64 * seconds_in_a_day
+        })
+    }
+}
+
+impl Epochable for Date64Type {
+    fn get_epoch(array: &PrimitiveArray<Date64Type>) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| n as f64 / 1_000.0)
+    }
+}
+
+impl Epochable for IntervalYearMonthType {
+    fn get_epoch(
+        array: &PrimitiveArray<IntervalYearMonthType>,
+    ) -> PrimitiveArray<Float64Type> {
+        unary(array, postgres_months_epoch)
+    }
+}
+
+impl Epochable for IntervalDayTimeType {
+    fn get_epoch(
+        array: &PrimitiveArray<IntervalDayTimeType>,
+    ) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| {
+            // Implemented based on scalar_timestamp_add_interval_day_time
+            let sign = n.signum();
+            let n = n.abs();
+            // i64::MIN would work okay in release mode after the bitmask
+            // in the days variable (but TODO: what is Postgres' exact behavior?)
+
+            let days: i64 = (n >> 32) & 0xFFFF_FFFF;
+            let millis: i64 = n & 0xFFFF_FFFF;
+
+            let seconds_in_a_day = 86400.0;
+            sign as f64 * ((days as f64) * seconds_in_a_day + (millis as f64) / 1_000.0)
+        })
+    }
+}
+
+impl Epochable for IntervalMonthDayNanoType {
+    fn get_epoch(
+        array: &PrimitiveArray<IntervalMonthDayNanoType>,
+    ) -> PrimitiveArray<Float64Type> {
+        unary(array, |n| {
+            let seconds_in_a_day = 86400_f64;
+            let n: i128 = n;
+            let month = (n >> 96) & 0xFFFF_FFFF;
+            let day = (n >> 64) & 0xFFFF_FFFF;
+            let nano = n & 0xFFFF_FFFF_FFFF_FFFF;
+            let month_epoch: f64 = postgres_months_epoch(month as i32);
+            month_epoch
+                + (day as f64) * seconds_in_a_day
+                + (nano as f64) / 1_000_000_000.0
+        })
+    }
+}
+
 pub fn epoch<T>(array: &PrimitiveArray<T>) -> Result<Float64Array>
 where
-    T: ArrowTemporalType + ArrowNumericType,
-    i64: From<T::Native>,
+    T: Epochable,
 {
-    let b = match array.data_type() {
-        DataType::Timestamp(tu, _) => {
-            let scale = match tu {
-                TimeUnit::Second => 1,
-                TimeUnit::Millisecond => 1_000,
-                TimeUnit::Microsecond => 1_000_000,
-                TimeUnit::Nanosecond => 1_000_000_000,
-            } as f64;
-            unary(array, |n| {
-                let n: i64 = n.into();
-                n as f64 / scale
-            })
-        }
-        DataType::Date32 => {
-            let seconds_in_a_day = 86400_f64;
-            unary(array, |n| {
-                let n: i64 = n.into();
-                n as f64 * seconds_in_a_day
-            })
-        }
-        DataType::Date64 => unary(array, |n| {
-            let n: i64 = n.into();
-            n as f64 / 1_000_f64
-        }),
-        _ => {
-            return_compute_error_with!("Can not convert {:?} to epoch", array.data_type())
-        }
-    };
+    let b = Epochable::get_epoch(array);
     Ok(b)
 }
 
