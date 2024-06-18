@@ -376,6 +376,18 @@ jobs:
           rustup toolchain install ${{ matrix.rust }}
           rustup default ${{ matrix.rust }}
           rustup component add rustfmt
+      - name: Maximize build space (disk space limitations)
+        run: |
+          echo "Disk Space before cleanup"
+          df -h
+          du -h --max-depth 1 / 2>/dev/null || true
+          du -h --max-depth 1 /__t 2>/dev/null || true
+          du -h --max-depth 1 /__e 2>/dev/null || true
+          du -h --max-depth 1 /__w 2>/dev/null || true
+
+          rm -rf /__t/CodeQL
+          echo "Disk Space after cleanup"
+          df -h
       - name: Run tests
         run: |
           export ARROW_TEST_DATA=$(pwd)/testing/data
