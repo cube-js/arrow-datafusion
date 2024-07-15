@@ -293,23 +293,20 @@ fn scalar_interval_day_time_mul_int(
     let interval = interval.unwrap();
     let multiplier = multiplier.unwrap();
 
-    let interval = interval as u64;
-    let days: i32 = ((interval & 0xFFFFFFFF00000000) >> 32) as i32;
-    let milliseconds: i32 = (interval & 0xFFFFFFFF) as i32;
+    let (days, milliseconds) = IntervalDayTimeType::to_parts(interval);
     let multiplier = i32::try_from(multiplier).map_err(|err| {
         DataFusionError::Execution(format!(
             "unable to convert interval multiplier to Int32: {}",
             err
         ))
     })?;
-    let days_product = days
+    let days = days
         .checked_mul(multiplier)
         .ok_or_else(|| DataFusionError::Execution("interval out of range".to_string()))?;
-    let milliseconds_product = milliseconds
+    let milliseconds = milliseconds
         .checked_mul(multiplier)
         .ok_or_else(|| DataFusionError::Execution("interval out of range".to_string()))?;
-    let interval_product =
-        (((days_product as u64) << 32) | (milliseconds_product as u64)) as i64;
+    let interval_product = IntervalDayTimeType::make_value(days, milliseconds);
     Ok(Some(interval_product))
 }
 
@@ -323,19 +320,7 @@ fn scalar_interval_month_day_nano_time_mul_int(
     let interval = interval.unwrap();
     let multiplier = multiplier.unwrap();
 
-    const _MONTHS_MASK: u128 = 0xFFFF_FFFF_0000_0000_0000_0000_0000_0000;
-    const DAYS_MASK: u128 = 0x0000_0000_FFFF_FFFF_0000_0000_0000_0000;
-    const NANOS_MASK: u128 = 0x0000_0000_0000_0000_FFFF_FFFF_FFFF_FFFF;
-    const _MONTHS_BITS: i32 = 32;
-    const DAYS_BITS: i32 = 32;
-    const NANOS_BITS: i32 = 64;
-    const DAYS_OFFSET: i32 = NANOS_BITS;
-    const MONTHS_OFFSET: i32 = DAYS_OFFSET + DAYS_BITS;
-
-    let interval = interval as u128;
-    let months = (interval >> MONTHS_OFFSET) as i32;
-    let days = (interval >> DAYS_OFFSET) as i32;
-    let nanos = interval as i64;
+    let (months, days, nanos) = IntervalMonthDayNanoType::to_parts(interval);
 
     let multiplier = i32::try_from(multiplier).map_err(|err| {
         DataFusionError::Execution(format!(
@@ -346,19 +331,15 @@ fn scalar_interval_month_day_nano_time_mul_int(
 
     let months = months.checked_mul(multiplier).ok_or_else(|| {
         DataFusionError::Execution("interval out of range (months)".to_string())
-    })? as u128;
+    })?;
     let days = days.checked_mul(multiplier).ok_or_else(|| {
         DataFusionError::Execution("interval out of range (days)".to_string())
-    })? as u128;
+    })?;
     let nanos = nanos.checked_mul(multiplier as i64).ok_or_else(|| {
         DataFusionError::Execution("interval out of range (nanos)".to_string())
-    })? as u128;
+    })?;
 
-    let months_bits = months << MONTHS_OFFSET;
-    let days_bits = (days << DAYS_OFFSET) & DAYS_MASK;
-    let nanos_bits = nanos & NANOS_MASK;
-
-    let interval = (months_bits | days_bits | nanos_bits) as i128;
+    let interval = IntervalMonthDayNanoType::make_value(months, days, nanos);
     Ok(Some(interval))
 }
 
