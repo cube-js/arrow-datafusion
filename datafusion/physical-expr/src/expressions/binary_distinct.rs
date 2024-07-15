@@ -23,8 +23,9 @@ use arrow::{
         IntervalMonthDayNanoArray, IntervalYearMonthArray, TimestampNanosecondArray,
     },
     datatypes::{
-        ArrowPrimitiveType, DataType, IntervalDayTimeType, IntervalMonthDayNanoType,
-        IntervalUnit, IntervalYearMonthType,
+        ArrowPrimitiveType, DataType, Date32Type, IntervalDayTimeType,
+        IntervalMonthDayNanoType, IntervalUnit, IntervalYearMonthType,
+        TimestampNanosecondType,
     },
     temporal_conversions::{date32_to_datetime, timestamp_ns_to_datetime},
 };
@@ -32,6 +33,8 @@ use chrono::{Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime};
 use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::Operator;
 
+type TimestampNanosecond = <TimestampNanosecondType as ArrowPrimitiveType>::Native;
+type Date32 = <Date32Type as ArrowPrimitiveType>::Native;
 type IntervalYearMonth = <IntervalYearMonthType as ArrowPrimitiveType>::Native;
 type IntervalDayTime = <IntervalDayTimeType as ArrowPrimitiveType>::Native;
 type IntervalMonthDayNano = <IntervalMonthDayNanoType as ArrowPrimitiveType>::Native;
@@ -453,10 +456,10 @@ fn timestamp_subtract_date(
 }
 
 fn scalar_timestamp_add_interval_year_month(
-    timestamp: Option<i64>,
+    timestamp: Option<TimestampNanosecond>,
     interval: Option<IntervalYearMonth>,
     negated: bool,
-) -> Result<Option<i64>> {
+) -> Result<Option<TimestampNanosecond>> {
     if timestamp.is_none() || interval.is_none() {
         return Ok(None);
     }
@@ -493,10 +496,10 @@ fn scalar_timestamp_add_interval_year_month(
 }
 
 fn scalar_timestamp_add_interval_day_time(
-    timestamp: Option<i64>,
+    timestamp: Option<TimestampNanosecond>,
     interval: Option<IntervalDayTime>,
     negated: bool,
-) -> Result<Option<i64>> {
+) -> Result<Option<TimestampNanosecond>> {
     if timestamp.is_none() || interval.is_none() {
         return Ok(None);
     }
@@ -519,10 +522,10 @@ fn scalar_timestamp_add_interval_day_time(
 }
 
 fn scalar_timestamp_add_interval_month_day_nano(
-    timestamp: Option<i64>,
+    timestamp: Option<TimestampNanosecond>,
     interval: Option<IntervalMonthDayNano>,
     negated: bool,
-) -> Result<Option<i64>> {
+) -> Result<Option<TimestampNanosecond>> {
     if timestamp.is_none() || interval.is_none() {
         return Ok(None);
     }
@@ -560,8 +563,8 @@ fn scalar_timestamp_add_interval_month_day_nano(
 }
 
 fn scalar_timestamp_subtract_timestamp(
-    timestamp_left: Option<i64>,
-    timestamp_right: Option<i64>,
+    timestamp_left: Option<TimestampNanosecond>,
+    timestamp_right: Option<TimestampNanosecond>,
 ) -> Result<Option<IntervalMonthDayNano>> {
     if timestamp_left.is_none() || timestamp_right.is_none() {
         return Ok(None);
@@ -578,8 +581,8 @@ fn scalar_timestamp_subtract_timestamp(
 }
 
 fn scalar_timestamp_subtract_date(
-    timestamp_left: Option<i64>,
-    timestamp_right: Option<i32>,
+    timestamp_left: Option<TimestampNanosecond>,
+    timestamp_right: Option<Date32>,
 ) -> Result<Option<IntervalMonthDayNano>> {
     if timestamp_left.is_none() || timestamp_right.is_none() {
         return Ok(None);
