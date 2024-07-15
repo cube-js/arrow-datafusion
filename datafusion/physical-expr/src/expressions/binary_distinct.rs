@@ -22,12 +22,19 @@ use arrow::{
         Array, ArrayRef, Date32Array, Int64Array, IntervalDayTimeArray,
         IntervalMonthDayNanoArray, IntervalYearMonthArray, TimestampNanosecondArray,
     },
-    datatypes::{DataType, IntervalUnit},
+    datatypes::{
+        ArrowPrimitiveType, DataType, IntervalDayTimeType, IntervalMonthDayNanoType,
+        IntervalUnit, IntervalYearMonthType,
+    },
     temporal_conversions::{date32_to_datetime, timestamp_ns_to_datetime},
 };
 use chrono::{Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime};
 use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::Operator;
+
+type IntervalYearMonth = <IntervalYearMonthType as ArrowPrimitiveType>::Native;
+type IntervalDayTime = <IntervalDayTimeType as ArrowPrimitiveType>::Native;
+type IntervalMonthDayNano = <IntervalMonthDayNanoType as ArrowPrimitiveType>::Native;
 
 /// return whether the binary expression with distinct types can be evaluated.
 pub fn distinct_types_allowed(
@@ -252,9 +259,9 @@ fn interval_multiply_int(
 }
 
 fn scalar_interval_year_month_mul_int(
-    interval: Option<i32>,
+    interval: Option<IntervalYearMonth>,
     multiplier: Option<i64>,
-) -> Result<Option<i32>> {
+) -> Result<Option<IntervalYearMonth>> {
     if interval.is_none() || multiplier.is_none() {
         return Ok(None);
     }
@@ -274,9 +281,9 @@ fn scalar_interval_year_month_mul_int(
 }
 
 fn scalar_interval_day_time_mul_int(
-    interval: Option<i64>,
+    interval: Option<IntervalDayTime>,
     multiplier: Option<i64>,
-) -> Result<Option<i64>> {
+) -> Result<Option<IntervalDayTime>> {
     if interval.is_none() || multiplier.is_none() {
         return Ok(None);
     }
@@ -304,9 +311,9 @@ fn scalar_interval_day_time_mul_int(
 }
 
 fn scalar_interval_month_day_nano_time_mul_int(
-    interval: Option<i128>,
+    interval: Option<IntervalMonthDayNano>,
     multiplier: Option<i64>,
-) -> Result<Option<i128>> {
+) -> Result<Option<IntervalMonthDayNano>> {
     if interval.is_none() || multiplier.is_none() {
         return Ok(None);
     }
@@ -447,7 +454,7 @@ fn timestamp_subtract_date(
 
 fn scalar_timestamp_add_interval_year_month(
     timestamp: Option<i64>,
-    interval: Option<i32>,
+    interval: Option<IntervalYearMonth>,
     negated: bool,
 ) -> Result<Option<i64>> {
     if timestamp.is_none() || interval.is_none() {
@@ -487,7 +494,7 @@ fn scalar_timestamp_add_interval_year_month(
 
 fn scalar_timestamp_add_interval_day_time(
     timestamp: Option<i64>,
-    interval: Option<i64>,
+    interval: Option<IntervalDayTime>,
     negated: bool,
 ) -> Result<Option<i64>> {
     if timestamp.is_none() || interval.is_none() {
@@ -513,7 +520,7 @@ fn scalar_timestamp_add_interval_day_time(
 
 fn scalar_timestamp_add_interval_month_day_nano(
     timestamp: Option<i64>,
-    interval: Option<i128>,
+    interval: Option<IntervalMonthDayNano>,
     negated: bool,
 ) -> Result<Option<i64>> {
     if timestamp.is_none() || interval.is_none() {
@@ -555,7 +562,7 @@ fn scalar_timestamp_add_interval_month_day_nano(
 fn scalar_timestamp_subtract_timestamp(
     timestamp_left: Option<i64>,
     timestamp_right: Option<i64>,
-) -> Result<Option<i128>> {
+) -> Result<Option<IntervalMonthDayNano>> {
     if timestamp_left.is_none() || timestamp_right.is_none() {
         return Ok(None);
     }
@@ -573,7 +580,7 @@ fn scalar_timestamp_subtract_timestamp(
 fn scalar_timestamp_subtract_date(
     timestamp_left: Option<i64>,
     timestamp_right: Option<i32>,
-) -> Result<Option<i128>> {
+) -> Result<Option<IntervalMonthDayNano>> {
     if timestamp_left.is_none() || timestamp_right.is_none() {
         return Ok(None);
     }
@@ -585,7 +592,9 @@ fn scalar_timestamp_subtract_date(
     duration_to_interval_day_nano(duration)
 }
 
-fn duration_to_interval_day_nano(duration: Duration) -> Result<Option<i128>> {
+fn duration_to_interval_day_nano(
+    duration: Duration,
+) -> Result<Option<IntervalMonthDayNano>> {
     // TODO: What is Postgres behavior?  E.g. if these timestamp values are i64::MIN and i32/i64::MAX,
     // we needlessly have a range error.
     let nanos: i64 = duration.num_nanoseconds().ok_or_else(|| {
