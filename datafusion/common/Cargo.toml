@@ -38,10 +38,10 @@ jit = ["cranelift-module"]
 pyarrow = ["pyo3"]
 
 [dependencies]
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "d9c12d71b655d356c5a287226a763638417972e9", features = ["prettyprint"] }
+arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "db18b5c398ba5554fc774544cec4b713445102bf", features = ["prettyprint"] }
 avro-rs = { version = "0.13", features = ["snappy"], optional = true }
 cranelift-module = { version = "0.82.0", optional = true }
 ordered-float = "2.10"
-parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "d9c12d71b655d356c5a287226a763638417972e9", features = ["arrow"], optional = true }
+parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "db18b5c398ba5554fc774544cec4b713445102bf", features = ["arrow"], optional = true }
 pyo3 = { version = "0.16", optional = true }
 sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "6a54d27d3b75a04b9f9cbe309a83078aa54b32fd" }
