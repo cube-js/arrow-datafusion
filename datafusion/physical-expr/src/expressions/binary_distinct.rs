@@ -604,11 +604,13 @@ fn duration_to_interval_day_nano(
     })?;
 
     let days = nanos / 86_400_000_000_000;
+    let days = i32::try_from(days).map_err(|_| {
+        DataFusionError::Execution("Interval value is out of range".to_string())
+    })?;
     let nanos_rem = nanos % 86_400_000_000_000;
-    Ok(Some(
-        (((days as i128) & 0xFFFF_FFFF) << 64)
-            | ((nanos_rem as i128) & 0xFFFF_FFFF_FFFF_FFFF),
-    ))
+    Ok(Some(IntervalMonthDayNanoType::make_value(
+        0, days, nanos_rem,
+    )))
 }
 
 fn change_ym(t: NaiveDateTime, y: i32, m: u32) -> Result<NaiveDateTime> {
