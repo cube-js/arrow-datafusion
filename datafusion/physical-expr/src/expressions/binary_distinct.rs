@@ -488,17 +488,22 @@ fn scalar_timestamp_add_interval_day_time(
     let interval = interval.unwrap();
 
     let timestamp = timestamp_ns_to_datetime(timestamp);
-    let interval = match negated {
-        true => interval.checked_neg().ok_or_else(|| {
-            DataFusionError::Execution("interval out of range".to_string())
-        })?,
-        false => interval,
+    let (days, millis) = IntervalDayTimeType::to_parts(interval);
+    let (days, millis) = match negated {
+        true => {
+            let days = days.checked_neg().ok_or_else(|| {
+                DataFusionError::Execution("interval out of range".to_string())
+            })?;
+            let millis = millis.checked_neg().ok_or_else(|| {
+                DataFusionError::Execution("interval out of range".to_string())
+            })?;
+            (days, millis)
+        }
+        false => (days, millis),
     };
 
-    // TODO: legacy code, check validity
-    let days: i64 = interval.signum() * (interval.abs() >> 32);
-    let millis: i64 = interval.signum() * ((interval.abs() << 32) >> 32);
-    let result = timestamp + Duration::days(days) + Duration::milliseconds(millis);
+    let result =
+        timestamp + Duration::days(days as i64) + Duration::milliseconds(millis as i64);
     Ok(Some(result.timestamp_nanos()))
 }
 
@@ -515,29 +520,42 @@ fn scalar_timestamp_add_interval_month_day_nano(
 
     let timestamp = timestamp_ns_to_datetime(timestamp);
 
-    let negated = if negated { -1 } else { 1 };
-    let month = ((interval >> (64 + 32)) & 0xFFFFFFFF) as i32 * negated;
-    let day = ((interval >> 64) & 0xFFFFFFFF) as i32 * negated;
-    let nano = (interval & 0xFFFFFFFFFFFFFFFF) as i64 * negated as i64;
+    let (months, days, nanos) = IntervalMonthDayNanoType::to_parts(interval);
 
-    let result = if month >= 0 {
-        timestamp.checked_add_months(Months::new(month as u32))
-    } else {
-        timestamp.checked_sub_months(Months::new(month.abs() as u32))
+    let (months, days, nanos) = match negated {
+        true => {
+            let months = months.checked_neg().ok_or_else(|| {
+                DataFusionError::Execution("interval out of range".to_string())
+            })?;
+            let days = days.checked_neg().ok_or_else(|| {
+                DataFusionError::Execution("interval out of range".to_string())
+            })?;
+            let nanos = nanos.checked_neg().ok_or_else(|| {
+                DataFusionError::Execution("interval out of range".to_string())
+            })?;
+            (months, days, nanos)
+        }
+        false => (months, days, nanos),
     };
 
-    let result = if day >= 0 {
-        result.and_then(|t| t.checked_add_days(Days::new(day as u64)))
+    let result = if months >= 0 {
+        timestamp.checked_add_months(Months::new(months as u32))
     } else {
-        result.and_then(|t| t.checked_sub_days(Days::new(day.abs() as u64)))
+        timestamp.checked_sub_months(Months::new(months.abs() as u32))
     };
 
-    let result = result.and_then(|t| t.checked_add_signed(Duration::nanoseconds(nano)));
+    let result = if days >= 0 {
+        result.and_then(|t| t.checked_add_days(Days::new(days as u64)))
+    } else {
+        result.and_then(|t| t.checked_sub_days(Days::new(days.abs() as u64)))
+    };
+
+    let result = result.and_then(|t| t.checked_add_signed(Duration::nanoseconds(nanos)));
 
     let result = result.ok_or_else(|| {
         DataFusionError::Execution(format!(
             "Failed to add interval: {} month {} day {} nano",
-            month, day, nano
+            months, days, nanos
         ))
     })?;
     Ok(Some(result.timestamp_nanos()))
