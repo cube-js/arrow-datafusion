@@ -2706,11 +2706,12 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         // The true way to store and calculate intervals is to store it as it defined
         // It's why we there are 3 different interval types in Arrow
         if result_month != 0 && (result_days != 0 || result_millis != 0) {
-            let result: i128 = ((result_month as i128) << 96)
-                | ((result_days as i128) << 64)
-                // IntervalMonthDayNano uses nanos, but IntervalDayTime uses milles
-                | ((result_millis as i64 * 1_000_000_i64) as i128);
-
+            let result = IntervalMonthDayNanoType::make_value(
+                result_month,
+                result_days,
+                // IntervalMonthDayNano uses nanos, but IntervalDayTime uses millis
+                result_millis as i64 * 1_000_000_i64,
+            );
             return Ok(Expr::Literal(ScalarValue::IntervalMonthDayNano(Some(
                 result,
             ))));
@@ -2723,7 +2724,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             ))));
         }
 
-        let result: i64 = ((result_days as i64) << 32) | result_millis as i64;
+        let result = IntervalDayTimeType::make_value(result_days, result_millis);
         Ok(Expr::Literal(ScalarValue::IntervalDayTime(Some(result))))
     }
 
