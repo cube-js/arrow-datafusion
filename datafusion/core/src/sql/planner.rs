@@ -2614,6 +2614,13 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 )));
             }
 
+            if interval_period < (i32::MIN as f32) {
+                return Err(DataFusionError::NotImplemented(format!(
+                    "Interval field value out of range: {:?}",
+                    value
+                )));
+            }
+
             match interval_type.to_lowercase().as_str() {
                 "years" | "year" | "y" => {
                     Ok(align_interval_parts(interval_period * 12_f32, 0.0, 0.0))
