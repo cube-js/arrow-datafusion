@@ -2656,9 +2656,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             }
         };
 
-        let mut result_month: i64 = 0;
-        let mut result_days: i64 = 0;
-        let mut result_millis: i64 = 0;
+        let mut result_month: i32 = 0;
+        let mut result_days: i32 = 0;
+        let mut result_millis: i32 = 0;
 
         let mut parts = value.split_whitespace();
 
@@ -2688,23 +2688,17 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             let (diff_month, diff_days, diff_millis) =
                 calculate_from_part(interval_period_str.unwrap(), &unit)?;
 
-            result_month += diff_month as i64;
+            result_month = result_month
+                .checked_add(diff_month)
+                .ok_or_else(out_of_range)?;
 
-            if result_month > (i32::MAX as i64) {
-                return Err(out_of_range());
-            }
+            result_days = result_days
+                .checked_add(diff_days)
+                .ok_or_else(out_of_range)?;
 
-            result_days += diff_days as i64;
-
-            if result_days > (i32::MAX as i64) {
-                return Err(out_of_range());
-            }
-
-            result_millis += diff_millis as i64;
-
-            if result_millis > (i32::MAX as i64) {
-                return Err(out_of_range());
-            }
+            result_millis = result_millis
+                .checked_add(diff_millis as i32)
+                .ok_or_else(out_of_range)?;
         }
 
         // Interval is tricky thing
@@ -2715,7 +2709,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             let result: i128 = ((result_month as i128) << 96)
                 | ((result_days as i128) << 64)
                 // IntervalMonthDayNano uses nanos, but IntervalDayTime uses milles
-                | ((result_millis * 1_000_000_i64) as i128);
+                | ((result_millis as i64 * 1_000_000_i64) as i128);
 
             return Ok(Expr::Literal(ScalarValue::IntervalMonthDayNano(Some(
                 result,
@@ -2725,11 +2719,11 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         // Month interval
         if result_month != 0 {
             return Ok(Expr::Literal(ScalarValue::IntervalYearMonth(Some(
-                result_month as i32,
+                result_month,
             ))));
         }
 
-        let result: i64 = (result_days << 32) | result_millis;
+        let result: i64 = ((result_days as i64) << 32) | result_millis as i64;
         Ok(Expr::Literal(ScalarValue::IntervalDayTime(Some(result))))
     }
 
@@ -3857,6 +3851,50 @@ mod tests {
         let err = logical_plan(sql).expect_err("query should have failed");
         assert_eq!(
             r#"NotImplemented("Interval field value out of range: \"100000000000000000 day\"")"#,
+            format!("{:?}", err)
+        );
+    }
+
+    #[test]
+    fn select_compound_interval_out_of_range() {
+        // First test single interval, it should be parseable
+        quick_test(
+            "SELECT INTERVAL '2000000000 day'",
+            "Projection: IntervalDayTime(\"8589934592000000000\")\n  EmptyRelation",
+        );
+
+        // Then double that interval, so each separate part is parsable, but their sum is not
+        let sql = "SELECT INTERVAL '2000000000 day 2000000000 day'";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert_eq!(
+            r#"NotImplemented("Interval field value out of range: \"2000000000 day 2000000000 day\"")"#,
+            format!("{:?}", err)
+        );
+    }
+
+    #[test]
+    fn select_neg_interval_out_of_range() {
+        let sql = "SELECT INTERVAL '-100000000000000000 day'";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert_eq!(
+            r#"NotImplemented("Interval field value out of range: \"-100000000000000000 day\"")"#,
+            format!("{:?}", err)
+        );
+    }
+
+    #[test]
+    fn select_neg_compound_interval_out_of_range() {
+        // First test single interval, it should be parseable
+        quick_test(
+            "SELECT INTERVAL '-2000000000 day'",
+            "Projection: IntervalDayTime(\"-8589934592000000000\")\n  EmptyRelation",
+        );
+
+        // Then double that interval, so each separate part is parsable, but their sum is not
+        let sql = "SELECT INTERVAL '-2000000000 day -2000000000 day'";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert_eq!(
+            r#"NotImplemented("Interval field value out of range: \"-2000000000 day -2000000000 day\"")"#,
             format!("{:?}", err)
         );
     }
