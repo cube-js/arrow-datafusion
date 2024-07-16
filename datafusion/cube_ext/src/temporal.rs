@@ -223,17 +223,9 @@ impl Epochable for IntervalDayTimeType {
         array: &PrimitiveArray<IntervalDayTimeType>,
     ) -> PrimitiveArray<Float64Type> {
         unary(array, |n| {
-            // Implemented based on scalar_timestamp_add_interval_day_time
-            let sign = n.signum();
-            let n = n.abs();
-            // i64::MIN would work okay in release mode after the bitmask
-            // in the days variable (but TODO: what is Postgres' exact behavior?)
-
-            let days: i64 = (n >> 32) & 0xFFFF_FFFF;
-            let millis: i64 = n & 0xFFFF_FFFF;
-
+            let (days, millis) = IntervalDayTimeType::to_parts(n);
             let seconds_in_a_day = 86400.0;
-            sign as f64 * ((days as f64) * seconds_in_a_day + (millis as f64) / 1_000.0)
+            (days as f64) * seconds_in_a_day + (millis as f64) / 1_000.0
         })
     }
 }
@@ -244,11 +236,8 @@ impl Epochable for IntervalMonthDayNanoType {
     ) -> PrimitiveArray<Float64Type> {
         unary(array, |n| {
             let seconds_in_a_day = 86400_f64;
-            let n: i128 = n;
-            let month = (n >> 96) & 0xFFFF_FFFF;
-            let day = (n >> 64) & 0xFFFF_FFFF;
-            let nano = n & 0xFFFF_FFFF_FFFF_FFFF;
-            let month_epoch: f64 = postgres_months_epoch(month as i32);
+            let (month, day, nano) = IntervalMonthDayNanoType::to_parts(n);
+            let month_epoch: f64 = postgres_months_epoch(month);
             month_epoch
                 + (day as f64) * seconds_in_a_day
                 + (nano as f64) / 1_000_000_000.0
