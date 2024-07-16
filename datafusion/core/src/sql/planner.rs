@@ -2655,6 +2655,13 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
         let mut parts = value.split_whitespace();
 
+        let out_of_range = || {
+            DataFusionError::NotImplemented(format!(
+                "Interval field value out of range: {:?}",
+                value
+            ))
+        };
+
         loop {
             let interval_period_str = parts.next();
             if interval_period_str.is_none() {
@@ -2677,28 +2684,19 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             result_month += diff_month as i64;
 
             if result_month > (i32::MAX as i64) {
-                return Err(DataFusionError::NotImplemented(format!(
-                    "Interval field value out of range: {:?}",
-                    value
-                )));
+                return Err(out_of_range());
             }
 
             result_days += diff_days as i64;
 
             if result_days > (i32::MAX as i64) {
-                return Err(DataFusionError::NotImplemented(format!(
-                    "Interval field value out of range: {:?}",
-                    value
-                )));
+                return Err(out_of_range());
             }
 
             result_millis += diff_millis as i64;
 
             if result_millis > (i32::MAX as i64) {
-                return Err(DataFusionError::NotImplemented(format!(
-                    "Interval field value out of range: {:?}",
-                    value
-                )));
+                return Err(out_of_range());
             }
         }
 
