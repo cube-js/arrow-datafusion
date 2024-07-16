@@ -22,11 +22,11 @@ use arrow::{
     array::*,
     compute::kernels::cast::cast,
     datatypes::{
-        ArrowDictionaryKeyType, ArrowNativeType, DataType, Field, Float32Type,
-        Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, IntervalUnit, TimeUnit,
-        TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
-        TimestampSecondType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
-        DECIMAL_MAX_PRECISION,
+        ArrowDictionaryKeyType, ArrowNativeType, ArrowPrimitiveType, DataType, Field,
+        Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
+        IntervalDayTimeType, IntervalUnit, TimeUnit, TimestampMicrosecondType,
+        TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType,
+        UInt16Type, UInt32Type, UInt64Type, UInt8Type, DECIMAL_MAX_PRECISION,
     },
 };
 use ordered_float::OrderedFloat;
@@ -2001,11 +2001,14 @@ impl ScalarType<i64> for TimestampNanosecondType {
     }
 }
 
-pub fn scalar_negate_interval_day_time(value: i64) -> i64 {
-    let value = value as u64;
-    let days: i32 = ((value & 0xFFFFFFFF00000000) >> 32) as i32;
-    let milliseconds: i32 = (value & 0xFFFFFFFF) as i32;
-    let days = -days; // TODO: panics on i32::MIN
-    let milliseconds = -milliseconds; // TODO: panics on i32::MIN
-    (((days as u64) << 32) | (milliseconds as u64)) as i64
+type IntervalDayTime = <IntervalDayTimeType as ArrowPrimitiveType>::Native;
+
+pub fn scalar_negate_interval_day_time(value: IntervalDayTime) -> IntervalDayTime {
+    let (days, milliseconds) = IntervalDayTimeType::to_parts(value);
+    // TODO: lift these unwraps to Err
+    // TODO: panics on i32::MIN
+    let days = days.checked_neg().unwrap();
+    // TODO: panics on i32::MIN
+    let milliseconds = milliseconds.checked_neg().unwrap();
+    IntervalDayTimeType::make_value(days, milliseconds)
 }
