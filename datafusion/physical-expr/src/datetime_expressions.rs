@@ -25,8 +25,8 @@ use arrow::{
     array::{Array, ArrayRef, GenericStringArray, PrimitiveArray, StringOffsetSizeTrait},
     compute::kernels::cast_utils::string_to_timestamp_nanos,
     datatypes::{
-        ArrowPrimitiveType, DataType, TimestampMicrosecondType, TimestampMillisecondType,
-        TimestampNanosecondType, TimestampSecondType,
+        ArrowPrimitiveType, DataType, IntervalDayTimeType, TimestampMicrosecondType,
+        TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType,
     },
 };
 use arrow::{
@@ -337,7 +337,14 @@ fn to_interval_single(interval_period: i64, interval_unit: &str) -> Result<Scala
         return Ok(ScalarValue::IntervalYearMonth(Some(result_month as i32)));
     }
 
-    let result: i64 = (result_days << 32) | result_millis;
+    // TODO simplify code above to get rid of these casts
+    let result_days = i32::try_from(result_days).map_err(|_| {
+        DataFusionError::Execution("interval out of range (days)".to_string())
+    })?;
+    let result_millis = i32::try_from(result_millis).map_err(|_| {
+        DataFusionError::Execution("interval out of range (milliseconds)".to_string())
+    })?;
+    let result = IntervalDayTimeType::make_value(result_days, result_millis);
     Ok(ScalarValue::IntervalDayTime(Some(result)))
 }
 
