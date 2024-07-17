@@ -419,6 +419,7 @@ pub fn sum_return_type(arg_type: &DataType) -> Result<DataType> {
             let new_precision = DECIMAL_MAX_PRECISION.min(*precision + 10);
             Ok(DataType::Decimal(new_precision, *scale))
         }
+        DataType::Null => Ok(DataType::Null),
         other => Err(DataFusionError::Plan(format!(
             "SUM does not support type \"{:?}\"",
             other
@@ -526,6 +527,7 @@ pub fn avg_return_type(arg_type: &DataType) -> Result<DataType> {
         | DataType::UInt64
         | DataType::Float32
         | DataType::Float64 => Ok(DataType::Float64),
+        DataType::Null => Ok(DataType::Null),
         other => Err(DataFusionError::Plan(format!(
             "AVG does not support {:?}",
             other
@@ -616,6 +618,7 @@ pub fn is_sum_support_arg_type(arg_type: &DataType) -> bool {
             | DataType::Float32
             | DataType::Float64
             | DataType::Decimal(_, _)
+            | DataType::Null
     )
 }
 
@@ -633,6 +636,7 @@ pub fn is_avg_support_arg_type(arg_type: &DataType) -> bool {
             | DataType::Float32
             | DataType::Float64
             | DataType::Decimal(_, _)
+            | DataType::Null
     )
 }
 
@@ -778,6 +782,7 @@ mod tests {
             vec![DataType::Int32],
             vec![DataType::Float32],
             vec![DataType::Decimal(20, 3)],
+            vec![DataType::Null],
         ];
         for fun in funs {
             for input_type in &input_types {

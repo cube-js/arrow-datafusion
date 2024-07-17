@@ -52,7 +52,7 @@ impl Avg {
         // the result of avg just support FLOAT64 and Decimal data type.
         assert!(matches!(
             data_type,
-            DataType::Float64 | DataType::Decimal(_, _)
+            DataType::Float64 | DataType::Decimal(_, _) | DataType::Null
         ));
         Self {
             name: name.into(),
@@ -160,6 +160,7 @@ impl Accumulator for AvgAccumulator {
                     ),
                 })
             }
+            ScalarValue::Null => Ok(ScalarValue::Null),
             _ => Err(DataFusionError::Internal(
                 "Sum should be f64 on average".to_string(),
             )),
@@ -309,6 +310,12 @@ mod tests {
             ScalarValue::from(3_f64),
             DataType::Float64
         )
+    }
+
+    #[test]
+    fn avg_null_type() -> Result<()> {
+        let a: ArrayRef = Arc::new(NullArray::new(5));
+        generic_test_op!(a, DataType::Null, Avg, ScalarValue::Null, DataType::Null)
     }
 
     fn aggregate(

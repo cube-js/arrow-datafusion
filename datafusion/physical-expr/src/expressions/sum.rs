@@ -159,6 +159,7 @@ pub(super) fn sum_batch(values: &ArrayRef) -> Result<ScalarValue> {
         DataType::UInt32 => typed_sum_delta_batch!(values, UInt32Array, UInt32),
         DataType::UInt16 => typed_sum_delta_batch!(values, UInt16Array, UInt16),
         DataType::UInt8 => typed_sum_delta_batch!(values, UInt8Array, UInt8),
+        DataType::Null => ScalarValue::Null,
         e => {
             return Err(DataFusionError::Internal(format!(
                 "Sum is not expected to receive the type {:?}",
@@ -297,6 +298,7 @@ pub(super) fn sum(lhs: &ScalarValue, rhs: &ScalarValue) -> Result<ScalarValue> {
         (ScalarValue::Int64(lhs), ScalarValue::Int8(rhs)) => {
             typed_sum!(lhs, rhs, Int64, i64)
         }
+        (ScalarValue::Null, ScalarValue::Null) => ScalarValue::Null,
         e => {
             return Err(DataFusionError::Internal(format!(
                 "Sum is not expected to receive a scalar {:?}",
@@ -334,8 +336,8 @@ mod tests {
     use super::*;
     use crate::expressions::col;
     use crate::generic_test_op;
-    use arrow::datatypes::*;
     use arrow::record_batch::RecordBatch;
+    use arrow::{array::*, datatypes::*};
     use datafusion_common::Result;
 
     #[test]
@@ -530,6 +532,12 @@ mod tests {
             ScalarValue::from(15_f64),
             DataType::Float64
         )
+    }
+
+    #[test]
+    fn sum_null_type() -> Result<()> {
+        let a: ArrayRef = Arc::new(NullArray::new(5));
+        generic_test_op!(a, DataType::Null, Sum, ScalarValue::Null, DataType::Null)
     }
 
     fn aggregate(
