@@ -725,6 +725,164 @@ async fn test_interval_expressions() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_interval_mul_div_float() -> Result<()> {
+    macro_rules! test_mul {
+        ($L:expr, $R:expr, $EXPECTED:expr) => {
+            test_expression!(format!("({}) * ({})", $L, $R), $EXPECTED);
+            test_expression!(format!("({}) * ({})", $R, $L), $EXPECTED);
+        };
+    }
+
+    test_mul!(
+        "0.5",
+        "interval '1 month'",
+        "0 years 0 mons 15 days 0 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "1.0",
+        "interval '1 month'",
+        "0 years 1 mons 0 days 0 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "1.5",
+        "interval '1 month'",
+        "0 years 1 mons 15 days 0 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "2.0",
+        "interval '1 month'",
+        "0 years 2 mons 0 days 0 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "-1.5",
+        "interval '1 month'",
+        "0 years -1 mons -15 days 0 hours 0 mins 0.000000000 secs"
+    );
+    test_expression!(
+        "1.5 * (interval '1 month') / 1.5",
+        "0 years 0 mons 30 days 0 hours 0 mins 0.000000000 secs"
+    );
+
+    test_mul!(
+        "0.5",
+        "interval '1 day'",
+        "0 years 0 mons 0 days 12 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "1.0",
+        "interval '1 day'",
+        "0 years 0 mons 1 days 0 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "1.5",
+        "interval '1 day'",
+        "0 years 0 mons 1 days 12 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "2.0",
+        "interval '1 day'",
+        "0 years 0 mons 2 days 0 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "-1.5",
+        "interval '1 day'",
+        "0 years 0 mons -1 days -12 hours 0 mins 0.000000000 secs"
+    );
+    test_expression!(
+        "1.5 * (interval '1 day') / 1.5",
+        "0 years 0 mons 0 days 24 hours 0 mins 0.000000000 secs"
+    );
+
+    test_mul!(
+        "0.5",
+        "interval '1 second'",
+        "0 years 0 mons 0 days 0 hours 0 mins 0.500000000 secs"
+    );
+    test_mul!(
+        "1.0",
+        "interval '1 second'",
+        "0 years 0 mons 0 days 0 hours 0 mins 1.000000000 secs"
+    );
+    test_mul!(
+        "1.5",
+        "interval '1 second'",
+        "0 years 0 mons 0 days 0 hours 0 mins 1.500000000 secs"
+    );
+    test_mul!(
+        "2.0",
+        "interval '1 second'",
+        "0 years 0 mons 0 days 0 hours 0 mins 2.000000000 secs"
+    );
+    // This test prints as -1.-500000000 secs, that looks like a bug in printing
+    // TODO fix it
+    // test_mul!(
+    //     "-1.5",
+    //     "interval '1 second'",
+    //     "0 years 0 mons 0 days 0 hours 0 mins -1.500000000 secs"
+    // );
+    test_expression!(
+        "1.5 * (interval '1 second') / 1.5",
+        "0 years 0 mons 0 days 0 hours 0 mins 1.000000000 secs"
+    );
+
+    // Carry-over cases
+    test_mul!(
+        "1.5",
+        "interval '1 month 1 day'",
+        "0 years 1 mons 16 days 12 hours 0 mins 0.000000000 secs"
+    );
+    test_mul!(
+        "1.5",
+        "interval '1 month 1 second'",
+        "0 years 1 mons 15 days 0 hours 0 mins 1.500000000 secs"
+    );
+    test_mul!(
+        "1.5",
+        "interval '1 day 1 second'",
+        "0 years 0 mons 1 days 12 hours 0 mins 1.500000000 secs"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_interval_mul_bad_float() -> Result<()> {
+    macro_rules! test_expr_error {
+        ($SQL:expr, $EXPECTED:expr) => {
+            let ctx = SessionContext::new();
+            let sql = format!("SELECT {}", $SQL);
+            let actual_err = plan_and_collect(&ctx, sql.as_str()).await.unwrap_err();
+            assert_eq!(actual_err.to_string(), $EXPECTED);
+        };
+    }
+    macro_rules! test_mul_error {
+        ($L:expr, $R:expr, $EXPECTED:expr) => {
+            test_expr_error!(format!("({}) * ({})", $L, $R), $EXPECTED);
+            test_expr_error!(format!("({}) * ({})", $R, $L), $EXPECTED);
+        };
+    }
+
+    // This behaviour was checked on PostgreSQL 15.7
+    test_mul_error!(
+        "cast('NaN' as double precision)",
+        "interval '1 month'",
+        "Execution error: interval out of range (float)"
+    );
+    test_mul_error!(
+        "cast('inf' as double precision)",
+        "interval '1 month'",
+        "Execution error: interval out of range (float)"
+    );
+    test_mul_error!(
+        "cast('-inf' as double precision)",
+        "interval '1 month'",
+        "Execution error: interval out of range (float)"
+    );
+
+    Ok(())
+}
+
 #[cfg(feature = "unicode_expressions")]
 #[tokio::test]
 async fn test_substring_expr() -> Result<()> {

@@ -747,6 +747,20 @@ pub fn distinct_coercion(
             | (Interval(unit), UInt8)
             | (Null, Interval(unit))
             | (Interval(unit), Null) => Some(Interval(unit.clone())),
+            // float*interval result is always represented as MonthDayNano, to avoid precision loss
+            (Float64, Interval(_))
+            | (Interval(_), Float64)
+            | (Float32, Interval(_))
+            | (Interval(_), Float32)
+            | (Float16, Interval(_))
+            | (Interval(_), Float16) => Some(Interval(MonthDayNano)),
+            _ => None,
+        },
+        Operator::Divide => match (lhs_type, rhs_type) {
+            // interval/float result is represented as MonthDayNano, to avoid precision loss
+            (Interval(_), Float64) | (Interval(_), Float32) | (Interval(_), Float16) => {
+                Some(Interval(MonthDayNano))
+            }
             _ => None,
         },
         _ => None,
