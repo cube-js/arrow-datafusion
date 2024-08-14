@@ -179,10 +179,24 @@ impl ExprVisitable for Expr {
             Expr::ScalarFunction { args, .. }
             | Expr::ScalarUDF { args, .. }
             | Expr::TableUDF { args, .. }
-            | Expr::AggregateFunction { args, .. }
             | Expr::AggregateUDF { args, .. } => args
                 .iter()
                 .try_fold(visitor, |visitor, arg| arg.accept(visitor)),
+            Expr::AggregateFunction {
+                args, within_group, ..
+            } => {
+                let visitor = args
+                    .iter()
+                    .try_fold(visitor, |visitor, arg| arg.accept(visitor))?;
+                let visitor = if let Some(within_group) = within_group.as_ref() {
+                    within_group
+                        .iter()
+                        .try_fold(visitor, |visitor, arg| arg.accept(visitor))?
+                } else {
+                    visitor
+                };
+                Ok(visitor)
+            }
             Expr::WindowFunction {
                 args,
                 partition_by,

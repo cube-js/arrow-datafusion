@@ -93,6 +93,26 @@ fn create_function_physical_name(
     Ok(format!("{}({}{})", fun, distinct_str, names.join(",")))
 }
 
+fn create_aggregate_function_physical_name(
+    fun: &str,
+    distinct: bool,
+    args: &[Expr],
+    within_group: Option<&[Expr]>,
+) -> Result<String> {
+    let function_name = create_function_physical_name(fun, distinct, args)?;
+    let within_group = match within_group {
+        Some(within_group) => {
+            let names = within_group
+                .iter()
+                .map(|e| create_physical_name(e, false))
+                .collect::<Result<Vec<_>>>()?;
+            format!(" WITHIN GROUP (ORDER BY {})", names.join(", "))
+        }
+        None => "".to_string(),
+    };
+    Ok(format!("{}{}", function_name, within_group))
+}
+
 fn physical_name(e: &Expr) -> Result<String> {
     create_physical_name(e, true)
 }
@@ -189,8 +209,14 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
             fun,
             distinct,
             args,
+            within_group,
             ..
-        } => create_function_physical_name(&fun.to_string(), *distinct, args),
+        } => create_aggregate_function_physical_name(
+            &fun.to_string(),
+            *distinct,
+            args,
+            within_group.as_ref().map(|exprs| exprs.as_slice()),
+        ),
         Expr::AggregateUDF { fun, args } => {
             let mut names = Vec::with_capacity(args.len());
             for e in args {
@@ -324,9 +350,16 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
                 Ok(format!("{} SIMILAR TO {}{}", expr, pattern, escape))
             }
         }
-        Expr::Sort { .. } => Err(DataFusionError::Internal(
-            "Create physical name does not support sort expression".to_string(),
-        )),
+        Expr::Sort {
+            expr,
+            asc,
+            nulls_first,
+        } => {
+            let expr = create_physical_name(expr, false)?;
+            let asc = if *asc { "ASC" } else { "DESC" };
+            let first = if *nulls_first { "FIRST" } else { "LAST" };
+            Ok(format!("{} {} NULLS {}", expr, asc, first))
+        }
         Expr::Wildcard => Err(DataFusionError::Internal(
             "Create physical name does not support wildcard".to_string(),
         )),
@@ -1562,6 +1595,7 @@ pub fn create_aggregate_expr_with_name(
             fun,
             distinct,
             args,
+            within_group,
             ..
         } => {
             let args = args
@@ -1575,12 +1609,33 @@ pub fn create_aggregate_expr_with_name(
                     )
                 })
                 .collect::<Result<Vec<_>>>()?;
+            let within_group = within_group
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter()
+                .map(|wg| {
+                    let Expr::Sort { expr, asc, nulls_first } = wg else {
+                    return Err(DataFusionError::Internal(format!(
+                        "Non-Sort expression encountered in ORDER BY: {}",
+                        wg
+                    )));
+                };
+                    let expr = create_physical_expr(
+                        expr,
+                        logical_input_schema,
+                        physical_input_schema,
+                        execution_props,
+                    )?;
+                    Ok((expr, *asc, *nulls_first))
+                })
+                .collect::<Result<Vec<_>>>()?;
             aggregates::create_aggregate_expr(
                 fun,
                 *distinct,
                 &args,
                 physical_input_schema,
                 name,
+                within_group,
             )
         }
         Expr::AggregateUDF { fun, args, .. } => {

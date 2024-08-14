@@ -148,7 +148,7 @@ pub fn return_type(
 ) -> Result<DataType> {
     match fun {
         WindowFunction::AggregateFunction(fun) => {
-            aggregate_function::return_type(fun, input_expr_types)
+            aggregate_function::return_type(fun, input_expr_types, &[])
         }
         WindowFunction::BuiltInWindowFunction(fun) => {
             return_type_for_built_in(fun, input_expr_types)

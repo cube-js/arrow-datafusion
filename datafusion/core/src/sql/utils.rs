@@ -293,14 +293,27 @@ where
                 fun,
                 args,
                 distinct,
-            } => Ok(Expr::AggregateFunction {
-                fun: fun.clone(),
-                args: args
-                    .iter()
-                    .map(|e| clone_with_replacement(e, replacement_fn))
-                    .collect::<Result<Vec<Expr>>>()?,
-                distinct: *distinct,
-            }),
+                within_group,
+            } => {
+                let within_group = match within_group {
+                    Some(within_group) => Some(
+                        within_group
+                            .iter()
+                            .map(|e| clone_with_replacement(e, replacement_fn))
+                            .collect::<Result<Vec<Expr>>>()?,
+                    ),
+                    None => None,
+                };
+                Ok(Expr::AggregateFunction {
+                    fun: fun.clone(),
+                    args: args
+                        .iter()
+                        .map(|e| clone_with_replacement(e, replacement_fn))
+                        .collect::<Result<Vec<Expr>>>()?,
+                    distinct: *distinct,
+                    within_group,
+                })
+            }
             Expr::WindowFunction {
                 fun,
                 args,

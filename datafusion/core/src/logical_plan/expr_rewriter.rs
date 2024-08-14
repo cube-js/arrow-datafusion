@@ -252,11 +252,19 @@ impl ExprRewritable for Expr {
                 args,
                 fun,
                 distinct,
-            } => Expr::AggregateFunction {
-                args: rewrite_vec(args, rewriter)?,
-                fun,
-                distinct,
-            },
+                within_group,
+            } => {
+                let within_group = match within_group {
+                    Some(within_group) => Some(rewrite_vec(within_group, rewriter)?),
+                    None => None,
+                };
+                Expr::AggregateFunction {
+                    args: rewrite_vec(args, rewriter)?,
+                    fun,
+                    distinct,
+                    within_group,
+                }
+            }
             Expr::GroupingSet(grouping_set) => match grouping_set {
                 GroupingSet::Rollup(exprs) => {
                     Expr::GroupingSet(GroupingSet::Rollup(rewrite_vec(exprs, rewriter)?))

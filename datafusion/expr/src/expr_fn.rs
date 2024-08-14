@@ -57,6 +57,7 @@ pub fn min(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::Min,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -66,6 +67,7 @@ pub fn max(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::Max,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -75,6 +77,7 @@ pub fn sum(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::Sum,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -84,6 +87,7 @@ pub fn avg(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::Avg,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -93,6 +97,7 @@ pub fn count(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::Count,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -102,6 +107,7 @@ pub fn count_distinct(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::Count,
         distinct: true,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -162,6 +168,7 @@ pub fn approx_distinct(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::ApproxDistinct,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -171,6 +178,7 @@ pub fn approx_percentile_cont(expr: Expr, percentile: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::ApproxPercentileCont,
         distinct: false,
         args: vec![expr, percentile],
+        within_group: None,
     }
 }
 
@@ -184,6 +192,7 @@ pub fn approx_percentile_cont_with_weight(
         fun: aggregate_function::AggregateFunction::ApproxPercentileContWithWeight,
         distinct: false,
         args: vec![expr, weight_expr, percentile],
+        within_group: None,
     }
 }
 
@@ -193,6 +202,7 @@ pub fn bool_and(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::BoolAnd,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 
@@ -202,6 +212,7 @@ pub fn bool_or(expr: Expr) -> Expr {
         fun: aggregate_function::AggregateFunction::BoolOr,
         distinct: false,
         args: vec![expr],
+        within_group: None,
     }
 }
 

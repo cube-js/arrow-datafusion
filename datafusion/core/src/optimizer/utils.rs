@@ -339,8 +339,14 @@ pub fn expr_sub_expressions(expr: &Expr) -> Result<Vec<Expr>> {
         Expr::ScalarFunction { args, .. }
         | Expr::ScalarUDF { args, .. }
         | Expr::TableUDF { args, .. }
-        | Expr::AggregateFunction { args, .. }
         | Expr::AggregateUDF { args, .. } => Ok(args.clone()),
+        Expr::AggregateFunction {
+            args, within_group, ..
+        } => Ok(args
+            .iter()
+            .chain(within_group.as_ref().unwrap_or(&vec![]))
+            .cloned()
+            .collect()),
         Expr::GroupingSet(grouping_set) => match grouping_set {
             GroupingSet::Rollup(exprs) => Ok(exprs.clone()),
             GroupingSet::Cube(exprs) => Ok(exprs.clone()),
@@ -517,11 +523,25 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
                 })
             }
         }
-        Expr::AggregateFunction { fun, distinct, .. } => Ok(Expr::AggregateFunction {
-            fun: fun.clone(),
-            args: expressions.to_vec(),
-            distinct: *distinct,
-        }),
+        Expr::AggregateFunction {
+            fun,
+            distinct,
+            args,
+            ..
+        } => {
+            let args_limit = args.len();
+            let within_group = if expressions.len() > args_limit {
+                Some(expressions[args_limit..].to_vec())
+            } else {
+                None
+            };
+            Ok(Expr::AggregateFunction {
+                fun: fun.clone(),
+                args: expressions[..args_limit].to_vec(),
+                distinct: *distinct,
+                within_group,
+            })
+        }
         Expr::AggregateUDF { fun, .. } => Ok(Expr::AggregateUDF {
             fun: fun.clone(),
             args: expressions.to_vec(),

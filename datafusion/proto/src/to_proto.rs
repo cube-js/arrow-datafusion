@@ -312,6 +312,7 @@ impl From<&AggregateFunction> for protobuf::AggregateFunction {
             AggregateFunction::ApproxPercentileContWithWeight => {
                 Self::ApproxPercentileContWithWeight
             }
+            AggregateFunction::PercentileCont => Self::PercentileCont,
             AggregateFunction::ApproxMedian => Self::ApproxMedian,
             AggregateFunction::BoolAnd => Self::BoolAnd,
             AggregateFunction::BoolOr => Self::BoolOr,
@@ -521,6 +522,9 @@ impl TryFrom<&Expr> for protobuf::LogicalExprNode {
                     }
                     AggregateFunction::ApproxPercentileContWithWeight => {
                         protobuf::AggregateFunction::ApproxPercentileContWithWeight
+                    }
+                    AggregateFunction::PercentileCont => {
+                        protobuf::AggregateFunction::PercentileCont
                     }
                     AggregateFunction::ArrayAgg => protobuf::AggregateFunction::ArrayAgg,
                     AggregateFunction::Min => protobuf::AggregateFunction::Min,
