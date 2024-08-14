@@ -27,7 +27,7 @@ use arrow::{
     record_batch::RecordBatch,
 };
 
-use crate::error::{DataFusionError, Result};
+use crate::{error::{DataFusionError, Result}, physical_plan::parquet::MetadataCacheFactory};
 use crate::{datasource::TableProvider, logical_plan::plan::ToStringifiedPlan};
 use crate::{
     datasource::{empty::EmptyTable, parquet::ParquetTable, CsvFile, MemTable},
@@ -140,21 +140,23 @@ impl LogicalPlanBuilder {
     /// Scan a Parquet data source
     pub fn scan_parquet(
         path: impl Into<String>,
+        metadata_cache_factory: Arc<dyn MetadataCacheFactory>,
         projection: Option<Vec<usize>>,
         max_concurrency: usize,
     ) -> Result<Self> {
         let path = path.into();
-        Self::scan_parquet_with_name(path.clone(), projection, max_concurrency, path)
+        Self::scan_parquet_with_name(path.clone(), metadata_cache_factory, projection, max_concurrency, path)
     }
 
     /// Scan a Parquet data source and register it with a given table name
     pub fn scan_parquet_with_name(
         path: impl Into<String>,
+        metadata_cache_factory: Arc<dyn MetadataCacheFactory>,
         projection: Option<Vec<usize>>,
         max_concurrency: usize,
         table_name: impl Into<String>,
     ) -> Result<Self> {
-        let provider = Arc::new(ParquetTable::try_new(path, max_concurrency)?);
+        let provider = Arc::new(ParquetTable::try_new(path, metadata_cache_factory, max_concurrency)?);
         Self::scan(table_name, provider, projection)
     }
 

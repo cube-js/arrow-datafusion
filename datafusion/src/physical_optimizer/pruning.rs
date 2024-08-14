@@ -127,6 +127,10 @@ impl PruningPredicate {
             .collect::<Vec<_>>();
         let stat_schema = Schema::new(stat_fields);
         let stat_dfschema = DFSchema::try_from(stat_schema.clone())?;
+        // TODO: We know that the metadata_cache_factory field -- improperly initialized here -- is
+        // unused by DefaultPhysicalPlanner::default().create_physical_expr by inspection.  So this
+        // code works, but is fragile.  Maybe ExecutionContextState::metadata_cache_factory should
+        // be an Option<_> and users use .unwrap or .expect to access it.
         let execution_context_state = ExecutionContextState::new();
         let predicate_expr = DefaultPhysicalPlanner::default().create_physical_expr(
             &logical_predicate_expr,

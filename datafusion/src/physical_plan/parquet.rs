@@ -43,6 +43,7 @@ use arrow::{
 };
 use hashbrown::HashMap;
 use log::debug;
+use parquet::file::properties::{WriterProperties, WriterPropertiesBuilder};
 use parquet::file::{
     footer,
     metadata::RowGroupMetaData,
@@ -126,7 +127,7 @@ struct ParquetPartitionMetrics {
 
 /// Cache for Parquet Metadata
 pub trait ParquetMetadataCache: Debug + Sync + Send {
-    /// Returns the metadata for the given file, possibly cached on key
+    /// Returns the metadata for the given file, possibly cached on key.
     fn metadata(&self, key: &str, file: &File) -> Result<Arc<ParquetMetaData>>;
 
     /// Creates a FileReader for the given filename
@@ -137,6 +138,19 @@ pub trait ParquetMetadataCache: Debug + Sync + Send {
             file,
             (*metadata).clone(),
         ))
+    }
+}
+
+// TODO: Rename to ParquetMetadataCacheFactory?  Rename for build_writer_props field?
+/// Constructs the desired types of caches for Parquet Metadata.
+pub trait MetadataCacheFactory: Sync + Send {
+    /// Makes a noop cache (which doesn't cache)
+    fn make_noop_cache(&self) -> Arc<dyn ParquetMetadataCache>;
+    /// Makes an LRU-based cache.
+    fn make_lru_cache(&self, max_capacity: u64, time_to_idle: Duration) -> Arc<dyn ParquetMetadataCache>;
+    /// Modifies and builds writer properties.
+    fn build_writer_props(&self, builder: WriterPropertiesBuilder) -> WriterProperties {
+        builder.build()
     }
 }
 
@@ -153,7 +167,7 @@ impl NoopParquetMetadataCache {
 
 impl ParquetMetadataCache for NoopParquetMetadataCache {
     fn metadata(&self, _key: &str, file: &File) -> Result<Arc<ParquetMetaData>> {
-        Ok(Arc::new(footer::parse_metadata(file)?))
+        Ok(Arc::new(footer::parse_metadata(file, &None)?.0))
     }
 }
 
@@ -189,13 +203,32 @@ impl ParquetMetadataCache for LruParquetMetadataCache {
         match self.cache.get(&k) {
             Some(metadata) => Ok(metadata),
             None => {
-                let metadata = Arc::new(footer::parse_metadata(file)?);
+                let metadata = Arc::new(footer::parse_metadata(file, &None)?.0);
                 self.cache.insert(k, metadata.clone());
                 Ok(metadata)
             }
         }
     }
 }
+
+/// Constructs regular Noop or Lru MetadataCacheFactory objects.
+pub struct BasicMetadataCacheFactory {
+}
+
+impl BasicMetadataCacheFactory {
+    /// Constructor
+    pub fn new() -> BasicMetadataCacheFactory { BasicMetadataCacheFactory{} }
+}
+
+impl MetadataCacheFactory for BasicMetadataCacheFactory {
+    fn make_noop_cache(&self) -> Arc<dyn ParquetMetadataCache> {
+        NoopParquetMetadataCache::new()
+    }
+    fn make_lru_cache(&self, max_capacity: u64, time_to_idle: Duration) -> Arc<dyn ParquetMetadataCache> {
+        LruParquetMetadataCache::new(max_capacity, time_to_idle)
+    }
+}
+
 
 impl ParquetExec {
     /// Create a new Parquet reader execution plan based on the specified Parquet filename or
@@ -1191,7 +1224,8 @@ mod tests {
                 .unwrap();
             columns.push(column);
         }
-        RowGroupMetaData::builder(schema_descr.clone())
+        let ordinal: i16 = 0;
+        RowGroupMetaData::builder(schema_descr.clone(), ordinal)
             .set_num_rows(1000)
             .set_total_byte_size(2000)
             .set_column_metadata(columns)

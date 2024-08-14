@@ -16,8 +16,10 @@
 // under the License.
 
 use std::pin::Pin;
+use std::sync::Arc;
 
 use arrow_flight::SchemaAsIpc;
+use datafusion::physical_plan::parquet::BasicMetadataCacheFactory;
 use futures::Stream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
@@ -65,7 +67,7 @@ impl FlightService for FlightServiceImpl {
     ) -> Result<Response<SchemaResult>, Status> {
         let request = request.into_inner();
 
-        let table = ParquetTable::try_new(&request.path[0], num_cpus::get()).unwrap();
+        let table = ParquetTable::try_new(&request.path[0], Arc::new(BasicMetadataCacheFactory::new()), num_cpus::get()).unwrap();
 
         let options = datafusion::arrow::ipc::writer::IpcWriteOptions::default();
         let schema_result = SchemaAsIpc::new(table.schema().as_ref(), &options).into();

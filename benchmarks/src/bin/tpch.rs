@@ -30,7 +30,7 @@ use ballista::context::BallistaContext;
 #[cfg(any())] // Ballista disabled in CubeStore.
 use ballista::prelude::{BallistaConfig, BALLISTA_DEFAULT_SHUFFLE_PARTITIONS};
 
-use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::{arrow::datatypes::{DataType, Field, Schema}, physical_plan::parquet::BasicMetadataCacheFactory};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty;
 use datafusion::datasource::parquet::ParquetTable;
@@ -482,7 +482,7 @@ fn get_table(
         }
         "parquet" => {
             let path = format!("{}/{}", path, table);
-            Ok(Arc::new(ParquetTable::try_new(&path, max_concurrency)?))
+            Ok(Arc::new(ParquetTable::try_new(&path, Arc::new(BasicMetadataCacheFactory::new()), max_concurrency)?))
         }
         other => {
             unimplemented!("Invalid file format '{}'", other);

@@ -27,7 +27,7 @@ use crate::datasource::datasource::Statistics;
 use crate::datasource::TableProvider;
 use crate::error::Result;
 use crate::logical_plan::{combine_filters, Expr};
-use crate::physical_plan::parquet::ParquetExec;
+use crate::physical_plan::parquet::{MetadataCacheFactory, ParquetExec};
 use crate::physical_plan::ExecutionPlan;
 
 use super::datasource::TableProviderFilterPushDown;
@@ -35,6 +35,7 @@ use super::datasource::TableProviderFilterPushDown;
 /// Table-based representation of a `ParquetFile`.
 pub struct ParquetTable {
     path: String,
+    metadata_cache_factory: Arc<dyn MetadataCacheFactory>,
     schema: SchemaRef,
     statistics: Statistics,
     max_concurrency: usize,
@@ -43,12 +44,13 @@ pub struct ParquetTable {
 
 impl ParquetTable {
     /// Attempt to initialize a new `ParquetTable` from a file path.
-    pub fn try_new(path: impl Into<String>, max_concurrency: usize) -> Result<Self> {
+    pub fn try_new(path: impl Into<String>, metadata_cache_factory: Arc<dyn MetadataCacheFactory>, max_concurrency: usize) -> Result<Self> {
         let path = path.into();
-        let parquet_exec = ParquetExec::try_from_path(&path, None, None, 0, 1, None)?;
+        let parquet_exec = ParquetExec::try_from_path_with_cache(&path, None, None, 0, 1, None, metadata_cache_factory.make_noop_cache())?;
         let schema = parquet_exec.schema();
         Ok(Self {
             path,
+            metadata_cache_factory,
             schema,
             statistics: parquet_exec.statistics().to_owned(),
             max_concurrency,
@@ -107,7 +109,7 @@ impl TableProvider for ParquetTable {
         } else {
             None
         };
-        Ok(Arc::new(ParquetExec::try_from_path(
+        Ok(Arc::new(ParquetExec::try_from_path_with_cache(
             &self.path,
             projection.clone(),
             predicate,
@@ -116,6 +118,7 @@ impl TableProvider for ParquetTable {
                 .unwrap_or(batch_size),
             self.max_concurrency,
             limit,
+            self.metadata_cache_factory.make_noop_cache()
         )?))
     }
 
@@ -130,6 +133,8 @@ impl TableProvider for ParquetTable {
 
 #[cfg(test)]
 mod tests {
+    use crate::physical_plan::parquet::BasicMetadataCacheFactory;
+
     use super::*;
     use arrow::array::{
         BinaryArray, BooleanArray, Float32Array, Float64Array, Int32Array,
@@ -355,7 +360,7 @@ mod tests {
     fn load_table(name: &str) -> Result<Arc<dyn TableProvider>> {
         let testdata = crate::test_util::parquet_test_data();
         let filename = format!("{}/{}", testdata, name);
-        let table = ParquetTable::try_new(&filename, 2)?;
+        let table = ParquetTable::try_new(&filename, Arc::new(BasicMetadataCacheFactory::new()), 2)?;
         Ok(Arc::new(table))
     }
 
