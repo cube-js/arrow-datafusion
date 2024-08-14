@@ -92,12 +92,23 @@ impl ExprSchemable for Expr {
                     .collect::<Result<Vec<_>>>()?;
                 window_function::return_type(fun, &data_types)
             }
-            Expr::AggregateFunction { fun, args, .. } => {
+            Expr::AggregateFunction {
+                fun,
+                args,
+                within_group,
+                ..
+            } => {
                 let data_types = args
                     .iter()
                     .map(|e| e.get_type(schema))
                     .collect::<Result<Vec<_>>>()?;
-                aggregate_function::return_type(fun, &data_types)
+                let within_group = within_group
+                    .as_ref()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(|e| e.get_type(schema))
+                    .collect::<Result<Vec<_>>>()?;
+                aggregate_function::return_type(fun, &data_types, &within_group)
             }
             Expr::AggregateUDF { fun, args, .. } => {
                 let data_types = args

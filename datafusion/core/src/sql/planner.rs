@@ -58,7 +58,7 @@ use sqlparser::ast::{
     Fetch, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator,
     ObjectName, Offset as SQLOffset, Query, Select, SelectItem, SetExpr, SetOperator,
     ShowStatementFilter, TableFactor, TableWithJoins, TrimWhereField, UnaryOperator,
-    Value, Values as SQLValues,
+    Value, Values as SQLValues, WithinGroup,
 };
 use sqlparser::ast::{ColumnDef as SQLColumnDef, ColumnOption};
 use sqlparser::ast::{ObjectType, OrderByExpr, Statement};
@@ -1437,14 +1437,19 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
         let order_by_rex = order_by
             .into_iter()
-            .map(|e| self.order_by_to_sort_expr(e, plan.schema()))
+            .map(|e| self.order_by_to_sort_expr(e, plan.schema(), true))
             .collect::<Result<Vec<_>>>()?;
 
         LogicalPlanBuilder::from(plan).sort(order_by_rex)?.build()
     }
 
     /// convert sql OrderByExpr to Expr::Sort
-    fn order_by_to_sort_expr(&self, e: OrderByExpr, schema: &DFSchema) -> Result<Expr> {
+    fn order_by_to_sort_expr(
+        &self,
+        e: OrderByExpr,
+        schema: &DFSchema,
+        parse_indexes: bool,
+    ) -> Result<Expr> {
         let OrderByExpr {
             asc,
             expr,
@@ -1452,7 +1457,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         } = e;
 
         let expr = match expr {
-            SQLExpr::Value(Value::Number(v, _)) => {
+            SQLExpr::Value(Value::Number(v, _)) if parse_indexes => {
                 let field_index = v
                     .parse::<usize>()
                     .map_err(|err| DataFusionError::Plan(err.to_string()))?;
@@ -2310,7 +2315,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     let order_by = window
                         .order_by
                         .into_iter()
-                        .map(|e| self.order_by_to_sort_expr(e, schema))
+                        .map(|e| self.order_by_to_sort_expr(e, schema, true))
                         .collect::<Result<Vec<_>>>()?;
                     let window_frame = window
                         .window_frame
@@ -2372,6 +2377,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         fun,
                         distinct,
                         args,
+                        within_group: None,
                     });
                 };
 
@@ -2438,6 +2444,8 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
             SQLExpr::ArrayAgg(array_agg) => self.parse_array_agg(array_agg, schema),
 
+            SQLExpr::WithinGroup(within_group) => self.parse_within_group(within_group, schema),
+
             _ => Err(DataFusionError::NotImplemented(format!(
                 "Unsupported ast node {:?} in sqltorel",
                 sql
@@ -2455,7 +2463,6 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             distinct,
             expr,
             limit,
-            within_group,
             ..
         } = array_agg;
 
@@ -2474,12 +2481,6 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             )));
         }
 
-        if within_group {
-            return Err(DataFusionError::NotImplemented(
-                "WITHIN GROUP not supported in ARRAY_AGG".to_string(),
-            ));
-        }
-
         let args = vec![self.sql_expr_to_logical_expr(*expr, input_schema)?];
         // next, aggregate built-ins
         let fun = aggregates::AggregateFunction::ArrayAgg;
@@ -2488,7 +2489,33 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             fun,
             distinct,
             args,
+            within_group: None,
         })
+    }
+
+    fn parse_within_group(
+        &self,
+        within_group: WithinGroup,
+        input_schema: &DFSchema,
+    ) -> Result<Expr> {
+        let mut expr = self.sql_expr_to_logical_expr(*within_group.expr, input_schema)?;
+        if let Expr::AggregateFunction {
+            within_group: agg_within_group,
+            ..
+        } = &mut expr
+        {
+            let order_by = within_group
+                .order_by
+                .into_iter()
+                .map(|e| self.order_by_to_sort_expr(e, input_schema, false))
+                .collect::<Result<Vec<_>>>()?;
+            *agg_within_group = Some(order_by);
+            return Ok(expr);
+        }
+        Err(DataFusionError::NotImplemented(
+            "WITHIN GROUP is only supported with built-in aggregate functions"
+                .to_string(),
+        ))
     }
 
     fn function_args_to_expr(
@@ -4126,6 +4153,15 @@ mod tests {
         let sql = "SELECT approx_median(age) FROM person";
         let expected = "Projection: #APPROXPERCENTILECONT(person.age,Float64(0.5))\
                         \n  Aggregate: groupBy=[[]], aggr=[[APPROXPERCENTILECONT(#person.age, Float64(0.5))]]\
+                        \n    TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn select_percentile_cont() {
+        let sql = "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY age) FROM person";
+        let expected = "Projection: #PERCENTILECONT(Float64(0.5)) WITHIN GROUP (ORDER BY [#person.age ASC NULLS LAST])\
+                        \n  Aggregate: groupBy=[[]], aggr=[[PERCENTILECONT(Float64(0.5)) WITHIN GROUP (ORDER BY #person.age ASC NULLS LAST)]]\
                         \n    TableScan: person projection=None";
         quick_test(sql, expected);
     }

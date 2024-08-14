@@ -80,6 +80,7 @@ fn optimize(plan: &LogicalPlan) -> Result<LogicalPlan> {
                                 fun: fun.clone(),
                                 args: vec![col(SINGLE_DISTINCT_ALIAS)],
                                 distinct: false,
+                                within_group: None,
                             }
                         }
                         _ => agg_expr.clone(),
@@ -168,13 +169,21 @@ fn is_single_distinct_agg(plan: &LogicalPlan) -> bool {
                 .iter()
                 .filter(|expr| {
                     let mut is_distinct = false;
-                    if let Expr::AggregateFunction { distinct, args, .. } = expr {
+                    let mut is_within_group = false;
+                    if let Expr::AggregateFunction {
+                        distinct,
+                        args,
+                        within_group,
+                        ..
+                    } = expr
+                    {
                         is_distinct = *distinct;
+                        is_within_group = within_group.is_some();
                         args.iter().for_each(|expr| {
                             fields_set.insert(expr.name(input.schema()).unwrap());
                         })
                     }
-                    is_distinct
+                    is_distinct && !is_within_group
                 })
                 .count()
                 == aggr_expr.len()
@@ -314,6 +323,7 @@ mod tests {
                         fun: aggregates::AggregateFunction::Max,
                         distinct: true,
                         args: vec![col("b")],
+                        within_group: None,
                     },
                 ],
             )?
