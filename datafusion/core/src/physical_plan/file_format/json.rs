@@ -25,6 +25,7 @@ use crate::physical_plan::expressions::PhysicalSortExpr;
 use crate::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
 };
+use arrow::json::reader::DecoderOptions;
 use arrow::{datatypes::SchemaRef, json};
 use futures::{StreamExt, TryStreamExt};
 use std::any::Any;
@@ -102,12 +103,14 @@ impl ExecutionPlan for NdJsonExec {
 
         // The json reader cannot limit the number of records, so `remaining` is ignored.
         let fun = move |file, _remaining: &Option<usize>| {
-            Box::new(json::Reader::new(
-                file,
-                Arc::clone(&file_schema),
-                batch_size,
-                proj.clone(),
-            )) as BatchIter
+            let options = DecoderOptions::new().with_batch_size(batch_size);
+            let options = if let Some(proj) = &proj {
+                options.with_projection(proj.clone())
+            } else {
+                options
+            };
+            Box::new(json::Reader::new(file, Arc::clone(&file_schema), options))
+                as BatchIter
         };
 
         Ok(Box::pin(FileStream::new(
