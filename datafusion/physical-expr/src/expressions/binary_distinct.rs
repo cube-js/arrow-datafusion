@@ -766,13 +766,13 @@ fn scalar_timestamp_add_interval_month_day_nano(
     let result = if months >= 0 {
         timestamp.checked_add_months(Months::new(months as u32))
     } else {
-        timestamp.checked_sub_months(Months::new(months.abs() as u32))
+        timestamp.checked_sub_months(Months::new(months.unsigned_abs()))
     };
 
     let result = if days >= 0 {
         result.and_then(|t| t.checked_add_days(Days::new(days as u64)))
     } else {
-        result.and_then(|t| t.checked_sub_days(Days::new(days.abs() as u64)))
+        result.and_then(|t| t.checked_sub_days(Days::new(days.unsigned_abs() as u64)))
     };
 
     let result = result.and_then(|t| t.checked_add_signed(Duration::nanoseconds(nanos)));

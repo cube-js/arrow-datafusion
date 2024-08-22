@@ -453,12 +453,10 @@ pub fn is_signed_numeric(dt: &DataType) -> bool {
 /// Determine if a DataType is numeric or not
 pub fn is_numeric(dt: &DataType) -> bool {
     is_signed_numeric(dt)
-        || match dt {
-            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
-                true
-            }
-            _ => false,
-        }
+        || matches!(
+            dt,
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64
+        )
 }
 
 /// Determine if a DataType is interval or not

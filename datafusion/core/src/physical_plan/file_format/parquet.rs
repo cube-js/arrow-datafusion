@@ -409,6 +409,7 @@ impl<'a> PruningStatistics for RowGroupPruningStatistics<'a> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn build_row_group_predicate(
     pruning_predicate: &PruningPredicate,
     metrics: ParquetFileMetrics,
@@ -461,7 +462,7 @@ fn read_partition(
 
         let file_metrics = ParquetFileMetrics::new(
             partition_index,
-            &*partitioned_file.file_meta.path(),
+            partitioned_file.file_meta.path(),
             &metrics,
         );
         let object_reader =

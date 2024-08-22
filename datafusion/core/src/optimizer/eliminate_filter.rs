@@ -44,7 +44,7 @@ impl OptimizerRule for EliminateFilter {
     fn optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &OptimizerConfig,
+        _optimizer_config: &OptimizerConfig,
     ) -> Result<LogicalPlan> {
         match plan {
             LogicalPlan::Filter(Filter {
@@ -65,7 +65,7 @@ impl OptimizerRule for EliminateFilter {
                 let inputs = plan.inputs();
                 let new_inputs = inputs
                     .iter()
-                    .map(|plan| self.optimize(plan, optimizer_config))
+                    .map(|plan| self.optimize(plan, _optimizer_config))
                     .collect::<Result<Vec<_>>>()?;
 
                 utils::from_plan(plan, &plan.expressions(), &new_inputs)

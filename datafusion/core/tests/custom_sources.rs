@@ -69,8 +69,8 @@ macro_rules! TEST_CUSTOM_RECORD_BATCH {
         RecordBatch::try_new(
             TEST_CUSTOM_SCHEMA_REF!(),
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 10, 10, 100])),
-                Arc::new(Int32Array::from_slice(&[2, 12, 12, 120])),
+                Arc::new(Int32Array::from_slice([1, 10, 10, 100])),
+                Arc::new(Int32Array::from_slice([2, 12, 12, 120])),
             ],
         )
     };
@@ -276,9 +276,9 @@ async fn optimizers_catch_all_statistics() {
             Field::new("MAX(test.c1)", DataType::Int32, false),
         ])),
         vec![
-            Arc::new(Int64Array::from_slice(&[4])),
-            Arc::new(Int32Array::from_slice(&[1])),
-            Arc::new(Int32Array::from_slice(&[100])),
+            Arc::new(Int64Array::from_slice([4])),
+            Arc::new(Int32Array::from_slice([1])),
+            Arc::new(Int32Array::from_slice([100])),
         ],
     )
     .unwrap();

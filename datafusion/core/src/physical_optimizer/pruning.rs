@@ -531,12 +531,10 @@ fn rewrite_expr_to_prunable(
             };
         }
 
-        _ => {
-            return Err(DataFusionError::Plan(format!(
-                "column expression {:?} is not supported",
-                column_expr
-            )))
-        }
+        _ => Err(DataFusionError::Plan(format!(
+            "column expression {:?} is not supported",
+            column_expr
+        ))),
     }
     // Ok((column_expr.clone(), op, scalar_expr.clone()))
 }
@@ -1052,7 +1050,7 @@ mod tests {
 
         // Note the statistics return binary (which can't be cast to string)
         let statistics = OneContainerStats {
-            min_values: Some(Arc::new(BinaryArray::from_slice(&[&[255u8] as &[u8]]))),
+            min_values: Some(Arc::new(BinaryArray::from_slice([&[255u8] as &[u8]]))),
             max_values: None,
             num_containers: 1,
         };

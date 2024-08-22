@@ -720,7 +720,7 @@ async fn test_join_float32() -> Result<()> {
         population_schema.clone(),
         vec![
             Arc::new(StringArray::from(vec![Some("a"), Some("b"), Some("c")])),
-            Arc::new(Float32Array::from_slice(&[838.698, 1778.934, 626.443])),
+            Arc::new(Float32Array::from_slice([838.698, 1778.934, 626.443])),
         ],
     )?;
     let population_table =
@@ -761,7 +761,7 @@ async fn test_join_float64() -> Result<()> {
         population_schema.clone(),
         vec![
             Arc::new(StringArray::from(vec![Some("a"), Some("b"), Some("c")])),
-            Arc::new(Float64Array::from_slice(&[838.698, 1778.934, 626.443])),
+            Arc::new(Float64Array::from_slice([838.698, 1778.934, 626.443])),
         ],
     )?;
     let population_table =
@@ -856,10 +856,10 @@ async fn inner_join_nulls() {
 #[tokio::test]
 async fn join_tables_with_duplicated_column_name_not_in_on_constraint() -> Result<()> {
     let batch = RecordBatch::try_from_iter(vec![
-        ("id", Arc::new(Int32Array::from_slice(&[1, 2, 3])) as _),
+        ("id", Arc::new(Int32Array::from_slice([1, 2, 3])) as _),
         (
             "country",
-            Arc::new(StringArray::from_slice(&["Germany", "Sweden", "Japan"])) as _,
+            Arc::new(StringArray::from_slice(["Germany", "Sweden", "Japan"])) as _,
         ),
     ])
     .unwrap();
@@ -868,11 +868,11 @@ async fn join_tables_with_duplicated_column_name_not_in_on_constraint() -> Resul
     let batch = RecordBatch::try_from_iter(vec![
         (
             "id",
-            Arc::new(Int32Array::from_slice(&[1, 2, 3, 4, 5, 6, 7])) as _,
+            Arc::new(Int32Array::from_slice([1, 2, 3, 4, 5, 6, 7])) as _,
         ),
         (
             "city",
-            Arc::new(StringArray::from_slice(&[
+            Arc::new(StringArray::from_slice([
                 "Hamburg",
                 "Stockholm",
                 "Osaka",
@@ -884,7 +884,7 @@ async fn join_tables_with_duplicated_column_name_not_in_on_constraint() -> Resul
         ),
         (
             "country_id",
-            Arc::new(Int32Array::from_slice(&[1, 2, 3, 1, 2, 3, 3])) as _,
+            Arc::new(Int32Array::from_slice([1, 2, 3, 1, 2, 3, 3])) as _,
         ),
     ])
     .unwrap();
@@ -975,8 +975,8 @@ async fn left_join_should_not_panic_with_empty_side() -> Result<()> {
     let t1_data = RecordBatch::try_new(
         Arc::new(t1_schema),
         vec![
-            Arc::new(Int64Array::from_slice(&[5247, 3821, 6321, 8821, 7748])),
-            Arc::new(StringArray::from_slice(&["a", "b", "c", "d", "e"])),
+            Arc::new(Int64Array::from_slice([5247, 3821, 6321, 8821, 7748])),
+            Arc::new(StringArray::from_slice(["a", "b", "c", "d", "e"])),
         ],
     )?;
     let t1_table = MemTable::try_new(t1_data.schema(), vec![vec![t1_data]])?;
@@ -989,7 +989,7 @@ async fn left_join_should_not_panic_with_empty_side() -> Result<()> {
     let t2_data = RecordBatch::try_new(
         Arc::new(t2_schema),
         vec![
-            Arc::new(Int64Array::from_slice(&[358, 2820, 3804, 7748])),
+            Arc::new(Int64Array::from_slice([358, 2820, 3804, 7748])),
             Arc::new(BooleanArray::from(vec![
                 Some(true),
                 Some(false),

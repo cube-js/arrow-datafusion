@@ -86,7 +86,7 @@ async fn query_concat() -> Result<()> {
     let data = RecordBatch::try_new(
         schema.clone(),
         vec![
-            Arc::new(StringArray::from_slice(&["", "a", "aa", "aaa"])),
+            Arc::new(StringArray::from_slice(["", "a", "aa", "aaa"])),
             Arc::new(Int32Array::from(vec![Some(0), Some(1), None, Some(3)])),
         ],
     )?;
@@ -122,7 +122,7 @@ async fn query_array() -> Result<()> {
     let data = RecordBatch::try_new(
         schema.clone(),
         vec![
-            Arc::new(StringArray::from_slice(&["", "a", "aa", "aaa"])),
+            Arc::new(StringArray::from_slice(["", "a", "aa", "aaa"])),
             Arc::new(Int32Array::from(vec![Some(0), Some(1), None, Some(3)])),
         ],
     )?;
@@ -417,11 +417,11 @@ async fn simple_avg() -> Result<()> {
 
     let batch1 = RecordBatch::try_new(
         Arc::new(schema.clone()),
-        vec![Arc::new(Int32Array::from_slice(&[1, 2, 3]))],
+        vec![Arc::new(Int32Array::from_slice([1, 2, 3]))],
     )?;
     let batch2 = RecordBatch::try_new(
         Arc::new(schema.clone()),
-        vec![Arc::new(Int32Array::from_slice(&[4, 5]))],
+        vec![Arc::new(Int32Array::from_slice([4, 5]))],
     )?;
 
     let ctx = SessionContext::new();
@@ -493,43 +493,43 @@ async fn case_builtin_math_expression() {
     let type_values = vec![
         (
             DataType::Int8,
-            Arc::new(Int8Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(Int8Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::Int16,
-            Arc::new(Int16Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(Int16Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::Int32,
-            Arc::new(Int32Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(Int32Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::Int64,
-            Arc::new(Int64Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(Int64Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::UInt8,
-            Arc::new(UInt8Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(UInt8Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::UInt16,
-            Arc::new(UInt16Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(UInt16Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::UInt32,
-            Arc::new(UInt32Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(UInt32Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::UInt64,
-            Arc::new(UInt64Array::from_slice(&[1])) as ArrayRef,
+            Arc::new(UInt64Array::from_slice([1])) as ArrayRef,
         ),
         (
             DataType::Float32,
-            Arc::new(Float32Array::from_slice(&[1.0_f32])) as ArrayRef,
+            Arc::new(Float32Array::from_slice([1.0_f32])) as ArrayRef,
         ),
         (
             DataType::Float64,
-            Arc::new(Float64Array::from_slice(&[1.0_f64])) as ArrayRef,
+            Arc::new(Float64Array::from_slice([1.0_f64])) as ArrayRef,
         ),
     ];
 

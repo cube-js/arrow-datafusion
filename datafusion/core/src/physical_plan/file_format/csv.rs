@@ -122,7 +122,7 @@ impl ExecutionPlan for CsvExec {
         let file_projection = self.base_config.file_column_projection_indices();
         let has_header = self.has_header;
         let delimiter = self.delimiter;
-        let start_line = if has_header { 1 } else { 0 };
+        let start_line = usize::from(has_header);
 
         let fun = move |file, remaining: &Option<usize>| {
             let bounds = remaining.map(|x| (0, x + start_line));

@@ -36,7 +36,7 @@ macro_rules! parser_err {
 }
 
 /// Types of files to parse as DataFrames
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
     /// Newline-delimited JSON
     NdJson,
@@ -66,7 +66,7 @@ impl FromStr for FileType {
 }
 
 /// DataFusion extension DDL for `CREATE EXTERNAL TABLE`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateExternalTable {
     /// Table name
     pub name: String,
@@ -85,7 +85,7 @@ pub struct CreateExternalTable {
 /// DataFusion Statement representations.
 ///
 /// Tokens parsed by `DFParser` are converted into these values.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
     /// ANSI SQL AST node
     Statement(Box<SQLStatement>),

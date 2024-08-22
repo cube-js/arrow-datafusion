@@ -80,7 +80,7 @@ mod tests {
             Schema::new(
                 t.iter()
                     .enumerate()
-                    .map(|(i, t)| Field::new(&*format!("c{}", i), t.clone(), true))
+                    .map(|(i, t)| Field::new(&format!("c{}", i), t.clone(), true))
                     .collect(),
             )
         };

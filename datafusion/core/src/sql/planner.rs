@@ -840,11 +840,11 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 // sqlparser-rs encodes AS t as an empty list of column alias
                 Ok(plan)
             } else if columns_alias.len() != plan.schema().fields().len() {
-                return Err(DataFusionError::Plan(format!(
+                Err(DataFusionError::Plan(format!(
                     "Source table contains {} columns but only {} names given as column alias",
                     plan.schema().fields().len(),
                     columns_alias.len(),
-                )));
+                )))
             } else {
                 Ok(LogicalPlanBuilder::from(plan.clone())
                     .project_with_alias(
@@ -1047,12 +1047,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         // this alias map is resolved and looked up in both having exprs and group by exprs
         let mut alias_map = extract_aliases(&select_exprs);
         if self.table_columns_precedence_over_projection {
-            alias_map = alias_map
-                .into_iter()
-                .filter(|(alias, _)| {
-                    plan.schema().field_with_unqualified_name(alias).is_err()
-                })
-                .collect();
+            alias_map.retain(|alias, _| {
+                plan.schema().field_with_unqualified_name(alias).is_err()
+            });
         }
 
         // Optionally the HAVING expression.

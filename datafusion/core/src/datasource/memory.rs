@@ -166,9 +166,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
                 Arc::new(Int32Array::from(vec![None, None, Some(9)])),
             ],
         )?;
@@ -200,9 +200,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
             ],
         )?;
 
@@ -228,9 +228,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
             ],
         )?;
 
@@ -268,9 +268,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema1,
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
             ],
         )?;
 
@@ -301,8 +301,8 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema1,
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[7, 5, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([7, 5, 9])),
             ],
         )?;
 
@@ -346,18 +346,18 @@ mod tests {
         let batch1 = RecordBatch::try_new(
             Arc::new(schema1),
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
             ],
         )?;
 
         let batch2 = RecordBatch::try_new(
             Arc::new(schema2),
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
             ],
         )?;
 

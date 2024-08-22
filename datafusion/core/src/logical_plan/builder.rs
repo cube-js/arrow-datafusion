@@ -544,6 +544,7 @@ impl LogicalPlanBuilder {
     }
 
     /// Add missing sort columns to all downstream projection
+    #[allow(clippy::only_used_in_recursion)]
     fn add_missing_columns(
         &self,
         curr_plan: LogicalPlan,

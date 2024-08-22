@@ -200,7 +200,7 @@ mod test {
 
     /// Model what happens when implementing SendableRecrordBatchStream:
     /// DataFusion code needs to return an ArrowError
-    #[allow(clippy::try_err)]
+    #[allow(clippy::try_err, clippy::let_unit_value)]
     fn return_arrow_error() -> arrow::error::Result<()> {
         // Expect the '?' to work
         let _foo = Err(DataFusionError::Plan("foo".to_string()))?;
@@ -209,7 +209,7 @@ mod test {
 
     /// Model what happens when using arrow kernels in DataFusion
     /// code: need to turn an ArrowError into a DataFusionError
-    #[allow(clippy::try_err)]
+    #[allow(clippy::try_err, clippy::let_unit_value)]
     fn return_datafusion_error() -> crate::error::Result<()> {
         // Expect the '?' to work
         let _bar = Err(ArrowError::SchemaError("bar".to_string()))?;

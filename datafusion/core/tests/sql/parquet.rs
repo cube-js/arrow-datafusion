@@ -205,8 +205,8 @@ async fn schema_merge_ignores_metadata() {
                     .unwrap();
 
             // create mock record batch
-            let ids = Arc::new(Int32Array::from_slice(&[i as i32]));
-            let names = Arc::new(StringArray::from_slice(&["test"]));
+            let ids = Arc::new(Int32Array::from_slice([i as i32]));
+            let names = Arc::new(StringArray::from_slice(["test"]));
             let rec_batch =
                 RecordBatch::try_new(schema.clone(), vec![ids, names]).unwrap();
 

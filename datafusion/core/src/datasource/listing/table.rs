@@ -118,7 +118,7 @@ impl ListingTableConfig {
             DataFusionError::Internal("Unable to infer file suffix".into())
         })?;
 
-        let format = ListingTableConfig::infer_format(*file_type)?;
+        let format = ListingTableConfig::infer_format(file_type)?;
 
         let listing_options = ListingOptions {
             format,

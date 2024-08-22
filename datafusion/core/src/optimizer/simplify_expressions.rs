@@ -165,15 +165,7 @@ fn is_false(expr: &Expr) -> bool {
 
 /// returns true if `haystack` looks like (needle OP X) or (X OP needle)
 fn is_op_with(target_op: Operator, haystack: &Expr, needle: &Expr) -> bool {
-    match haystack {
-        Expr::BinaryExpr { left, op, right }
-            if op == &target_op
-                && (needle == left.as_ref() || needle == right.as_ref()) =>
-        {
-            true
-        }
-        _ => false,
-    }
+    matches!(haystack, Expr::BinaryExpr { left, op, right } if op == &target_op && (needle == left.as_ref() || needle == right.as_ref()))
 }
 
 /// returns the contained boolean value in `expr` as
@@ -205,6 +197,7 @@ impl OptimizerRule for SimplifyExpressions {
 }
 
 impl SimplifyExpressions {
+    #[allow(clippy::only_used_in_recursion)]
     fn optimize_internal(
         &self,
         plan: &LogicalPlan,
@@ -1776,7 +1769,7 @@ mod tests {
         let optimized_plan = rule
             .optimize(plan, &config)
             .expect("failed to optimize plan");
-        return format!("{:?}", optimized_plan);
+        format!("{:?}", optimized_plan)
     }
 
     #[test]
