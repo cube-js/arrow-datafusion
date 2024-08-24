@@ -25,8 +25,8 @@ use std::cmp::Ordering;
 #[macro_export]
 macro_rules! cube_match_array {
     ($array: expr, $matcher: ident) => {{
-        use arrow::array::*;
-        use arrow::datatypes::*;
+        use $crate::arrow::array::*;
+        use $crate::arrow::datatypes::*;
         let a = $array;
         match a.data_type() {
             DataType::Null => panic!("null type is not supported"),
@@ -205,7 +205,7 @@ macro_rules! cube_match_array {
 #[macro_export]
 macro_rules! cube_match_scalar {
     ($scalar: expr, $matcher: ident $(, $arg: tt)*) => {{
-        use arrow::array::*;
+        use $crate::arrow::array::*;
         match $scalar {
             ScalarValue::Boolean(v) => ($matcher!($($arg ,)* v, BooleanBuilder)),
             ScalarValue::Float32(v) => ($matcher!($($arg ,)* v, Float32Builder)),
