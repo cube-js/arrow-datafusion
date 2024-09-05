@@ -118,7 +118,7 @@ pub async fn main() {
         let files = file_paths
             .map(|file_path| File::open(file_path).unwrap())
             .collect::<Vec<_>>();
-        let mut ctx = ExecutionContext::with_config(execution_config);  // TODO: Probably just ignore datafusion-cli, but consider setting up execution_config further
+        let mut ctx = ExecutionContext::with_config(execution_config);
         for file in files {
             let mut reader = BufReader::new(file);
             exec_from_lines(&mut ctx, &mut reader, print_options.clone()).await;
@@ -169,7 +169,7 @@ async fn exec_from_lines(
 }
 
 async fn exec_from_repl(execution_config: ExecutionConfig, print_options: PrintOptions) {
-    let mut ctx = ExecutionContext::with_config(execution_config);  // TODO: Probably just ignore datafusion-cli, but consider setting up execution_config further
+    let mut ctx = ExecutionContext::with_config(execution_config);
 
     let mut rl = Editor::<()>::new();
     rl.load_history(".history").ok();

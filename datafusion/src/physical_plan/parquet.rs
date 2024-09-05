@@ -147,7 +147,11 @@ pub trait MetadataCacheFactory: Sync + Send {
     /// Makes a noop cache (which doesn't cache)
     fn make_noop_cache(&self) -> Arc<dyn ParquetMetadataCache>;
     /// Makes an LRU-based cache.
-    fn make_lru_cache(&self, max_capacity: u64, time_to_idle: Duration) -> Arc<dyn ParquetMetadataCache>;
+    fn make_lru_cache(
+        &self,
+        max_capacity: u64,
+        time_to_idle: Duration,
+    ) -> Arc<dyn ParquetMetadataCache>;
     /// Modifies and builds writer properties.
     fn build_writer_props(&self, builder: WriterPropertiesBuilder) -> WriterProperties {
         builder.build()
@@ -212,23 +216,27 @@ impl ParquetMetadataCache for LruParquetMetadataCache {
 }
 
 /// Constructs regular Noop or Lru MetadataCacheFactory objects.
-pub struct BasicMetadataCacheFactory {
-}
+pub struct BasicMetadataCacheFactory {}
 
 impl BasicMetadataCacheFactory {
     /// Constructor
-    pub fn new() -> BasicMetadataCacheFactory { BasicMetadataCacheFactory{} }
+    pub fn new() -> BasicMetadataCacheFactory {
+        BasicMetadataCacheFactory {}
+    }
 }
 
 impl MetadataCacheFactory for BasicMetadataCacheFactory {
     fn make_noop_cache(&self) -> Arc<dyn ParquetMetadataCache> {
         NoopParquetMetadataCache::new()
     }
-    fn make_lru_cache(&self, max_capacity: u64, time_to_idle: Duration) -> Arc<dyn ParquetMetadataCache> {
+    fn make_lru_cache(
+        &self,
+        max_capacity: u64,
+        time_to_idle: Duration,
+    ) -> Arc<dyn ParquetMetadataCache> {
         LruParquetMetadataCache::new(max_capacity, time_to_idle)
     }
 }
-
 
 impl ParquetExec {
     /// Create a new Parquet reader execution plan based on the specified Parquet filename or

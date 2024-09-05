@@ -26,7 +26,8 @@ use crate::{
         aggregate_statistics::AggregateStatistics, eliminate_limit::EliminateLimit,
         hash_build_probe_order::HashBuildProbeOrder,
     },
-    physical_optimizer::optimizer::PhysicalOptimizerRule, physical_plan::parquet::{BasicMetadataCacheFactory, MetadataCacheFactory},
+    physical_optimizer::optimizer::PhysicalOptimizerRule,
+    physical_plan::parquet::{BasicMetadataCacheFactory, MetadataCacheFactory},
 };
 use log::debug;
 use std::fs;
@@ -326,8 +327,12 @@ impl ExecutionContext {
     pub fn register_parquet(&mut self, name: &str, filename: &str) -> Result<()> {
         let table = {
             let m = self.state.lock().unwrap();
-            ParquetTable::try_new(filename, m.metadata_cache_factory().clone(), m.config.concurrency)?
-                .with_enable_pruning(m.config.parquet_pruning)
+            ParquetTable::try_new(
+                filename,
+                m.metadata_cache_factory().clone(),
+                m.config.concurrency,
+            )?
+            .with_enable_pruning(m.config.parquet_pruning)
         };
         self.register_table(name, Arc::new(table))?;
         Ok(())
@@ -679,7 +684,6 @@ pub struct ExecutionConfig {
     /// Should Datafusion parquet reader using the predicate to prune data
     parquet_pruning: bool,
 }
-
 
 impl Default for ExecutionConfig {
     fn default() -> Self {
