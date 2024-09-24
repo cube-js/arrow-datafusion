@@ -153,8 +153,11 @@ pub trait MetadataCacheFactory: Sync + Send {
         time_to_idle: Duration,
     ) -> Arc<dyn ParquetMetadataCache>;
     /// Modifies and builds writer properties.
-    fn build_writer_props(&self, builder: WriterPropertiesBuilder) -> WriterProperties {
-        builder.build()
+    fn build_writer_props(
+        &self,
+        builder: WriterPropertiesBuilder,
+    ) -> Result<WriterProperties> {
+        Ok(builder.build())
     }
 }
 
