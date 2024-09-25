@@ -43,7 +43,6 @@ use arrow::{
 };
 use hashbrown::HashMap;
 use log::debug;
-use parquet::file::properties::{WriterProperties, WriterPropertiesBuilder};
 use parquet::file::{
     footer,
     metadata::RowGroupMetaData,
@@ -141,7 +140,6 @@ pub trait ParquetMetadataCache: Debug + Sync + Send {
     }
 }
 
-// TODO: Rename to ParquetMetadataCacheFactory?  Rename for build_writer_props field?
 /// Constructs the desired types of caches for Parquet Metadata.
 pub trait MetadataCacheFactory: Sync + Send {
     /// Makes a noop cache (which doesn't cache)
@@ -152,13 +150,6 @@ pub trait MetadataCacheFactory: Sync + Send {
         max_capacity: u64,
         time_to_idle: Duration,
     ) -> Arc<dyn ParquetMetadataCache>;
-    /// Modifies and builds writer properties.
-    fn build_writer_props(
-        &self,
-        builder: WriterPropertiesBuilder,
-    ) -> Result<WriterProperties> {
-        Ok(builder.build())
-    }
 }
 
 /// Default MetadataCache, does not cache anything
