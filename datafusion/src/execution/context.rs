@@ -61,6 +61,7 @@ use crate::optimizer::constant_folding::ConstantFolding;
 use crate::optimizer::filter_push_down::FilterPushDown;
 use crate::optimizer::limit_push_down::LimitPushDown;
 use crate::optimizer::optimizer::OptimizerRule;
+use crate::optimizer::projection_above_limit::ProjectionAboveLimit;
 use crate::optimizer::projection_push_down::ProjectionPushDown;
 use crate::optimizer::simplify_expressions::SimplifyExpressions;
 use crate::physical_optimizer::merge_exec::AddCoalescePartitionsExec;
@@ -700,6 +701,7 @@ impl Default for ExecutionConfig {
                 Arc::new(HashBuildProbeOrder::new()),
                 Arc::new(LimitPushDown::new()),
                 Arc::new(FoldCrossJoinAggregate {}), // CubeStore extension.
+                Arc::new(ProjectionAboveLimit::new()),     // CubeStore extension.
             ],
             physical_optimizers: vec![
                 // NOTE: disabled in the CubeStore fork.
