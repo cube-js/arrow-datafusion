@@ -224,6 +224,7 @@ enum AggregateFunction {
   // Cubesql
   BOOL_AND = 17;
   BOOL_OR = 18;
+  PERCENTILE_CONT = 19;
 }
 
 message AggregateExprNode {

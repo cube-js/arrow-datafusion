@@ -84,6 +84,8 @@ pub enum AggregateFunction {
     ApproxPercentileCont,
     /// Approximate continuous percentile function with weight
     ApproxPercentileContWithWeight,
+    /// Continuous percentile function
+    PercentileCont,
     /// ApproxMedian
     ApproxMedian,
     /// BoolAnd
@@ -124,6 +126,7 @@ impl FromStr for AggregateFunction {
             "approx_percentile_cont_with_weight" => {
                 AggregateFunction::ApproxPercentileContWithWeight
             }
+            "percentile_cont" => AggregateFunction::PercentileCont,
             "approx_median" => AggregateFunction::ApproxMedian,
             "bool_and" => AggregateFunction::BoolAnd,
             "bool_or" => AggregateFunction::BoolOr,
@@ -142,6 +145,7 @@ impl FromStr for AggregateFunction {
 pub fn return_type(
     fun: &AggregateFunction,
     input_expr_types: &[DataType],
+    within_group_types: &[DataType],
 ) -> Result<DataType> {
     // Note that this function *must* return the same type that the respective physical expression returns
     // or the execution panics.
@@ -178,6 +182,7 @@ pub fn return_type(
         AggregateFunction::ApproxPercentileContWithWeight => {
             Ok(coerced_data_types[0].clone())
         }
+        AggregateFunction::PercentileCont => Ok(within_group_types[0].clone()),
         AggregateFunction::ApproxMedian => Ok(coerced_data_types[0].clone()),
         AggregateFunction::BoolAnd | AggregateFunction::BoolOr => Ok(DataType::Boolean),
     }
@@ -324,6 +329,15 @@ pub fn coerce_types(
             }
             Ok(input_types.to_vec())
         }
+        AggregateFunction::PercentileCont => {
+            if !matches!(input_types[0], DataType::Float64) {
+                return Err(DataFusionError::Plan(format!(
+                    "The percentile argument for {:?} must be Float64, not {:?}.",
+                    agg_fun, input_types[0]
+                )));
+            }
+            Ok(input_types.to_vec())
+        }
         AggregateFunction::ApproxMedian => {
             if !is_approx_percentile_cont_supported_arg_type(&input_types[0]) {
                 return Err(DataFusionError::Plan(format!(
@@ -393,6 +407,11 @@ pub fn signature(fun: &AggregateFunction) -> Signature {
                     TypeSignature::Exact(vec![t.clone(), t.clone(), DataType::Float64])
                 })
                 .collect(),
+            Volatility::Immutable,
+        ),
+        AggregateFunction::PercentileCont => Signature::one_of(
+            // Accept a float64 percentile paired with any numeric value, plus bool values
+            vec![TypeSignature::Exact(vec![DataType::Float64])],
             Volatility::Immutable,
         ),
         AggregateFunction::BoolAnd | AggregateFunction::BoolOr => {

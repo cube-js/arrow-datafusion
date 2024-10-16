@@ -462,6 +462,7 @@ impl From<protobuf::AggregateFunction> for AggregateFunction {
             protobuf::AggregateFunction::ApproxPercentileContWithWeight => {
                 Self::ApproxPercentileContWithWeight
             }
+            protobuf::AggregateFunction::PercentileCont => Self::PercentileCont,
             protobuf::AggregateFunction::ApproxMedian => Self::ApproxMedian,
             protobuf::AggregateFunction::BoolAnd => Self::BoolAnd,
             protobuf::AggregateFunction::BoolOr => Self::BoolOr,
@@ -975,7 +976,8 @@ pub fn parse_expr(
                     .iter()
                     .map(|e| parse_expr(e, registry))
                     .collect::<Result<Vec<_>, _>>()?,
-                distinct: false, // TODO
+                distinct: false,    // TODO
+                within_group: None, // TODO
             })
         }
         ExprType::Alias(alias) => Ok(Expr::Alias(

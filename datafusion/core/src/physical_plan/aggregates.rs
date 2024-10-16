@@ -44,6 +44,7 @@ pub fn create_aggregate_expr(
     input_phy_exprs: &[Arc<dyn PhysicalExpr>],
     input_schema: &Schema,
     name: impl Into<String>,
+    within_group: Vec<(Arc<dyn PhysicalExpr>, bool, bool)>,
 ) -> Result<Arc<dyn AggregateExpr>> {
     let name = name.into();
     // get the coerced phy exprs if some expr need to be wrapped with the try cast.
@@ -69,7 +70,11 @@ pub fn create_aggregate_expr(
         .iter()
         .map(|e| e.data_type(input_schema))
         .collect::<Result<Vec<_>>>()?;
-    let return_type = return_type(fun, &input_phy_types)?;
+    let within_group_types = within_group
+        .iter()
+        .map(|(e, _, _)| e.data_type(input_schema))
+        .collect::<Result<Vec<_>>>()?;
+    let return_type = return_type(fun, &input_phy_types, &within_group_types)?;
 
     Ok(match (fun, distinct) {
         (AggregateFunction::Count, false) => Arc::new(expressions::Count::new(
@@ -239,6 +244,15 @@ pub fn create_aggregate_expr(
                     .to_string(),
             ));
         }
+        (AggregateFunction::PercentileCont, _) => {
+            Arc::new(expressions::PercentileCont::new(
+                // Pass in the desired percentile expr
+                name,
+                coerced_phy_exprs,
+                return_type,
+                within_group,
+            )?)
+        }
         (AggregateFunction::ApproxMedian, false) => {
             Arc::new(expressions::ApproxMedian::new(
                 coerced_phy_exprs[0].clone(),
@@ -301,6 +315,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 match fun {
                     AggregateFunction::Count => {
@@ -344,6 +359,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 match fun {
                     AggregateFunction::Count => {
@@ -402,6 +418,7 @@ mod tests {
                 &input_phy_exprs[..],
                 &input_schema,
                 "c1",
+                vec![],
             )
             .expect("failed to create aggregate expr");
 
@@ -431,6 +448,7 @@ mod tests {
                 &input_phy_exprs[..],
                 &input_schema,
                 "c1",
+                vec![],
             )
             .expect_err("should fail due to invalid percentile");
 
@@ -462,6 +480,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 match fun {
                     AggregateFunction::Min => {
@@ -511,6 +530,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 match fun {
                     AggregateFunction::Sum => {
@@ -573,6 +593,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 if fun == AggregateFunction::Variance {
                     assert!(result_agg_phy_exprs.as_any().is::<Variance>());
@@ -611,6 +632,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 if fun == AggregateFunction::Variance {
                     assert!(result_agg_phy_exprs.as_any().is::<Variance>());
@@ -649,6 +671,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 if fun == AggregateFunction::Variance {
                     assert!(result_agg_phy_exprs.as_any().is::<Stddev>());
@@ -687,6 +710,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 if fun == AggregateFunction::Variance {
                     assert!(result_agg_phy_exprs.as_any().is::<Stddev>());
@@ -734,6 +758,7 @@ mod tests {
                     &input_phy_exprs[0..2],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 if fun == AggregateFunction::Covariance {
                     assert!(result_agg_phy_exprs.as_any().is::<Covariance>());
@@ -781,6 +806,7 @@ mod tests {
                     &input_phy_exprs[0..2],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 if fun == AggregateFunction::Covariance {
                     assert!(result_agg_phy_exprs.as_any().is::<Covariance>());
@@ -828,6 +854,7 @@ mod tests {
                     &input_phy_exprs[0..2],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
                 if fun == AggregateFunction::Covariance {
                     assert!(result_agg_phy_exprs.as_any().is::<Correlation>());
@@ -866,6 +893,7 @@ mod tests {
                     &input_phy_exprs[0..1],
                     &input_schema,
                     "c1",
+                    vec![],
                 )?;
 
                 if fun == AggregateFunction::ApproxMedian {
@@ -896,6 +924,7 @@ mod tests {
                 &input_phy_exprs[0..1],
                 &input_schema,
                 "c1",
+                vec![],
             )?;
             match fun {
                 AggregateFunction::BoolAnd => {
@@ -922,15 +951,18 @@ mod tests {
 
     #[test]
     fn test_median() -> Result<()> {
-        let observed = return_type(&AggregateFunction::ApproxMedian, &[DataType::Utf8]);
+        let observed =
+            return_type(&AggregateFunction::ApproxMedian, &[DataType::Utf8], &[]);
         assert!(observed.is_err());
 
-        let observed = return_type(&AggregateFunction::ApproxMedian, &[DataType::Int32])?;
+        let observed =
+            return_type(&AggregateFunction::ApproxMedian, &[DataType::Int32], &[])?;
         assert_eq!(DataType::Int32, observed);
 
         let observed = return_type(
             &AggregateFunction::ApproxMedian,
             &[DataType::Decimal(10, 6)],
+            &[],
         );
         assert!(observed.is_err());
 
@@ -939,19 +971,20 @@ mod tests {
 
     #[test]
     fn test_min_max() -> Result<()> {
-        let observed = return_type(&AggregateFunction::Min, &[DataType::Utf8])?;
+        let observed = return_type(&AggregateFunction::Min, &[DataType::Utf8], &[])?;
         assert_eq!(DataType::Utf8, observed);
 
-        let observed = return_type(&AggregateFunction::Max, &[DataType::Int32])?;
+        let observed = return_type(&AggregateFunction::Max, &[DataType::Int32], &[])?;
         assert_eq!(DataType::Int32, observed);
 
         // test decimal for min
-        let observed = return_type(&AggregateFunction::Min, &[DataType::Decimal(10, 6)])?;
+        let observed =
+            return_type(&AggregateFunction::Min, &[DataType::Decimal(10, 6)], &[])?;
         assert_eq!(DataType::Decimal(10, 6), observed);
 
         // test decimal for max
         let observed =
-            return_type(&AggregateFunction::Max, &[DataType::Decimal(28, 13)])?;
+            return_type(&AggregateFunction::Max, &[DataType::Decimal(28, 13)], &[])?;
         assert_eq!(DataType::Decimal(28, 13), observed);
 
         Ok(())
@@ -959,22 +992,24 @@ mod tests {
 
     #[test]
     fn test_sum_return_type() -> Result<()> {
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::Int32])?;
+        let observed = return_type(&AggregateFunction::Sum, &[DataType::Int32], &[])?;
         assert_eq!(DataType::Int64, observed);
 
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::UInt8])?;
+        let observed = return_type(&AggregateFunction::Sum, &[DataType::UInt8], &[])?;
         assert_eq!(DataType::UInt64, observed);
 
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::Float32])?;
+        let observed = return_type(&AggregateFunction::Sum, &[DataType::Float32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::Float64])?;
+        let observed = return_type(&AggregateFunction::Sum, &[DataType::Float64], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::Decimal(10, 5)])?;
+        let observed =
+            return_type(&AggregateFunction::Sum, &[DataType::Decimal(10, 5)], &[])?;
         assert_eq!(DataType::Decimal(20, 5), observed);
 
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::Decimal(35, 5)])?;
+        let observed =
+            return_type(&AggregateFunction::Sum, &[DataType::Decimal(35, 5)], &[])?;
         assert_eq!(DataType::Decimal(38, 5), observed);
 
         Ok(())
@@ -982,71 +1017,78 @@ mod tests {
 
     #[test]
     fn test_sum_no_utf8() {
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::Utf8]);
+        let observed = return_type(&AggregateFunction::Sum, &[DataType::Utf8], &[]);
         assert!(observed.is_err());
     }
 
     #[test]
     fn test_sum_upcasts() -> Result<()> {
-        let observed = return_type(&AggregateFunction::Sum, &[DataType::UInt32])?;
+        let observed = return_type(&AggregateFunction::Sum, &[DataType::UInt32], &[])?;
         assert_eq!(DataType::UInt64, observed);
         Ok(())
     }
 
     #[test]
     fn test_count_return_type() -> Result<()> {
-        let observed = return_type(&AggregateFunction::Count, &[DataType::Utf8])?;
+        let observed = return_type(&AggregateFunction::Count, &[DataType::Utf8], &[])?;
         assert_eq!(DataType::Int64, observed);
 
-        let observed = return_type(&AggregateFunction::Count, &[DataType::Int8])?;
+        let observed = return_type(&AggregateFunction::Count, &[DataType::Int8], &[])?;
         assert_eq!(DataType::Int64, observed);
 
         let observed =
-            return_type(&AggregateFunction::Count, &[DataType::Decimal(28, 13)])?;
+            return_type(&AggregateFunction::Count, &[DataType::Decimal(28, 13)], &[])?;
         assert_eq!(DataType::Int64, observed);
         Ok(())
     }
 
     #[test]
     fn test_avg_return_type() -> Result<()> {
-        let observed = return_type(&AggregateFunction::Avg, &[DataType::Float32])?;
+        let observed = return_type(&AggregateFunction::Avg, &[DataType::Float32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Avg, &[DataType::Float64])?;
+        let observed = return_type(&AggregateFunction::Avg, &[DataType::Float64], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Avg, &[DataType::Int32])?;
+        let observed = return_type(&AggregateFunction::Avg, &[DataType::Int32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Avg, &[DataType::Decimal(10, 6)])?;
+        let observed =
+            return_type(&AggregateFunction::Avg, &[DataType::Decimal(10, 6)], &[])?;
         assert_eq!(DataType::Decimal(14, 10), observed);
 
-        let observed = return_type(&AggregateFunction::Avg, &[DataType::Decimal(36, 6)])?;
+        let observed =
+            return_type(&AggregateFunction::Avg, &[DataType::Decimal(36, 6)], &[])?;
         assert_eq!(DataType::Decimal(38, 10), observed);
         Ok(())
     }
 
     #[test]
     fn test_avg_no_utf8() {
-        let observed = return_type(&AggregateFunction::Avg, &[DataType::Utf8]);
+        let observed = return_type(&AggregateFunction::Avg, &[DataType::Utf8], &[]);
         assert!(observed.is_err());
     }
 
     #[test]
     fn test_variance_return_type() -> Result<()> {
-        let observed = return_type(&AggregateFunction::Variance, &[DataType::Float32])?;
+        let observed =
+            return_type(&AggregateFunction::Variance, &[DataType::Float32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Variance, &[DataType::Float64])?;
+        let observed =
+            return_type(&AggregateFunction::Variance, &[DataType::Float64], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Variance, &[DataType::Int32])?;
+        let observed =
+            return_type(&AggregateFunction::Variance, &[DataType::Int32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Variance, &[DataType::UInt32])?;
+        let observed =
+            return_type(&AggregateFunction::Variance, &[DataType::UInt32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Variance, &[DataType::Int64])?;
+        let observed =
+            return_type(&AggregateFunction::Variance, &[DataType::Int64], &[])?;
         assert_eq!(DataType::Float64, observed);
 
         Ok(())
@@ -1054,25 +1096,27 @@ mod tests {
 
     #[test]
     fn test_variance_no_utf8() {
-        let observed = return_type(&AggregateFunction::Variance, &[DataType::Utf8]);
+        let observed = return_type(&AggregateFunction::Variance, &[DataType::Utf8], &[]);
         assert!(observed.is_err());
     }
 
     #[test]
     fn test_stddev_return_type() -> Result<()> {
-        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Float32])?;
+        let observed =
+            return_type(&AggregateFunction::Stddev, &[DataType::Float32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Float64])?;
+        let observed =
+            return_type(&AggregateFunction::Stddev, &[DataType::Float64], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Int32])?;
+        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Int32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Stddev, &[DataType::UInt32])?;
+        let observed = return_type(&AggregateFunction::Stddev, &[DataType::UInt32], &[])?;
         assert_eq!(DataType::Float64, observed);
 
-        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Int64])?;
+        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Int64], &[])?;
         assert_eq!(DataType::Float64, observed);
 
         Ok(())
@@ -1080,13 +1124,14 @@ mod tests {
 
     #[test]
     fn test_stddev_no_utf8() {
-        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Utf8]);
+        let observed = return_type(&AggregateFunction::Stddev, &[DataType::Utf8], &[]);
         assert!(observed.is_err());
     }
 
     #[test]
     fn test_bool_and_return_type() -> Result<()> {
-        let observed = return_type(&AggregateFunction::BoolAnd, &[DataType::Boolean])?;
+        let observed =
+            return_type(&AggregateFunction::BoolAnd, &[DataType::Boolean], &[])?;
         assert_eq!(DataType::Boolean, observed);
 
         Ok(())
@@ -1094,13 +1139,14 @@ mod tests {
 
     #[test]
     fn test_bool_and_no_utf8() {
-        let observed = return_type(&AggregateFunction::BoolAnd, &[DataType::Utf8]);
+        let observed = return_type(&AggregateFunction::BoolAnd, &[DataType::Utf8], &[]);
         assert!(observed.is_err());
     }
 
     #[test]
     fn test_bool_or_return_type() -> Result<()> {
-        let observed = return_type(&AggregateFunction::BoolOr, &[DataType::Boolean])?;
+        let observed =
+            return_type(&AggregateFunction::BoolOr, &[DataType::Boolean], &[])?;
         assert_eq!(DataType::Boolean, observed);
 
         Ok(())
@@ -1108,7 +1154,7 @@ mod tests {
 
     #[test]
     fn test_bool_or_no_utf8() {
-        let observed = return_type(&AggregateFunction::BoolOr, &[DataType::Utf8]);
+        let observed = return_type(&AggregateFunction::BoolOr, &[DataType::Utf8], &[]);
         assert!(observed.is_err());
     }
 }

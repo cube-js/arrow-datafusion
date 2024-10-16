@@ -223,6 +223,8 @@ pub enum Expr {
         args: Vec<Expr>,
         /// Whether this is a DISTINCT aggregation or not
         distinct: bool,
+        /// WITHIN GROUP (ORDER BY ...) expression
+        within_group: Option<Vec<Expr>>,
     },
     /// Represents the call of a window function with arguments.
     WindowFunction {
@@ -494,7 +496,19 @@ impl std::fmt::Display for Expr {
                 ref args,
                 /// Whether this is a DISTINCT aggregation or not
                 ref distinct,
-            } => fmt_function(f, &fun.to_string(), *distinct, args, true),
+                /// Aggregate function's WITHIN GROUP expression
+                ref within_group,
+            } => {
+                fmt_function(f, &fun.to_string(), *distinct, args, true)?;
+                if let Some(within_group) = within_group.as_ref() {
+                    let exprs = within_group
+                        .iter()
+                        .map(|arg| format!("{}", arg))
+                        .collect::<Vec<_>>();
+                    write!(f, " WITHIN GROUP (ORDER BY {})", exprs.join(", "))?;
+                }
+                Ok(())
+            }
             Expr::ScalarFunction {
                 /// Name of the function
                 ref fun,
@@ -608,8 +622,19 @@ impl fmt::Debug for Expr {
                 fun,
                 distinct,
                 ref args,
+                within_group,
                 ..
-            } => fmt_function(f, &fun.to_string(), *distinct, args, true),
+            } => {
+                fmt_function(f, &fun.to_string(), *distinct, args, false)?;
+                if let Some(within_group) = within_group.as_ref() {
+                    let exprs = within_group
+                        .iter()
+                        .map(|arg| format!("{:?}", arg))
+                        .collect::<Vec<_>>();
+                    write!(f, " WITHIN GROUP (ORDER BY {})", exprs.join(", "))?;
+                }
+                Ok(())
+            }
             Expr::AggregateUDF { fun, ref args, .. } => {
                 fmt_function(f, &fun.name, false, args, false)
             }
@@ -956,8 +981,20 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             fun,
             distinct,
             args,
+            within_group,
             ..
-        } => create_function_name(&fun.to_string(), *distinct, args, input_schema),
+        } => {
+            let mut parts = vec![create_function_name(
+                &fun.to_string(),
+                *distinct,
+                args,
+                input_schema,
+            )?];
+            if let Some(within_group) = within_group.as_ref() {
+                parts.push(format!("WITHIN GROUP (ORDER BY {:?})", within_group));
+            }
+            Ok(parts.join(" "))
+        }
         Expr::AggregateUDF { fun, args } => {
             let mut names = Vec::with_capacity(args.len());
             for e in args {

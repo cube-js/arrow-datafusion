@@ -760,6 +760,7 @@ mod roundtrip_tests {
             fun: aggregates::AggregateFunction::ApproxPercentileCont,
             args: vec![col("bananas"), lit(0.42_f32)],
             distinct: false,
+            within_group: None,
         };
 
         let ctx = SessionContext::new();
