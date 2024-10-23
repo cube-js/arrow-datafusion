@@ -1716,16 +1716,21 @@ fn input_sorted_by_group_key(
         }
         sort_to_group[sort_key_pos] = group_i;
     }
-    for i in 0..sort_key.len() {
-        if hints.single_value_columns.contains(&sort_key[i]) {
-            sort_key_hit[i] = true;
+
+    // At this point all elements of the group key mapped into some column of the sort key. This
+    // checks the group key is mapped into a prefix of the sort key, except that it's okay if it
+    // skips over single value columns.
+    let mut pref_len: usize = 0;
+    for (i, hit) in sort_key_hit.iter().enumerate() {
+        if !hit && !hints.single_value_columns.contains(&sort_key[i]) {
+            break;
         }
+        pref_len += 1;
     }
 
-    // At this point all elements of the group key mapped into some column of the sort key.
-    // This checks the group key is mapped into a prefix of the sort key.
-    let pref_len = sort_key_hit.iter().take_while(|present| **present).count();
     if sort_key_hit[pref_len..].iter().any(|present| *present) {
+        // The group key did not hit a contiguous prefix of the sort key (ignoring single value
+        // columns); return false.
         return false;
     }
 
