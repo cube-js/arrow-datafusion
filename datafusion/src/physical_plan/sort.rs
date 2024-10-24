@@ -17,12 +17,14 @@
 
 //! Defines the SORT plan
 
-use super::{RecordBatchStream, SendableRecordBatchStream};
 use crate::cube_ext;
 use crate::error::{DataFusionError, Result};
-use crate::physical_plan::expressions::PhysicalSortExpr;
+use crate::physical_plan::expressions::{Column, PhysicalSortExpr};
 use crate::physical_plan::{
     common, DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SQLMetric,
+};
+use crate::physical_plan::{
+    OptimizerHints, RecordBatchStream, SendableRecordBatchStream,
 };
 pub use arrow::compute::SortOptions;
 use arrow::compute::{lexsort_to_indices, take, SortColumn, TakeOptions};
@@ -186,15 +188,32 @@ impl ExecutionPlan for SortExec {
         metrics
     }
 
-    // TODO
-    // fn output_sort_order(&self) -> Result<Option<Vec<usize>>> {
-    //     let mut order = Vec::with_capacity(self.expr.len());
-    //     for s in &self.expr {
-    //         let col = s.expr.as_any().downcast_ref::<Column>()?;
-    //         order.push(self.schema().index_of(col.name())?);
-    //     }
-    //     Ok(Some(order))
-    // }
+    fn output_hints(&self) -> OptimizerHints {
+        let mut order = Vec::with_capacity(self.expr.len());
+        // let mut sort_order_truncated = false;
+        for s in &self.expr {
+            let column = s.expr.as_any().downcast_ref::<Column>();
+            if column.is_none() {
+                // sort_order_truncated = true;
+                break;
+            }
+            let column = column.unwrap();
+
+            let index: usize = match self.schema().index_of(column.name()) {
+                Ok(ix) => ix,
+                Err(_) => return OptimizerHints::default(),
+            };
+            order.push(index);
+        }
+
+        let input_hints = self.input.output_hints();
+        // TODO: If sort_order_truncated is false, we can combine input_hints.sort_order.  Do this.
+
+        OptimizerHints {
+            sort_order: Some(order),
+            single_value_columns: input_hints.single_value_columns.clone(),
+        }
+    }
 }
 
 #[tracing::instrument(level = "trace", skip(batch, schema, expr))]
