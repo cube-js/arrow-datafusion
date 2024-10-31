@@ -71,6 +71,7 @@ use arrow::array::{
 };
 use async_trait::async_trait;
 
+use super::groups_accumulator::GroupsAccumulator;
 use super::{
     expressions::Column, group_scalar::GroupByScalar, RecordBatchStream,
     SendableRecordBatchStream,
@@ -411,10 +412,10 @@ pub(crate) fn group_aggregate_batch(
     group_expr: &[Arc<dyn PhysicalExpr>],
     aggr_expr: &[Arc<dyn AggregateExpr>],
     batch: RecordBatch,
-    mut accumulators: Accumulators,
+    mut accumulation_state: AccumulationState,
     aggregate_expressions: &[Vec<Arc<dyn PhysicalExpr>>],
     skip_row: impl Fn(&RecordBatch, /*row_index*/ usize) -> bool,
-) -> Result<Accumulators> {
+) -> Result<AccumulationState> {
     // evaluate the grouping expressions
     let group_values = evaluate(group_expr, &batch)?;
 
@@ -437,6 +438,9 @@ pub(crate) fn group_aggregate_batch(
     // Make sure we can create the accumulators or otherwise return an error
     create_accumulators(aggr_expr).map_err(DataFusionError::into_arrow_external_error)?;
 
+    let all_groups_accumulators: bool =
+        aggr_expr.iter().all(|expr| expr.uses_groups_accumulator());
+
     // Keys received in this batch
     let mut batch_keys = BinaryBuilder::new(0);
 
@@ -448,11 +452,12 @@ pub(crate) fn group_aggregate_batch(
         create_key(&group_values, row, &mut key)
             .map_err(DataFusionError::into_arrow_external_error)?;
 
-        accumulators
+        accumulation_state
+            .accumulators
             .raw_entry_mut()
             .from_key(&key)
             // 1.3
-            .and_modify(|_, (_, _, v)| {
+            .and_modify(|_, AccumulationGroupState { indices: v, .. }| {
                 if v.is_empty() {
                     batch_keys.append_value(&key).expect("must not fail");
                 };
@@ -461,30 +466,44 @@ pub(crate) fn group_aggregate_batch(
             // 1.2
             .or_insert_with(|| {
                 // We can safely unwrap here as we checked we can create an accumulator before
-                let accumulator_set = create_accumulators(aggr_expr).unwrap();
+                let accumulator_set = create_spotty_accumulators(aggr_expr).unwrap();
                 batch_keys.append_value(&key).expect("must not fail");
                 let _ = create_group_by_values(&group_values, row, &mut group_by_values);
                 let mut taken_values =
                     smallvec![GroupByScalar::UInt32(0); group_values.len()];
                 std::mem::swap(&mut taken_values, &mut group_by_values);
+                let group_index = accumulation_state.next_group_index;
+                accumulation_state.next_group_index += 1;
                 (
                     key.clone(),
-                    (taken_values, accumulator_set, smallvec![row as u32]),
+                    AccumulationGroupState {
+                        group_by_values: taken_values,
+                        accumulator_set,
+                        indices: smallvec![row as u32],
+                        group_index,
+                    },
                 )
             });
     }
 
     // Collect all indices + offsets based on keys in this vec
     let mut batch_indices: UInt32Builder = UInt32Builder::new(0);
+    let mut all_group_indices = Vec::new();
     let mut offsets = vec![0];
     let mut offset_so_far = 0;
     let batch_keys = batch_keys.finish();
     for key in batch_keys.iter() {
         let key = key.unwrap();
-        let (_, _, indices) = accumulators.get_mut(key).unwrap();
+        let AccumulationGroupState {
+            indices,
+            group_index,
+            ..
+        } = accumulation_state.accumulators.get_mut(key).unwrap();
         batch_indices.append_slice(indices)?;
+        all_group_indices.extend(std::iter::repeat(*group_index).take(indices.len()));
         offset_so_far += indices.len();
         offsets.push(offset_so_far);
+        indices.clear();
     }
     let batch_indices = batch_indices.finish();
 
@@ -507,49 +526,88 @@ pub(crate) fn group_aggregate_batch(
         })
         .collect();
 
-    // 2.1 for each key in this batch
-    // 2.2 for each aggregation
-    // 2.3 `slice` from each of its arrays the keys' values
-    // 2.4 update / merge the accumulator with the values
-    // 2.5 clear indices
-    batch_keys
-        .iter()
-        .zip(offsets.windows(2))
-        .try_for_each(|(key, offsets)| {
-            let (_, accumulator_set, indices) =
-                accumulators.get_mut(key.unwrap()).unwrap();
-            // 2.2
-            accumulator_set
-                .iter_mut()
-                .zip(values.iter())
-                .map(|(accumulator, aggr_array)| {
-                    (
-                        accumulator,
-                        aggr_array
-                            .iter()
-                            .map(|array| {
-                                // 2.3
-                                array.slice(offsets[0], offsets[1] - offsets[0])
-                            })
-                            .collect::<Vec<ArrayRef>>(),
-                    )
-                })
-                .try_for_each(|(accumulator, values)| match mode {
-                    AggregateMode::Partial | AggregateMode::Full => {
-                        accumulator.update_batch(&values)
-                    }
-                    AggregateMode::FinalPartitioned | AggregateMode::Final => {
-                        // note: the aggregation here is over states, not values, thus the merge
-                        accumulator.merge_batch(&values)
-                    }
-                })
-                // 2.5
-                .and({
-                    indices.clear();
-                    Ok(())
-                })
-        })?;
-    Ok(accumulators)
+    if !all_groups_accumulators {
+        // 2.1 for each key in this batch
+        // 2.2 for each aggregation
+        // 2.3 `slice` from each of its arrays the keys' values
+        // 2.4 update / merge the accumulator with the values
+        // 2.5 clear indices
+        batch_keys
+            .iter()
+            .zip(offsets.windows(2))
+            .try_for_each(|(key, offsets)| {
+                let AccumulationGroupState {
+                    accumulator_set, ..
+                } = accumulation_state
+                    .accumulators
+                    .get_mut(key.unwrap())
+                    .unwrap();
+                // 2.2
+                accumulator_set
+                    .iter_mut()
+                    .zip(values.iter())
+                    .map(|(accumulator, aggr_array)| {
+                        (
+                            accumulator,
+                            aggr_array
+                                .iter()
+                                .map(|array| {
+                                    // 2.3
+                                    array.slice(offsets[0], offsets[1] - offsets[0])
+                                })
+                                .collect::<Vec<ArrayRef>>(),
+                        )
+                    })
+                    .try_for_each(|(accumulator, values)| {
+                        if let Some(accumulator) = accumulator {
+                            match mode {
+                                AggregateMode::Partial | AggregateMode::Full => {
+                                    accumulator.update_batch(&values)
+                                }
+                                AggregateMode::FinalPartitioned
+                                | AggregateMode::Final => {
+                                    // note: the aggregation here is over states, not values, thus the merge
+                                    accumulator.merge_batch(&values)
+                                }
+                            }
+                        } else {
+                            // We do groups accumulator separately.
+                            Ok(())
+                        }
+                    })
+            })?;
+    }
+
+    for (accumulator_index, accumulator) in accumulation_state
+        .groups_accumulators
+        .iter_mut()
+        .enumerate()
+    {
+        if let Some(accumulator) = accumulator {
+            match mode {
+                AggregateMode::Partial | AggregateMode::Full => accumulator
+                    .update_batch_preordered(
+                        &values[accumulator_index],
+                        &all_group_indices,
+                        &offsets,
+                        None,
+                        accumulation_state.next_group_index,
+                    )?,
+                AggregateMode::FinalPartitioned | AggregateMode::Final => {
+                    // note: the aggregation here is over states, not values, thus the merge
+                    accumulator.merge_batch_preordered(
+                        &values[accumulator_index],
+                        &all_group_indices,
+                        &offsets,
+                        None,
+                        accumulation_state.next_group_index,
+                    )?
+                }
+            }
+        }
+    }
+
+    Ok(accumulation_state)
 }
 
 /// Appends a sequence of [u8] bytes for the value in `col[row]` to
@@ -810,7 +868,7 @@ async fn compute_grouped_hash_aggregate(
     //let mut accumulators: Accumulators = FnvHashMap::default();
 
     // iterate over all input batches and update the accumulators
-    let mut accumulators = Accumulators::default();
+    let mut accumulators = create_accumulation_state(&aggr_expr)?;
     while let Some(batch) = input.next().await {
         let batch = batch?;
         accumulators = group_aggregate_batch(
@@ -882,16 +940,44 @@ pub type KeyVec = SmallVec<[u8; 64]>;
 type AccumulatorItem = Box<dyn Accumulator>;
 #[allow(missing_docs)]
 pub type AccumulatorSet = SmallVec<[AccumulatorItem; 2]>;
+/// Not really a set.  Order matters, as this is a parallel array with some GroupsAccumulator array.
+/// There are Nones in place where there is (in some AccumulationState, presumably) a groups
+/// accumulator in the parallel array.
+pub type SpottyAccumulatorSet = SmallVec<[Option<AccumulatorItem>; 2]>;
 #[allow(missing_docs)]
-pub type Accumulators = HashMap<
-    KeyVec,
-    (
-        SmallVec<[GroupByScalar; 2]>,
-        AccumulatorSet,
-        SmallVec<[u32; 4]>,
-    ),
-    RandomState,
->;
+pub type Accumulators = HashMap<KeyVec, AccumulationGroupState, RandomState>;
+
+#[allow(missing_docs)]
+pub struct AccumulationGroupState {
+    group_by_values: SmallVec<[GroupByScalar; 2]>,
+    // Each aggregate either has an Accumulator or a GroupsAccumulator.  For each i,
+    // accumulator_set[i].is_some() != groups_accumulators[i].is_some().
+    accumulator_set: SpottyAccumulatorSet,
+    indices: SmallVec<[u32; 4]>,
+    group_index: usize,
+}
+
+#[allow(missing_docs)]
+#[derive(Default)]
+pub struct AccumulationState {
+    accumulators: HashMap<KeyVec, AccumulationGroupState, RandomState>,
+    groups_accumulators: Vec<Option<Box<dyn GroupsAccumulator>>>,
+    // For now, always equal to accumulators.len()
+    next_group_index: usize,
+}
+
+impl AccumulationState {
+    /// Constructs an initial AccumulationState.
+    pub fn new(
+        groups_accumulators: Vec<Option<Box<dyn GroupsAccumulator>>>,
+    ) -> AccumulationState {
+        AccumulationState {
+            accumulators: HashMap::new(),
+            groups_accumulators,
+            next_group_index: 0,
+        }
+    }
+}
 
 impl Stream for GroupedHashAggregateStream {
     type Item = ArrowResult<RecordBatch>;
@@ -1138,11 +1224,11 @@ impl RecordBatchStream for HashAggregateStream {
 /// Create a RecordBatch with all group keys and accumulator' states or values.
 pub(crate) fn create_batch_from_map(
     mode: &AggregateMode,
-    accumulators: &Accumulators,
+    accumulation_state: &AccumulationState,
     num_group_expr: usize,
     output_schema: &Schema,
 ) -> ArrowResult<RecordBatch> {
-    if accumulators.is_empty() {
+    if accumulation_state.accumulators.is_empty() {
         return Ok(RecordBatch::new_empty(Arc::new(output_schema.to_owned())));
     }
     // 1. for each key
@@ -1153,12 +1239,23 @@ pub(crate) fn create_batch_from_map(
 
     let mut key_columns: Vec<Box<dyn ArrayBuilder>> = Vec::with_capacity(num_group_expr);
     let mut value_columns = Vec::new();
-    for (_, (group_by_values, accumulator_set, _)) in accumulators {
+    for (
+        _,
+        AccumulationGroupState {
+            group_by_values,
+            accumulator_set,
+            group_index,
+            ..
+        },
+    ) in &accumulation_state.accumulators
+    {
         // 2 and 3.
-        write_group_result_row(
+        write_group_result_row_with_groups_accumulator(
             *mode,
             group_by_values,
             accumulator_set,
+            &accumulation_state.groups_accumulators,
+            *group_index,
             &output_schema.fields()[0..num_group_expr],
             &mut key_columns,
             &mut value_columns,
@@ -1223,6 +1320,50 @@ pub fn write_group_result_row(
     finalize_aggregation_into(&accumulator_set, &mode, value_columns)
 }
 
+// TODO: Dedup with write_group_result_row.
+#[allow(missing_docs)]
+pub fn write_group_result_row_with_groups_accumulator(
+    mode: AggregateMode,
+    group_by_values: &[GroupByScalar],
+    accumulator_set: &SpottyAccumulatorSet,
+    groups_accumulators: &[Option<Box<dyn GroupsAccumulator>>],
+    group_index: usize,
+    key_fields: &[Field],
+    key_columns: &mut Vec<Box<dyn ArrayBuilder>>,
+    value_columns: &mut Vec<Box<dyn ArrayBuilder>>,
+) -> Result<()> {
+    let add_key_columns = key_columns.is_empty();
+    for i in 0..group_by_values.len() {
+        match &group_by_values[i] {
+            // Optimization to avoid allocation on conversion to ScalarValue.
+            GroupByScalar::Utf8(str) => {
+                if add_key_columns {
+                    key_columns.push(Box::new(StringBuilder::new(0)));
+                }
+                key_columns[i]
+                    .as_any_mut()
+                    .downcast_mut::<StringBuilder>()
+                    .unwrap()
+                    .append_value(str)?;
+            }
+            v => {
+                let scalar = v.to_scalar(key_fields[i].data_type());
+                if add_key_columns {
+                    key_columns.push(create_builder(&scalar));
+                }
+                append_value(&mut *key_columns[i], &scalar)?;
+            }
+        }
+    }
+    finalize_aggregation_into_with_groups_accumulators(
+        &accumulator_set,
+        groups_accumulators,
+        group_index,
+        &mode,
+        value_columns,
+    )
+}
+
 #[allow(missing_docs)]
 pub fn create_accumulators(
     aggr_expr: &[Arc<dyn AggregateExpr>],
@@ -1231,6 +1372,40 @@ pub fn create_accumulators(
         .iter()
         .map(|expr| expr.create_accumulator())
         .collect::<Result<SmallVec<_>>>()
+}
+
+// TODO: Name?  (Spotty)
+#[allow(missing_docs)]
+pub fn create_spotty_accumulators(
+    aggr_expr: &[Arc<dyn AggregateExpr>],
+) -> Result<SpottyAccumulatorSet> {
+    aggr_expr
+        .iter()
+        .map(|expr| {
+            Ok(if expr.uses_groups_accumulator() {
+                None
+            } else {
+                Some(expr.create_accumulator()?)
+            })
+        })
+        .collect::<Result<SmallVec<_>>>()
+}
+
+#[allow(missing_docs)]
+pub fn create_accumulation_state(
+    aggr_expr: &[Arc<dyn AggregateExpr>],
+) -> ArrowResult<AccumulationState> {
+    let mut groups_accumulators =
+        Vec::<Option<Box<dyn GroupsAccumulator>>>::with_capacity(aggr_expr.len());
+    for expr in aggr_expr {
+        if let Some(groups_acc) = expr.create_groups_accumulator()? {
+            groups_accumulators.push(Some(groups_acc));
+        } else {
+            groups_accumulators.push(None);
+        }
+    }
+
+    Ok(AccumulationState::new(groups_accumulators))
 }
 
 #[allow(unused_variables)]
@@ -1358,6 +1533,61 @@ fn finalize_aggregation_into(
             for i in 0..accumulators.len() {
                 // merge the state to the final value
                 let v = accumulators[i].evaluate()?;
+                if add_columns {
+                    columns.push(create_builder(&v));
+                    assert_eq!(i + 1, columns.len());
+                }
+                append_value(&mut *columns[i], &v)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// adds aggregation results into columns, creating the required builders when necessary.
+/// final value (mode = Final) or states (mode = Partial)
+fn finalize_aggregation_into_with_groups_accumulators(
+    accumulators: &SpottyAccumulatorSet,
+    groups_accumulators: &[Option<Box<dyn GroupsAccumulator>>],
+    group_index: usize,
+    mode: &AggregateMode,
+    columns: &mut Vec<Box<dyn ArrayBuilder>>,
+) -> Result<()> {
+    let add_columns = columns.is_empty();
+    match mode {
+        AggregateMode::Partial => {
+            let mut col_i = 0;
+            for (i, a) in accumulators.iter().enumerate() {
+                let state = if let Some(a) = a {
+                    a.state()
+                } else {
+                    groups_accumulators[i]
+                        .as_ref()
+                        .unwrap()
+                        .peek_state(group_index)
+                }?;
+                // build the vector of states
+                for v in state {
+                    if add_columns {
+                        columns.push(create_builder(&v));
+                        assert_eq!(col_i + 1, columns.len());
+                    }
+                    append_value(&mut *columns[col_i], &v)?;
+                    col_i += 1;
+                }
+            }
+        }
+        AggregateMode::Final | AggregateMode::FinalPartitioned | AggregateMode::Full => {
+            for i in 0..accumulators.len() {
+                // merge the state to the final value
+                let v: ScalarValue = if let Some(accumulator) = &accumulators[i] {
+                    accumulator.evaluate()?
+                } else {
+                    groups_accumulators[i]
+                        .as_ref()
+                        .unwrap()
+                        .peek_evaluate(group_index)?
+                };
                 if add_columns {
                     columns.push(create_builder(&v));
                     assert_eq!(i + 1, columns.len());

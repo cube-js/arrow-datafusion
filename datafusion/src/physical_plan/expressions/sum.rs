@@ -22,6 +22,8 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::error::{DataFusionError, Result};
+use crate::physical_plan::groups_accumulator::GroupsAccumulator;
+use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use arrow::compute;
@@ -42,7 +44,7 @@ use super::format_state_name;
 use smallvec::smallvec;
 use smallvec::SmallVec;
 
-// SUM aggregate expression
+/// SUM aggregate expression
 #[derive(Debug)]
 pub struct Sum {
     name: String,
@@ -116,6 +118,23 @@ impl AggregateExpr for Sum {
 
     fn create_accumulator(&self) -> Result<Box<dyn Accumulator>> {
         Ok(Box::new(SumAccumulator::try_new(&self.data_type)?))
+    }
+
+    fn uses_groups_accumulator(&self) -> bool {
+        return true;
+    }
+
+    /// the groups accumulator used to accumulate values from the expression.  If this returns None,
+    /// create_accumulator must be used.
+    fn create_groups_accumulator(
+        &self,
+    ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
+        let data_type = self.data_type.clone();
+        Ok(Some(Box::new(
+            GroupsAccumulatorFlatAdapter::<SumAccumulator>::new(move || {
+                SumAccumulator::try_new(&data_type)
+            }),
+        )))
     }
 
     fn name(&self) -> &str {
