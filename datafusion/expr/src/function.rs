@@ -559,6 +559,8 @@ pub fn signature(fun: &BuiltinScalarFunction) -> Signature {
                     DataType::Decimal(38, 10),
                     DataType::Decimal(38, 10),
                 ]),
+                TypeSignature::Exact(vec![DataType::Decimal(38, 10), DataType::Int64]),
+                TypeSignature::Exact(vec![DataType::Float64, DataType::Int64]),
             ],
             fun.volatility(),
         ),
@@ -567,6 +569,8 @@ pub fn signature(fun: &BuiltinScalarFunction) -> Signature {
                 TypeSignature::Exact(vec![DataType::Float64]),
                 TypeSignature::Exact(vec![DataType::Float32]),
                 // NOTE: stub, won't execute
+                TypeSignature::Exact(vec![DataType::Float64, DataType::Int64]),
+                TypeSignature::Exact(vec![DataType::Decimal(38, 10), DataType::Int64]),
                 TypeSignature::Exact(vec![DataType::Decimal(38, 10), DataType::Int32]),
             ],
             fun.volatility(),
