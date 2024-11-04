@@ -634,6 +634,37 @@ pub trait Accumulator: Send + Sync + Debug {
     fn evaluate(&self) -> Result<ScalarValue>;
 }
 
+// Used for AggregateExpr implementations that still have uses_groups_accumulator being false.
+impl Accumulator for Box<dyn Accumulator> {
+    fn reset(&mut self) {
+        self.as_mut().reset()
+    }
+
+    fn state(&self) -> Result<SmallVec<[ScalarValue; 2]>> {
+        self.as_ref().state()
+    }
+
+    fn update(&mut self, values: &[ScalarValue]) -> Result<()> {
+        self.as_mut().update(values)
+    }
+
+    fn update_batch(&mut self, values: &[ArrayRef]) -> Result<()> {
+        self.as_mut().update_batch(values)
+    }
+
+    fn merge(&mut self, states: &[ScalarValue]) -> Result<()> {
+        self.as_mut().merge(states)
+    }
+
+    fn merge_batch(&mut self, states: &[ArrayRef]) -> Result<()> {
+        self.as_mut().merge_batch(states)
+    }
+
+    fn evaluate(&self) -> Result<ScalarValue> {
+        self.as_ref().evaluate()
+    }
+}
+
 pub mod aggregates;
 pub mod array_expressions;
 pub mod coalesce_batches;

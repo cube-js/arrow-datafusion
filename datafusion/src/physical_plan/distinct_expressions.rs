@@ -34,6 +34,9 @@ use smallvec::SmallVec;
 use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
 
+use super::groups_accumulator::GroupsAccumulator;
+use super::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 struct DistinctScalarValues(Vec<GroupByScalar>);
 
@@ -120,6 +123,26 @@ impl AggregateExpr for DistinctCount {
             state_data_types: self.state_data_types.clone(),
             count_data_type: self.data_type.clone(),
         }))
+    }
+
+    fn uses_groups_accumulator(&self) -> bool {
+        return true;
+    }
+
+    fn create_groups_accumulator(
+        &self,
+    ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
+        let state_data_types = self.state_data_types.clone();
+        let count_data_type = self.data_type.clone();
+        Ok(Some(Box::new(GroupsAccumulatorFlatAdapter::<
+            DistinctCountAccumulator,
+        >::new(move || {
+            Ok(DistinctCountAccumulator {
+                values: HashSet::default(),
+                state_data_types: state_data_types.clone(),
+                count_data_type: count_data_type.clone(),
+            })
+        }))))
     }
 
     fn name(&self) -> &str {

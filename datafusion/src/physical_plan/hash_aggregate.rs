@@ -72,6 +72,7 @@ use arrow::array::{
 use async_trait::async_trait;
 
 use super::groups_accumulator::GroupsAccumulator;
+use super::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use super::{
     expressions::Column, group_scalar::GroupByScalar, RecordBatchStream,
     SendableRecordBatchStream,
@@ -407,10 +408,11 @@ pin_project! {
     }
 }
 
+// TODO: _aggr_expr is currently unused; it's kept for perhaps, debugging usage, but probably just remove it.
 pub(crate) fn group_aggregate_batch(
     mode: &AggregateMode,
     group_expr: &[Arc<dyn PhysicalExpr>],
-    aggr_expr: &[Arc<dyn AggregateExpr>],
+    _aggr_expr: &[Arc<dyn AggregateExpr>],
     batch: RecordBatch,
     mut accumulation_state: AccumulationState,
     aggregate_expressions: &[Vec<Arc<dyn PhysicalExpr>>],
@@ -434,12 +436,6 @@ pub(crate) fn group_aggregate_batch(
     // 1.1 construct the key from the group values
     // 1.2 construct the mapping key if it does not exist
     // 1.3 add the row' index to `indices`
-
-    // Make sure we can create the accumulators or otherwise return an error
-    create_accumulators(aggr_expr).map_err(DataFusionError::into_arrow_external_error)?;
-
-    let all_groups_accumulators: bool =
-        aggr_expr.iter().all(|expr| expr.uses_groups_accumulator());
 
     // Keys received in this batch
     let mut batch_keys = BinaryBuilder::new(0);
@@ -465,8 +461,6 @@ pub(crate) fn group_aggregate_batch(
             })
             // 1.2
             .or_insert_with(|| {
-                // We can safely unwrap here as we checked we can create an accumulator before
-                let accumulator_set = create_spotty_accumulators(aggr_expr).unwrap();
                 batch_keys.append_value(&key).expect("must not fail");
                 let _ = create_group_by_values(&group_values, row, &mut group_by_values);
                 let mut taken_values =
@@ -478,7 +472,6 @@ pub(crate) fn group_aggregate_batch(
                     key.clone(),
                     AccumulationGroupState {
                         group_by_values: taken_values,
-                        accumulator_set,
                         indices: smallvec![row as u32],
                         group_index,
                     },
@@ -526,83 +519,29 @@ pub(crate) fn group_aggregate_batch(
         })
         .collect();
 
-    if !all_groups_accumulators {
-        // 2.1 for each key in this batch
-        // 2.2 for each aggregation
-        // 2.3 `slice` from each of its arrays the keys' values
-        // 2.4 update / merge the accumulator with the values
-        // 2.5 clear indices
-        batch_keys
-            .iter()
-            .zip(offsets.windows(2))
-            .try_for_each(|(key, offsets)| {
-                let AccumulationGroupState {
-                    accumulator_set, ..
-                } = accumulation_state
-                    .accumulators
-                    .get_mut(key.unwrap())
-                    .unwrap();
-                // 2.2
-                accumulator_set
-                    .iter_mut()
-                    .zip(values.iter())
-                    .map(|(accumulator, aggr_array)| {
-                        (
-                            accumulator,
-                            aggr_array
-                                .iter()
-                                .map(|array| {
-                                    // 2.3
-                                    array.slice(offsets[0], offsets[1] - offsets[0])
-                                })
-                                .collect::<Vec<ArrayRef>>(),
-                        )
-                    })
-                    .try_for_each(|(accumulator, values)| {
-                        if let Some(accumulator) = accumulator {
-                            match mode {
-                                AggregateMode::Partial | AggregateMode::Full => {
-                                    accumulator.update_batch(&values)
-                                }
-                                AggregateMode::FinalPartitioned
-                                | AggregateMode::Final => {
-                                    // note: the aggregation here is over states, not values, thus the merge
-                                    accumulator.merge_batch(&values)
-                                }
-                            }
-                        } else {
-                            // We do groups accumulator separately.
-                            Ok(())
-                        }
-                    })
-            })?;
-    }
-
     for (accumulator_index, accumulator) in accumulation_state
         .groups_accumulators
         .iter_mut()
         .enumerate()
     {
-        if let Some(accumulator) = accumulator {
-            match mode {
-                AggregateMode::Partial | AggregateMode::Full => accumulator
-                    .update_batch_preordered(
-                        &values[accumulator_index],
-                        &all_group_indices,
-                        &offsets,
-                        None,
-                        accumulation_state.next_group_index,
-                    )?,
-                AggregateMode::FinalPartitioned | AggregateMode::Final => {
-                    // note: the aggregation here is over states, not values, thus the merge
-                    accumulator.merge_batch_preordered(
-                        &values[accumulator_index],
-                        &all_group_indices,
-                        &offsets,
-                        None,
-                        accumulation_state.next_group_index,
-                    )?
-                }
+        match mode {
+            AggregateMode::Partial | AggregateMode::Full => accumulator
+                .update_batch_preordered(
+                    &values[accumulator_index],
+                    &all_group_indices,
+                    &offsets,
+                    None,
+                    accumulation_state.next_group_index,
+                )?,
+            AggregateMode::FinalPartitioned | AggregateMode::Final => {
+                // note: the aggregation here is over states, not values, thus the merge
+                accumulator.merge_batch_preordered(
+                    &values[accumulator_index],
+                    &all_group_indices,
+                    &offsets,
+                    None,
+                    accumulation_state.next_group_index,
+                )?
             }
         }
     }
@@ -940,19 +879,12 @@ pub type KeyVec = SmallVec<[u8; 64]>;
 type AccumulatorItem = Box<dyn Accumulator>;
 #[allow(missing_docs)]
 pub type AccumulatorSet = SmallVec<[AccumulatorItem; 2]>;
-/// Not really a set.  Order matters, as this is a parallel array with some GroupsAccumulator array.
-/// There are Nones in place where there is (in some AccumulationState, presumably) a groups
-/// accumulator in the parallel array.
-pub type SpottyAccumulatorSet = SmallVec<[Option<AccumulatorItem>; 2]>;
 #[allow(missing_docs)]
 pub type Accumulators = HashMap<KeyVec, AccumulationGroupState, RandomState>;
 
 #[allow(missing_docs)]
 pub struct AccumulationGroupState {
     group_by_values: SmallVec<[GroupByScalar; 2]>,
-    // Each aggregate either has an Accumulator or a GroupsAccumulator.  For each i,
-    // accumulator_set[i].is_some() != groups_accumulators[i].is_some().
-    accumulator_set: SpottyAccumulatorSet,
     indices: SmallVec<[u32; 4]>,
     group_index: usize,
 }
@@ -961,7 +893,7 @@ pub struct AccumulationGroupState {
 #[derive(Default)]
 pub struct AccumulationState {
     accumulators: HashMap<KeyVec, AccumulationGroupState, RandomState>,
-    groups_accumulators: Vec<Option<Box<dyn GroupsAccumulator>>>,
+    groups_accumulators: Vec<Box<dyn GroupsAccumulator>>,
     // For now, always equal to accumulators.len()
     next_group_index: usize,
 }
@@ -969,7 +901,7 @@ pub struct AccumulationState {
 impl AccumulationState {
     /// Constructs an initial AccumulationState.
     pub fn new(
-        groups_accumulators: Vec<Option<Box<dyn GroupsAccumulator>>>,
+        groups_accumulators: Vec<Box<dyn GroupsAccumulator>>,
     ) -> AccumulationState {
         AccumulationState {
             accumulators: HashMap::new(),
@@ -1243,7 +1175,6 @@ pub(crate) fn create_batch_from_map(
         _,
         AccumulationGroupState {
             group_by_values,
-            accumulator_set,
             group_index,
             ..
         },
@@ -1253,7 +1184,6 @@ pub(crate) fn create_batch_from_map(
         write_group_result_row_with_groups_accumulator(
             *mode,
             group_by_values,
-            accumulator_set,
             &accumulation_state.groups_accumulators,
             *group_index,
             &output_schema.fields()[0..num_group_expr],
@@ -1325,8 +1255,7 @@ pub fn write_group_result_row(
 pub fn write_group_result_row_with_groups_accumulator(
     mode: AggregateMode,
     group_by_values: &[GroupByScalar],
-    accumulator_set: &SpottyAccumulatorSet,
-    groups_accumulators: &[Option<Box<dyn GroupsAccumulator>>],
+    groups_accumulators: &[Box<dyn GroupsAccumulator>],
     group_index: usize,
     key_fields: &[Field],
     key_columns: &mut Vec<Box<dyn ArrayBuilder>>,
@@ -1356,7 +1285,6 @@ pub fn write_group_result_row_with_groups_accumulator(
         }
     }
     finalize_aggregation_into_with_groups_accumulators(
-        &accumulator_set,
         groups_accumulators,
         group_index,
         &mode,
@@ -1374,34 +1302,23 @@ pub fn create_accumulators(
         .collect::<Result<SmallVec<_>>>()
 }
 
-// TODO: Name?  (Spotty)
-#[allow(missing_docs)]
-pub fn create_spotty_accumulators(
-    aggr_expr: &[Arc<dyn AggregateExpr>],
-) -> Result<SpottyAccumulatorSet> {
-    aggr_expr
-        .iter()
-        .map(|expr| {
-            Ok(if expr.uses_groups_accumulator() {
-                None
-            } else {
-                Some(expr.create_accumulator()?)
-            })
-        })
-        .collect::<Result<SmallVec<_>>>()
-}
-
 #[allow(missing_docs)]
 pub fn create_accumulation_state(
     aggr_expr: &[Arc<dyn AggregateExpr>],
 ) -> ArrowResult<AccumulationState> {
     let mut groups_accumulators =
-        Vec::<Option<Box<dyn GroupsAccumulator>>>::with_capacity(aggr_expr.len());
+        Vec::<Box<dyn GroupsAccumulator>>::with_capacity(aggr_expr.len());
     for expr in aggr_expr {
         if let Some(groups_acc) = expr.create_groups_accumulator()? {
-            groups_accumulators.push(Some(groups_acc));
+            groups_accumulators.push(groups_acc);
         } else {
-            groups_accumulators.push(None);
+            let expr: Arc<dyn AggregateExpr> = expr.clone();
+
+            groups_accumulators.push(Box::new(GroupsAccumulatorFlatAdapter::<
+                Box<dyn Accumulator>,
+            >::new(move || {
+                expr.create_accumulator()
+            })));
         }
     }
 
@@ -1547,8 +1464,7 @@ fn finalize_aggregation_into(
 /// adds aggregation results into columns, creating the required builders when necessary.
 /// final value (mode = Final) or states (mode = Partial)
 fn finalize_aggregation_into_with_groups_accumulators(
-    accumulators: &SpottyAccumulatorSet,
-    groups_accumulators: &[Option<Box<dyn GroupsAccumulator>>],
+    groups_accumulators: &[Box<dyn GroupsAccumulator>],
     group_index: usize,
     mode: &AggregateMode,
     columns: &mut Vec<Box<dyn ArrayBuilder>>,
@@ -1557,15 +1473,8 @@ fn finalize_aggregation_into_with_groups_accumulators(
     match mode {
         AggregateMode::Partial => {
             let mut col_i = 0;
-            for (i, a) in accumulators.iter().enumerate() {
-                let state = if let Some(a) = a {
-                    a.state()
-                } else {
-                    groups_accumulators[i]
-                        .as_ref()
-                        .unwrap()
-                        .peek_state(group_index)
-                }?;
+            for ga in groups_accumulators.iter() {
+                let state = ga.peek_state(group_index)?;
                 // build the vector of states
                 for v in state {
                     if add_columns {
@@ -1578,16 +1487,9 @@ fn finalize_aggregation_into_with_groups_accumulators(
             }
         }
         AggregateMode::Final | AggregateMode::FinalPartitioned | AggregateMode::Full => {
-            for i in 0..accumulators.len() {
+            for (i, ga) in groups_accumulators.iter().enumerate() {
                 // merge the state to the final value
-                let v: ScalarValue = if let Some(accumulator) = &accumulators[i] {
-                    accumulator.evaluate()?
-                } else {
-                    groups_accumulators[i]
-                        .as_ref()
-                        .unwrap()
-                        .peek_evaluate(group_index)?
-                };
+                let v: ScalarValue = ga.peek_evaluate(group_index)?;
                 if add_columns {
                     columns.push(create_builder(&v));
                     assert_eq!(i + 1, columns.len());
