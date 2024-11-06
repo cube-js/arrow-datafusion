@@ -192,7 +192,7 @@ impl SortedAggState {
     }
 }
 
-fn agg_key_equals(
+pub fn agg_key_equals(
     key: &[GroupByScalar],
     key_columns: &[ArrayRef],
     row: usize,
