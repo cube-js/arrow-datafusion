@@ -22,6 +22,8 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::error::{DataFusionError, Result};
+use crate::physical_plan::groups_accumulator::GroupsAccumulator;
+use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use arrow::compute;
@@ -110,6 +112,23 @@ impl AggregateExpr for Avg {
             // avg is f64
             &DataType::Float64,
         )?))
+    }
+
+    fn uses_groups_accumulator(&self) -> bool {
+        return true;
+    }
+
+    /// the groups accumulator used to accumulate values from the expression.  If this returns None,
+    /// create_accumulator must be used.
+    fn create_groups_accumulator(
+        &self,
+    ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
+        Ok(Some(Box::new(
+            GroupsAccumulatorFlatAdapter::<AvgAccumulator>::new(|| {
+                // avg is f64 (as in create_accumulator)
+                AvgAccumulator::try_new(&DataType::Float64)
+            }),
+        )))
     }
 
     fn expressions(&self) -> Vec<Arc<dyn PhysicalExpr>> {

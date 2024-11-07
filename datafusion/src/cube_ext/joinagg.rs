@@ -25,7 +25,7 @@ use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::{DFSchemaRef, Expr, LogicalPlan, UserDefinedLogicalNode};
 use crate::optimizer::optimizer::OptimizerRule;
 use crate::optimizer::utils::from_plan;
-use crate::physical_plan::hash_aggregate::{Accumulators, AggregateMode};
+use crate::physical_plan::hash_aggregate::{create_accumulation_state, AggregateMode};
 use crate::physical_plan::planner::{physical_name, ExtensionPlanner};
 use crate::physical_plan::{hash_aggregate, PhysicalPlanner};
 use crate::physical_plan::{
@@ -245,7 +245,7 @@ impl ExecutionPlan for CrossJoinAggExec {
             &AggregateMode::Full,
             self.group_expr.len(),
         )?;
-        let mut accumulators = Accumulators::new();
+        let mut accumulators = create_accumulation_state(&self.agg_expr)?;
         for partition in 0..self.join.right.output_partitioning().partition_count() {
             let mut batches = self.join.right.execute(partition).await?;
             while let Some(right) = batches.next().await {

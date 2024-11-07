@@ -34,6 +34,7 @@ use arrow::{array::ArrayRef, datatypes::Field};
 use async_trait::async_trait;
 pub use display::DisplayFormatType;
 use futures::stream::Stream;
+use groups_accumulator::GroupsAccumulator;
 use hashbrown::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Display};
@@ -464,6 +465,19 @@ pub trait AggregateExpr: Send + Sync + Debug {
     /// return states with the same description as `state_fields`
     fn create_accumulator(&self) -> Result<Box<dyn Accumulator>>;
 
+    /// Returns true if and only if create_groups_accumulator returns Ok(Some(_)) (if not an Err(_)).
+    fn uses_groups_accumulator(&self) -> bool {
+        return false;
+    }
+
+    /// the groups accumulator used to accumulate values from the expression.  If this returns None,
+    /// create_accumulator must be used.
+    fn create_groups_accumulator(
+        &self,
+    ) -> ArrowResult<Option<Box<dyn GroupsAccumulator>>> {
+        Ok(None)
+    }
+
     /// the fields that encapsulate the Accumulator's state
     /// the number of fields here equals the number of states that the accumulator contains
     fn state_fields(&self) -> Result<Vec<Field>>;
@@ -638,6 +652,9 @@ pub mod expressions;
 pub mod filter;
 pub mod functions;
 pub mod group_scalar;
+pub mod groups_accumulator;
+pub mod groups_accumulator_adapter;
+pub mod groups_accumulator_flat_adapter;
 pub mod hash_aggregate;
 pub mod hash_join;
 pub mod hash_utils;
