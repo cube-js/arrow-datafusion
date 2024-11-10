@@ -24,6 +24,7 @@ use std::sync::Arc;
 use crate::error::{DataFusionError, Result};
 use crate::physical_plan::groups_accumulator::GroupsAccumulator;
 use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
+use crate::physical_plan::groups_accumulator_prim_op::PrimitiveGroupsAccumulator;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use arrow::compute;
@@ -49,6 +50,7 @@ use smallvec::SmallVec;
 pub struct Sum {
     name: String,
     data_type: DataType,
+    input_data_type: DataType,
     expr: Arc<dyn PhysicalExpr>,
     nullable: bool,
 }
@@ -80,11 +82,16 @@ impl Sum {
         expr: Arc<dyn PhysicalExpr>,
         name: impl Into<String>,
         data_type: DataType,
+        input_data_type: &DataType,
     ) -> Self {
+        // Note: data_type = sum_return_type(input_data_type) in the actual caller, so we don't
+        // really need two params.  But, we keep the four params to break symmetry with other
+        // accumulators and any code that might use 3 params, such as the generic_test_op macro.
         Self {
             name: name.into(),
             expr,
             data_type,
+            input_data_type: input_data_type.clone(),
             nullable: true,
         }
     }
@@ -127,12 +134,147 @@ impl AggregateExpr for Sum {
     fn create_groups_accumulator(
         &self,
     ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
-        let data_type = self.data_type.clone();
-        Ok(Some(Box::new(
-            GroupsAccumulatorFlatAdapter::<SumAccumulator>::new(move || {
-                SumAccumulator::try_new(&data_type)
-            }),
-        )))
+        use arrow::datatypes::ArrowPrimitiveType;
+
+        macro_rules! make_accumulator {
+            ($T:ty, $U:ty) => {
+                Box::new(PrimitiveGroupsAccumulator::<$T, $U, _, _>::new(
+                    &<$T as ArrowPrimitiveType>::DATA_TYPE,
+                    |x: &mut <$T as ArrowPrimitiveType>::Native,
+                     y: <$U as ArrowPrimitiveType>::Native| {
+                        *x = *x + (y as <$T as ArrowPrimitiveType>::Native);
+                    },
+                    |x: &mut <$T as ArrowPrimitiveType>::Native,
+                     y: <$T as ArrowPrimitiveType>::Native| {
+                        *x = *x + y;
+                    },
+                ))
+            };
+        }
+
+        // Note that upstream uses x.add_wrapping(y) for the sum functions -- but here we just mimic
+        // the current datafusion Sum accumulator implementation using native +.  (That native +
+        // specifically is the one in the expressions *x = *x + ... above.)
+        Ok(Some(match (&self.data_type, &self.input_data_type) {
+            (DataType::Int64, DataType::Int64) => make_accumulator!(
+                arrow::datatypes::Int64Type,
+                arrow::datatypes::Int64Type
+            ),
+            (DataType::Int64, DataType::Int32) => make_accumulator!(
+                arrow::datatypes::Int64Type,
+                arrow::datatypes::Int32Type
+            ),
+            (DataType::Int64, DataType::Int16) => make_accumulator!(
+                arrow::datatypes::Int64Type,
+                arrow::datatypes::Int16Type
+            ),
+            (DataType::Int64, DataType::Int8) => {
+                make_accumulator!(arrow::datatypes::Int64Type, arrow::datatypes::Int8Type)
+            }
+
+            (DataType::Int96, DataType::Int96) => make_accumulator!(
+                arrow::datatypes::Int96Type,
+                arrow::datatypes::Int96Type
+            ),
+
+            (DataType::Int64Decimal(0), DataType::Int64Decimal(0)) => make_accumulator!(
+                arrow::datatypes::Int64Decimal0Type,
+                arrow::datatypes::Int64Decimal0Type
+            ),
+            (DataType::Int64Decimal(1), DataType::Int64Decimal(1)) => make_accumulator!(
+                arrow::datatypes::Int64Decimal1Type,
+                arrow::datatypes::Int64Decimal1Type
+            ),
+            (DataType::Int64Decimal(2), DataType::Int64Decimal(2)) => make_accumulator!(
+                arrow::datatypes::Int64Decimal2Type,
+                arrow::datatypes::Int64Decimal2Type
+            ),
+            (DataType::Int64Decimal(3), DataType::Int64Decimal(3)) => make_accumulator!(
+                arrow::datatypes::Int64Decimal3Type,
+                arrow::datatypes::Int64Decimal3Type
+            ),
+            (DataType::Int64Decimal(4), DataType::Int64Decimal(4)) => make_accumulator!(
+                arrow::datatypes::Int64Decimal4Type,
+                arrow::datatypes::Int64Decimal4Type
+            ),
+            (DataType::Int64Decimal(5), DataType::Int64Decimal(5)) => make_accumulator!(
+                arrow::datatypes::Int64Decimal5Type,
+                arrow::datatypes::Int64Decimal5Type
+            ),
+            (DataType::Int64Decimal(10), DataType::Int64Decimal(10)) => {
+                make_accumulator!(
+                    arrow::datatypes::Int64Decimal10Type,
+                    arrow::datatypes::Int64Decimal10Type
+                )
+            }
+
+            (DataType::Int96Decimal(0), DataType::Int96Decimal(0)) => make_accumulator!(
+                arrow::datatypes::Int96Decimal0Type,
+                arrow::datatypes::Int96Decimal0Type
+            ),
+            (DataType::Int96Decimal(1), DataType::Int96Decimal(1)) => make_accumulator!(
+                arrow::datatypes::Int96Decimal1Type,
+                arrow::datatypes::Int96Decimal1Type
+            ),
+            (DataType::Int96Decimal(2), DataType::Int96Decimal(2)) => make_accumulator!(
+                arrow::datatypes::Int96Decimal2Type,
+                arrow::datatypes::Int96Decimal2Type
+            ),
+            (DataType::Int96Decimal(3), DataType::Int96Decimal(3)) => make_accumulator!(
+                arrow::datatypes::Int96Decimal3Type,
+                arrow::datatypes::Int96Decimal3Type
+            ),
+            (DataType::Int96Decimal(4), DataType::Int96Decimal(4)) => make_accumulator!(
+                arrow::datatypes::Int96Decimal4Type,
+                arrow::datatypes::Int96Decimal4Type
+            ),
+            (DataType::Int96Decimal(5), DataType::Int96Decimal(5)) => make_accumulator!(
+                arrow::datatypes::Int96Decimal5Type,
+                arrow::datatypes::Int96Decimal5Type
+            ),
+            (DataType::Int96Decimal(10), DataType::Int96Decimal(10)) => {
+                make_accumulator!(
+                    arrow::datatypes::Int96Decimal10Type,
+                    arrow::datatypes::Int96Decimal10Type
+                )
+            }
+
+            (DataType::UInt64, DataType::UInt64) => make_accumulator!(
+                arrow::datatypes::UInt64Type,
+                arrow::datatypes::UInt64Type
+            ),
+            (DataType::UInt64, DataType::UInt32) => make_accumulator!(
+                arrow::datatypes::UInt64Type,
+                arrow::datatypes::UInt32Type
+            ),
+            (DataType::UInt64, DataType::UInt16) => make_accumulator!(
+                arrow::datatypes::UInt64Type,
+                arrow::datatypes::UInt16Type
+            ),
+            (DataType::UInt64, DataType::UInt8) => make_accumulator!(
+                arrow::datatypes::UInt64Type,
+                arrow::datatypes::UInt8Type
+            ),
+
+            (DataType::Float32, DataType::Float32) => make_accumulator!(
+                arrow::datatypes::Float32Type,
+                arrow::datatypes::Float32Type
+            ),
+            (DataType::Float64, DataType::Float64) => make_accumulator!(
+                arrow::datatypes::Float64Type,
+                arrow::datatypes::Float64Type
+            ),
+
+            _ => {
+                // This case should never be reached because we've handled all sum_return_type
+                // arg_type values.  Nonetheless:
+                let data_type = self.data_type.clone();
+
+                Box::new(GroupsAccumulatorFlatAdapter::<SumAccumulator>::new(
+                    move || SumAccumulator::try_new(&data_type),
+                ))
+            }
+        }))
     }
 
     fn name(&self) -> &str {
@@ -416,13 +558,27 @@ mod tests {
     use arrow::datatypes::*;
     use arrow::record_batch::RecordBatch;
 
+    // A wrapper to make Sum::new, which now has an input_type argument, work with
+    // generic_test_op!.
+    struct SumTestStandin;
+    impl SumTestStandin {
+        fn new(
+            expr: Arc<dyn PhysicalExpr>,
+            name: impl Into<String>,
+            data_type: DataType,
+        ) -> Sum {
+            Sum::new(expr, name, data_type.clone(), &data_type)
+        }
+    }
+
     #[test]
     fn sum_i32() -> Result<()> {
         let a: ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5]));
+
         generic_test_op!(
             a,
             DataType::Int32,
-            Sum,
+            SumTestStandin,
             ScalarValue::from(15i64),
             DataType::Int64
         )
@@ -440,7 +596,7 @@ mod tests {
         generic_test_op!(
             a,
             DataType::Int32,
-            Sum,
+            SumTestStandin,
             ScalarValue::from(13i64),
             DataType::Int64
         )
@@ -452,7 +608,7 @@ mod tests {
         generic_test_op!(
             a,
             DataType::Int32,
-            Sum,
+            SumTestStandin,
             ScalarValue::Int64(None),
             DataType::Int64
         )
@@ -465,7 +621,7 @@ mod tests {
         generic_test_op!(
             a,
             DataType::UInt32,
-            Sum,
+            SumTestStandin,
             ScalarValue::from(15u64),
             DataType::UInt64
         )
@@ -478,7 +634,7 @@ mod tests {
         generic_test_op!(
             a,
             DataType::Float32,
-            Sum,
+            SumTestStandin,
             ScalarValue::from(15_f32),
             DataType::Float32
         )
@@ -491,7 +647,7 @@ mod tests {
         generic_test_op!(
             a,
             DataType::Float64,
-            Sum,
+            SumTestStandin,
             ScalarValue::from(15_f64),
             DataType::Float64
         )

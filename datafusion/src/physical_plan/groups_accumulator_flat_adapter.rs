@@ -387,10 +387,6 @@ impl<AccumulatorType: Accumulator> GroupsAccumulator
         result
     }
 
-    fn peek_evaluate(&self, group_index: usize) -> Result<ScalarValue> {
-        self.accumulators[group_index].evaluate()
-    }
-
     // filtered_null_mask(opt_filter, &values);
     fn state(&mut self, emit_to: EmitTo) -> Result<Vec<ArrayRef>> {
         let vec_size_pre = self.accumulators.allocated_size();
@@ -426,10 +422,6 @@ impl<AccumulatorType: Accumulator> GroupsAccumulator
         self.adjust_allocation(vec_size_pre, self.accumulators.allocated_size());
 
         Ok(arrays)
-    }
-
-    fn peek_state(&self, group_index: usize) -> Result<SmallVec<[ScalarValue; 2]>> {
-        self.accumulators[group_index].state()
     }
 
     fn merge_batch(
