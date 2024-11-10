@@ -71,7 +71,7 @@ use arrow::array::{
 };
 use async_trait::async_trait;
 
-use super::groups_accumulator::GroupsAccumulator;
+use super::groups_accumulator::{EmitTo, GroupsAccumulator};
 use super::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use super::{
     expressions::Column, group_scalar::GroupByScalar, RecordBatchStream,
@@ -466,7 +466,10 @@ pub(crate) fn group_aggregate_batch(
                 // Note that we still use plain String objects in GroupByScalar.  Thus flattened_group_by_values isn't that great.
                 let _ = create_group_by_values(&group_values, row, &mut group_by_values);
                 accumulation_state.flattened_group_by_values.extend(
-                    group_by_values.iter_mut().map(|x| std::mem::replace(x, GroupByScalar::UInt32(0))));
+                    group_by_values
+                        .iter_mut()
+                        .map(|x| std::mem::replace(x, GroupByScalar::UInt32(0))),
+                );
                 let group_index = accumulation_state.next_group_index;
                 accumulation_state.next_group_index += 1;
                 (
@@ -821,7 +824,7 @@ async fn compute_grouped_hash_aggregate(
         .map_err(DataFusionError::into_arrow_external_error)?;
     }
 
-    create_batch_from_map(&mode, &accumulators, group_expr.len(), &schema)
+    create_batch_from_map(&mode, accumulators, group_expr.len(), &schema)
 }
 
 impl GroupedHashAggregateStream {
@@ -1157,50 +1160,40 @@ impl RecordBatchStream for HashAggregateStream {
 /// Create a RecordBatch with all group keys and accumulator' states or values.
 pub(crate) fn create_batch_from_map(
     mode: &AggregateMode,
-    accumulation_state: &AccumulationState,
+    accumulation_state: AccumulationState,
     num_group_expr: usize,
     output_schema: &Schema,
 ) -> ArrowResult<RecordBatch> {
     if accumulation_state.accumulators.is_empty() {
         return Ok(RecordBatch::new_empty(Arc::new(output_schema.to_owned())));
     }
-    // 1. for each key
+    // Fake instructions as we do aggregations columnarly.
+    // 1. for each group index
     // 2. create single-row ArrayRef with all group expressions
-    // 3. create single-row ArrayRef with all aggregate states or values
+    // 3. create single-row ArrayRef with all aggregate states or values (accumulators)
     // 4. collect all in a vector per key of vec<ArrayRef>, vec[i][j]
     // 5. concatenate the arrays over the second index [j] into a single vec<ArrayRef>.
 
-    let mut key_columns: Vec<Box<dyn ArrayBuilder>> = Vec::with_capacity(num_group_expr);
-    let mut value_columns = Vec::new();
-    for (
-        _,
-        AccumulationGroupState {
-            group_index,
-            ..
-        },
-    ) in &accumulation_state.accumulators
-    {
-        let group_by_values: &[GroupByScalar] = &accumulation_state.flattened_group_by_values[num_group_expr * group_index..num_group_expr * (group_index + 1)];
+    let key_columns: Vec<Box<dyn ArrayBuilder>> = write_group_result_rows_for_keys(
+        &accumulation_state.flattened_group_by_values,
+        accumulation_state.next_group_index,
+        &output_schema.fields()[0..num_group_expr],
+    )
+    .map_err(DataFusionError::into_arrow_external_error)?;
+    // 3.
+    let value_columns = finalize_aggregation_into_with_groups_accumulators(
+        accumulation_state.groups_accumulators,
+        *mode,
+    )
+    .map_err(DataFusionError::into_arrow_external_error)?;
 
-        // 2 and 3.
-        write_group_result_row_with_groups_accumulator(
-            *mode,
-            group_by_values,
-            &accumulation_state.groups_accumulators,
-            *group_index,
-            &output_schema.fields()[0..num_group_expr],
-            &mut key_columns,
-            &mut value_columns,
-        )
-        .map_err(DataFusionError::into_arrow_external_error)?;
-    }
     // 4.
     let batch = if !key_columns.is_empty() || !value_columns.is_empty() {
         // 5.
         let columns = key_columns
             .into_iter()
-            .chain(value_columns)
-            .map(|mut b| b.finish());
+            .map(|mut b| b.finish())
+            .chain(value_columns);
 
         // cast output if needed (e.g. for types like Dictionary where
         // the intermediate GroupByScalar type was not the same as the
@@ -1252,46 +1245,61 @@ pub fn write_group_result_row(
     finalize_aggregation_into(&accumulator_set, &mode, value_columns)
 }
 
-// TODO: Dedup with write_group_result_row.
 #[allow(missing_docs)]
-pub fn write_group_result_row_with_groups_accumulator(
-    mode: AggregateMode,
-    group_by_values: &[GroupByScalar],
-    groups_accumulators: &[Box<dyn GroupsAccumulator>],
-    group_index: usize,
+pub fn write_group_result_rows_for_keys(
+    flattened_group_by_values: &[GroupByScalar],
+    num_groups: usize,
     key_fields: &[Field],
-    key_columns: &mut Vec<Box<dyn ArrayBuilder>>,
-    value_columns: &mut Vec<Box<dyn ArrayBuilder>>,
-) -> Result<()> {
-    let add_key_columns = key_columns.is_empty();
-    for i in 0..group_by_values.len() {
+) -> Result<Vec<Box<dyn ArrayBuilder>>> {
+    // The caller must early exit and it does.  Why?  Because previous code did so, and it used
+    // create_builder from a ScalarValue at index 0, and we avoid changing that to minimize risk.
+    assert!(num_groups > 0);
+
+    let num_group_expr = key_fields.len();
+    let mut key_columns: Vec<Box<dyn ArrayBuilder>> = Vec::with_capacity(num_group_expr);
+
+    for i in 0..num_group_expr {
+        // For clarity, we're operating with the first row, group_index 0.
+        let group_by_values = &flattened_group_by_values[0..num_group_expr];
+        // TODO: We could probably do (GroupByValue::Null).to_scalar(...) if create_builder on a
+        // scalar is even the best way to create a builder.  This code with the Utf8 branch and the
+        // v.to_scalar(...) exists solely as a rearrangement of existing logic, to minimize
+        // probability of breakage.
         match &group_by_values[i] {
-            // Optimization to avoid allocation on conversion to ScalarValue.
-            GroupByScalar::Utf8(str) => {
-                if add_key_columns {
-                    key_columns.push(Box::new(StringBuilder::new(0)));
-                }
-                key_columns[i]
-                    .as_any_mut()
-                    .downcast_mut::<StringBuilder>()
-                    .unwrap()
-                    .append_value(str)?;
+            GroupByScalar::Utf8(_) => {
+                key_columns.push(Box::new(StringBuilder::new(0)));
             }
             v => {
-                let scalar = v.to_scalar(key_fields[i].data_type());
-                if add_key_columns {
-                    key_columns.push(create_builder(&scalar));
-                }
-                append_value(&mut *key_columns[i], &scalar)?;
+                let scalar: ScalarValue = v.to_scalar(key_fields[i].data_type());
+                key_columns.push(create_builder(&scalar));
             }
         }
     }
-    finalize_aggregation_into_with_groups_accumulators(
-        groups_accumulators,
-        group_index,
-        &mode,
-        value_columns,
-    )
+
+    // Note that we MUST process groups in ascending group_index order as that's the same order as used for
+    // accumulator columns.
+    for group_index in 0..num_groups {
+        let group_by_values: &[GroupByScalar] = &flattened_group_by_values
+            [num_group_expr * group_index..num_group_expr * (group_index + 1)];
+
+        for i in 0..group_by_values.len() {
+            match &group_by_values[i] {
+                // Optimization to avoid allocation on conversion to ScalarValue.
+                GroupByScalar::Utf8(str) => {
+                    key_columns[i]
+                        .as_any_mut()
+                        .downcast_mut::<StringBuilder>()
+                        .unwrap()
+                        .append_value(str)?;
+                }
+                v => {
+                    let scalar = v.to_scalar(key_fields[i].data_type());
+                    append_value(&mut *key_columns[i], &scalar)?;
+                }
+            }
+        }
+    }
+    Ok(key_columns)
 }
 
 #[allow(missing_docs)]
@@ -1463,44 +1471,28 @@ fn finalize_aggregation_into(
     Ok(())
 }
 
-/// adds aggregation results into columns, creating the required builders when necessary.
+/// Returns aggregation results in columns.
 /// final value (mode = Final) or states (mode = Partial)
 fn finalize_aggregation_into_with_groups_accumulators(
-    groups_accumulators: &[Box<dyn GroupsAccumulator>],
-    group_index: usize,
-    mode: &AggregateMode,
-    columns: &mut Vec<Box<dyn ArrayBuilder>>,
-) -> Result<()> {
-    let add_columns = columns.is_empty();
+    mut groups_accumulators: Vec<Box<dyn GroupsAccumulator>>,
+    mode: AggregateMode,
+) -> Result<Vec<Arc<dyn Array>>> {
+    let mut columns = Vec::new();
     match mode {
         AggregateMode::Partial => {
-            let mut col_i = 0;
-            for ga in groups_accumulators.iter() {
-                let state = ga.peek_state(group_index)?;
-                // build the vector of states
-                for v in state {
-                    if add_columns {
-                        columns.push(create_builder(&v));
-                        assert_eq!(col_i + 1, columns.len());
-                    }
-                    append_value(&mut *columns[col_i], &v)?;
-                    col_i += 1;
-                }
+            for ga in &mut groups_accumulators {
+                let state = ga.state(EmitTo::All)?;
+                columns.extend(state.into_iter());
             }
         }
         AggregateMode::Final | AggregateMode::FinalPartitioned | AggregateMode::Full => {
-            for (i, ga) in groups_accumulators.iter().enumerate() {
-                // merge the state to the final value
-                let v: ScalarValue = ga.peek_evaluate(group_index)?;
-                if add_columns {
-                    columns.push(create_builder(&v));
-                    assert_eq!(i + 1, columns.len());
-                }
-                append_value(&mut *columns[i], &v)?;
+            for ga in &mut groups_accumulators {
+                let value = ga.evaluate(EmitTo::All)?;
+                columns.push(value);
             }
         }
     }
-    Ok(())
+    Ok(columns)
 }
 
 /// returns a vector of ArrayRefs, where each entry corresponds to either the

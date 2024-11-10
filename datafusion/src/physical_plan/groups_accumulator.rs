@@ -18,9 +18,7 @@
 //! Vectorized [`GroupsAccumulator`]
 
 use crate::error::{DataFusionError, Result};
-use crate::scalar::ScalarValue;
 use arrow::array::{ArrayRef, BooleanArray};
-use smallvec::SmallVec;
 
 /// From upstream:  This replaces a datafusion_common::{not_impl_err} import.
 macro_rules! not_impl_err {
@@ -194,10 +192,6 @@ pub trait GroupsAccumulator: Send {
     /// `n`. See [`EmitTo::First`] for more details.
     fn evaluate(&mut self, emit_to: EmitTo) -> Result<ArrayRef>;
 
-    // TODO: Remove this?
-    /// evaluate for a particular group index.
-    fn peek_evaluate(&self, group_index: usize) -> Result<ScalarValue>;
-
     /// Returns the intermediate aggregate state for this accumulator,
     /// used for multi-phase grouping, resetting its internal state.
     ///
@@ -215,10 +209,6 @@ pub trait GroupsAccumulator: Send {
     ///
     /// [`Accumulator::state`]: crate::accumulator::Accumulator::state
     fn state(&mut self, emit_to: EmitTo) -> Result<Vec<ArrayRef>>;
-
-    // TODO: Remove this?
-    /// Looks at the state for a particular group index.
-    fn peek_state(&self, group_index: usize) -> Result<SmallVec<[ScalarValue; 2]>>;
 
     /// Merges intermediate state (the output from [`Self::state`])
     /// into this accumulator's current state.

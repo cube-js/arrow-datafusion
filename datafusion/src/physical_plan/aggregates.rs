@@ -144,7 +144,7 @@ pub fn create_aggregate_expr(
             ))
         }
         (AggregateFunction::Sum, false) => {
-            Arc::new(expressions::Sum::new(arg, name, return_type))
+            Arc::new(expressions::Sum::new(arg, name, return_type, &arg_types[0]))
         }
         (AggregateFunction::Sum, true) => {
             return Err(DataFusionError::NotImplemented(

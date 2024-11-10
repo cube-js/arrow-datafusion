@@ -245,7 +245,8 @@ impl ExecutionPlan for CrossJoinAggExec {
             &AggregateMode::Full,
             self.group_expr.len(),
         )?;
-        let mut accumulators = create_accumulation_state(&self.agg_expr)?;
+        let mut accumulators: hash_aggregate::AccumulationState =
+            create_accumulation_state(&self.agg_expr)?;
         for partition in 0..self.join.right.output_partitioning().partition_count() {
             let mut batches = self.join.right.execute(partition).await?;
             while let Some(right) = batches.next().await {
@@ -273,7 +274,7 @@ impl ExecutionPlan for CrossJoinAggExec {
         let out_schema = self.schema.clone();
         let r = hash_aggregate::create_batch_from_map(
             &AggregateMode::Full,
-            &accumulators,
+            accumulators,
             self.group_expr.len(),
             &out_schema,
         )?;

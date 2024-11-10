@@ -33,7 +33,6 @@ use arrow::{
     compute,
     datatypes::UInt32Type,
 };
-use smallvec::SmallVec;
 
 /// An adapter that implements [`GroupsAccumulator`] for any [`Accumulator`]
 ///
@@ -345,10 +344,6 @@ impl GroupsAccumulator for GroupsAccumulatorAdapter {
         result
     }
 
-    fn peek_evaluate(&self, group_index: usize) -> Result<ScalarValue> {
-        self.states[group_index].accumulator.evaluate()
-    }
-
     // filtered_null_mask(opt_filter, &values);
     fn state(&mut self, emit_to: EmitTo) -> Result<Vec<ArrayRef>> {
         let vec_size_pre = self.states.allocated_size();
@@ -383,10 +378,6 @@ impl GroupsAccumulator for GroupsAccumulatorAdapter {
         self.adjust_allocation(vec_size_pre, self.states.allocated_size());
 
         Ok(arrays)
-    }
-
-    fn peek_state(&self, group_index: usize) -> Result<SmallVec<[ScalarValue; 2]>> {
-        self.states[group_index].accumulator.state()
     }
 
     fn merge_batch(
