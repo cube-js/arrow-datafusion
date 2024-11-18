@@ -22,6 +22,8 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::error::{DataFusionError, Result};
+use crate::physical_plan::groups_accumulator::GroupsAccumulator;
+use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use arrow::compute;
@@ -97,6 +99,21 @@ impl AggregateExpr for Max {
 
     fn create_accumulator(&self) -> Result<Box<dyn Accumulator>> {
         Ok(Box::new(MaxAccumulator::try_new(&self.data_type)?))
+    }
+
+    fn uses_groups_accumulator(&self) -> bool {
+        return true;
+    }
+
+    fn create_groups_accumulator(
+        &self,
+    ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
+        let data_type = self.data_type.clone();
+        Ok(Some(Box::new(
+            GroupsAccumulatorFlatAdapter::<MaxAccumulator>::new(move || {
+                MaxAccumulator::try_new(&data_type)
+            }),
+        )))
     }
 
     fn name(&self) -> &str {
@@ -521,6 +538,21 @@ impl AggregateExpr for Min {
 
     fn create_accumulator(&self) -> Result<Box<dyn Accumulator>> {
         Ok(Box::new(MinAccumulator::try_new(&self.data_type)?))
+    }
+
+    fn uses_groups_accumulator(&self) -> bool {
+        return true;
+    }
+
+    fn create_groups_accumulator(
+        &self,
+    ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
+        let data_type = self.data_type.clone();
+        Ok(Some(Box::new(
+            GroupsAccumulatorFlatAdapter::<MinAccumulator>::new(move || {
+                MinAccumulator::try_new(&data_type)
+            }),
+        )))
     }
 
     fn name(&self) -> &str {

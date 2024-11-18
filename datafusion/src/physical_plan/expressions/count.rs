@@ -21,6 +21,8 @@ use std::any::Any;
 use std::sync::Arc;
 
 use crate::error::Result;
+use crate::physical_plan::groups_accumulator::GroupsAccumulator;
+use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use arrow::compute;
@@ -88,6 +90,20 @@ impl AggregateExpr for Count {
 
     fn create_accumulator(&self) -> Result<Box<dyn Accumulator>> {
         Ok(Box::new(CountAccumulator::new()))
+    }
+
+    fn uses_groups_accumulator(&self) -> bool {
+        return true;
+    }
+
+    fn create_groups_accumulator(
+        &self,
+    ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
+        Ok(Some(Box::new(GroupsAccumulatorFlatAdapter::<
+            CountAccumulator,
+        >::new(move || {
+            Ok(CountAccumulator::new())
+        }))))
     }
 
     fn name(&self) -> &str {

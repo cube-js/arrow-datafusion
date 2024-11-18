@@ -124,8 +124,6 @@ impl AggregateExpr for Sum {
         return true;
     }
 
-    /// the groups accumulator used to accumulate values from the expression.  If this returns None,
-    /// create_accumulator must be used.
     fn create_groups_accumulator(
         &self,
     ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {

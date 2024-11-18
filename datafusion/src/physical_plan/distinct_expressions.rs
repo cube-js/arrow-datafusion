@@ -27,6 +27,8 @@ use arrow::datatypes::{DataType, Field};
 
 use crate::error::{DataFusionError, Result};
 use crate::physical_plan::group_scalar::GroupByScalar;
+use crate::physical_plan::groups_accumulator::GroupsAccumulator;
+use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use itertools::Itertools;
@@ -120,6 +122,26 @@ impl AggregateExpr for DistinctCount {
             state_data_types: self.state_data_types.clone(),
             count_data_type: self.data_type.clone(),
         }))
+    }
+
+    fn uses_groups_accumulator(&self) -> bool {
+        return true;
+    }
+
+    fn create_groups_accumulator(
+        &self,
+    ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
+        let state_data_types = self.state_data_types.clone();
+        let count_data_type = self.data_type.clone();
+        Ok(Some(Box::new(GroupsAccumulatorFlatAdapter::<
+            DistinctCountAccumulator,
+        >::new(move || {
+            Ok(DistinctCountAccumulator {
+                values: HashSet::default(),
+                state_data_types: state_data_types.clone(),
+                count_data_type: count_data_type.clone(),
+            })
+        }))))
     }
 
     fn name(&self) -> &str {

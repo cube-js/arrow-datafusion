@@ -259,7 +259,6 @@ impl ExecutionPlan for CrossJoinAggExec {
                         accumulators = hash_aggregate::group_aggregate_batch(
                             &AggregateMode::Full,
                             &group_expr,
-                            &self.agg_expr,
                             joined,
                             std::mem::take(&mut accumulators),
                             &aggs,
