@@ -408,16 +408,17 @@ pin_project! {
     }
 }
 
-// TODO: _aggr_expr is currently unused; it's kept for perhaps, debugging usage, but probably just remove it.
 pub(crate) fn group_aggregate_batch(
     mode: &AggregateMode,
     group_expr: &[Arc<dyn PhysicalExpr>],
-    _aggr_expr: &[Arc<dyn AggregateExpr>],
     batch: RecordBatch,
     mut accumulation_state: AccumulationState,
     aggregate_expressions: &[Vec<Arc<dyn PhysicalExpr>>],
     skip_row: impl Fn(&RecordBatch, /*row_index*/ usize) -> bool,
 ) -> Result<AccumulationState> {
+    // Note: There is some parallel array &[Arc<dyn AggregateExpr>] that simply isn't passed to this
+    // function, but which exists and might be useful.
+
     // evaluate the grouping expressions
     let group_values = evaluate(group_expr, &batch)?;
 
@@ -813,7 +814,6 @@ async fn compute_grouped_hash_aggregate(
         accumulators = group_aggregate_batch(
             &mode,
             &group_expr,
-            &aggr_expr,
             batch,
             accumulators,
             &aggregate_expressions,

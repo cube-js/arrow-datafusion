@@ -27,15 +27,14 @@ use arrow::datatypes::{DataType, Field};
 
 use crate::error::{DataFusionError, Result};
 use crate::physical_plan::group_scalar::GroupByScalar;
+use crate::physical_plan::groups_accumulator::GroupsAccumulator;
+use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
-
-use super::groups_accumulator::GroupsAccumulator;
-use super::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 struct DistinctScalarValues(Vec<GroupByScalar>);
