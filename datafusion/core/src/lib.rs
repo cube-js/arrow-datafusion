@@ -610,6 +610,14 @@ pub mod variable {
     pub use datafusion_expr::var_provider::{VarProvider, VarType};
 }
 
+pub mod cube_ext {
+    pub use datafusion_physical_plan::cube_ext::*;
+}
+
+pub mod dfschema {
+    pub use datafusion_common::*;
+}
+
 #[cfg(test)]
 pub mod test;
 pub mod test_util;
