@@ -463,16 +463,15 @@ pub(crate) fn group_aggregate_batch(
             // 1.2
             .or_insert_with(|| {
                 batch_keys.append_value(&key).expect("must not fail");
+                // Note that we still use plain String objects in GroupByScalar.  Thus flattened_group_by_values isn't that great.
                 let _ = create_group_by_values(&group_values, row, &mut group_by_values);
-                let mut taken_values =
-                    smallvec![GroupByScalar::UInt32(0); group_values.len()];
-                std::mem::swap(&mut taken_values, &mut group_by_values);
+                accumulation_state.flattened_group_by_values.extend(
+                    group_by_values.iter_mut().map(|x| std::mem::replace(x, GroupByScalar::UInt32(0))));
                 let group_index = accumulation_state.next_group_index;
                 accumulation_state.next_group_index += 1;
                 (
                     key.clone(),
                     AccumulationGroupState {
-                        group_by_values: taken_values,
                         indices: smallvec![row as u32],
                         group_index,
                     },
@@ -884,7 +883,6 @@ pub type Accumulators = HashMap<KeyVec, AccumulationGroupState, RandomState>;
 
 #[allow(missing_docs)]
 pub struct AccumulationGroupState {
-    group_by_values: SmallVec<[GroupByScalar; 2]>,
     indices: SmallVec<[u32; 4]>,
     group_index: usize,
 }
@@ -893,6 +891,8 @@ pub struct AccumulationGroupState {
 #[derive(Default)]
 pub struct AccumulationState {
     accumulators: HashMap<KeyVec, AccumulationGroupState, RandomState>,
+    // Of length accumulators.len() * N where N is the number of group by columns.
+    flattened_group_by_values: Vec<GroupByScalar>,
     groups_accumulators: Vec<Box<dyn GroupsAccumulator>>,
     // For now, always equal to accumulators.len()
     next_group_index: usize,
@@ -905,6 +905,7 @@ impl AccumulationState {
     ) -> AccumulationState {
         AccumulationState {
             accumulators: HashMap::new(),
+            flattened_group_by_values: Vec::new(),
             groups_accumulators,
             next_group_index: 0,
         }
@@ -1174,12 +1175,13 @@ pub(crate) fn create_batch_from_map(
     for (
         _,
         AccumulationGroupState {
-            group_by_values,
             group_index,
             ..
         },
     ) in &accumulation_state.accumulators
     {
+        let group_by_values: &[GroupByScalar] = &accumulation_state.flattened_group_by_values[num_group_expr * group_index..num_group_expr * (group_index + 1)];
+
         // 2 and 3.
         write_group_result_row_with_groups_accumulator(
             *mode,
