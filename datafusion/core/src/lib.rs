@@ -819,6 +819,16 @@ pub mod variable {
     pub use datafusion_expr::var_provider::{VarProvider, VarType};
 }
 
+/// cube extension
+pub mod cube_ext {
+    pub use datafusion_physical_plan::cube_ext::*;
+}
+
+/// exposed by Cube
+pub mod dfschema {
+    pub use datafusion_common::*;
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod test;
 

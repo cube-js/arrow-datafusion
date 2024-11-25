@@ -719,6 +719,7 @@ pub fn comparison_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<D
         .or_else(|| list_coercion(lhs_type, rhs_type))
         .or_else(|| null_coercion(lhs_type, rhs_type))
         .or_else(|| string_numeric_coercion(lhs_type, rhs_type))
+        .or_else(|| string_boolean_coercion(lhs_type, rhs_type))
         .or_else(|| string_temporal_coercion(lhs_type, rhs_type))
         .or_else(|| binary_coercion(lhs_type, rhs_type))
         .or_else(|| struct_coercion(lhs_type, rhs_type))
@@ -777,6 +778,19 @@ fn string_numeric_coercion_as_numeric(
     }
 
     None
+}
+
+/// Coerce `lhs_type` and `rhs_type` to a common type for the purposes of a comparison operation
+/// where one is boolean and one is `Utf8`/`LargeUtf8`.
+fn string_boolean_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
+    use arrow::datatypes::DataType::*;
+    match (lhs_type, rhs_type) {
+        (Utf8, Boolean) => Some(Utf8),
+        (LargeUtf8, Boolean) => Some(LargeUtf8),
+        (Boolean, Utf8) => Some(Utf8),
+        (Boolean, LargeUtf8) => Some(LargeUtf8),
+        _ => None,
+    }
 }
 
 /// Coerce `lhs_type` and `rhs_type` to a common type for the purposes of a comparison operation

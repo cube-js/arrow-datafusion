@@ -63,6 +63,9 @@ log = { workspace = true }
 parking_lot = { workspace = true }
 pin-project-lite = "^0.2.7"
 tokio = { workspace = true }
+serde = { version = "1.0.214", features = ["derive"] }
+tracing = "0.1.25"
+tracing-futures = { version = "0.2.5" }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_futures"] }
