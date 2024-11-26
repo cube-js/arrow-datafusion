@@ -24,10 +24,11 @@ use std::sync::Arc;
 use crate::error::{DataFusionError, Result};
 use crate::physical_plan::groups_accumulator::GroupsAccumulator;
 use crate::physical_plan::groups_accumulator_flat_adapter::GroupsAccumulatorFlatAdapter;
+use crate::physical_plan::groups_accumulator_prim_op::PrimitiveGroupsAccumulator;
 use crate::physical_plan::{Accumulator, AggregateExpr, PhysicalExpr};
 use crate::scalar::ScalarValue;
 use arrow::compute;
-use arrow::datatypes::{DataType, TimeUnit};
+use arrow::datatypes::{ArrowPrimitiveType, DataType, TimeUnit};
 use arrow::{
     array::{
         ArrayRef, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
@@ -108,12 +109,90 @@ impl AggregateExpr for Max {
     fn create_groups_accumulator(
         &self,
     ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
-        let data_type = self.data_type.clone();
-        Ok(Some(Box::new(
-            GroupsAccumulatorFlatAdapter::<MaxAccumulator>::new(move || {
-                MaxAccumulator::try_new(&data_type)
-            }),
-        )))
+        macro_rules! make_max_accumulator {
+            ($T:ty) => {
+                Box::new(
+                    PrimitiveGroupsAccumulator::<$T, $T, _, _>::new(
+                        &<$T as ArrowPrimitiveType>::DATA_TYPE,
+                        |x: &mut <$T as ArrowPrimitiveType>::Native,
+                         y: <$T as ArrowPrimitiveType>::Native| {
+                            *x = (*x).max(y);
+                        },
+                        |x: &mut <$T as ArrowPrimitiveType>::Native,
+                         y: <$T as ArrowPrimitiveType>::Native| {
+                            *x = (*x).max(y);
+                        },
+                    )
+                    .with_starting_value(<$T as ArrowPrimitiveType>::Native::MIN),
+                )
+            };
+        }
+        let acc: Box<dyn GroupsAccumulator> = match &self.data_type {
+            DataType::Float64 => make_max_accumulator!(arrow::datatypes::Float64Type),
+            DataType::Float32 => make_max_accumulator!(arrow::datatypes::Float32Type),
+            DataType::Int64 => make_max_accumulator!(arrow::datatypes::Int64Type),
+            DataType::Int96 => make_max_accumulator!(arrow::datatypes::Int96Type),
+            DataType::Int64Decimal(0) => {
+                make_max_accumulator!(arrow::datatypes::Int64Decimal0Type)
+            }
+            DataType::Int64Decimal(1) => {
+                make_max_accumulator!(arrow::datatypes::Int64Decimal1Type)
+            }
+            DataType::Int64Decimal(2) => {
+                make_max_accumulator!(arrow::datatypes::Int64Decimal2Type)
+            }
+            DataType::Int64Decimal(3) => {
+                make_max_accumulator!(arrow::datatypes::Int64Decimal3Type)
+            }
+            DataType::Int64Decimal(4) => {
+                make_max_accumulator!(arrow::datatypes::Int64Decimal4Type)
+            }
+            DataType::Int64Decimal(5) => {
+                make_max_accumulator!(arrow::datatypes::Int64Decimal5Type)
+            }
+            DataType::Int64Decimal(10) => {
+                make_max_accumulator!(arrow::datatypes::Int64Decimal10Type)
+            }
+            DataType::Int96Decimal(0) => {
+                make_max_accumulator!(arrow::datatypes::Int96Decimal0Type)
+            }
+            DataType::Int96Decimal(1) => {
+                make_max_accumulator!(arrow::datatypes::Int96Decimal1Type)
+            }
+            DataType::Int96Decimal(2) => {
+                make_max_accumulator!(arrow::datatypes::Int96Decimal2Type)
+            }
+            DataType::Int96Decimal(3) => {
+                make_max_accumulator!(arrow::datatypes::Int96Decimal3Type)
+            }
+            DataType::Int96Decimal(4) => {
+                make_max_accumulator!(arrow::datatypes::Int96Decimal4Type)
+            }
+            DataType::Int96Decimal(5) => {
+                make_max_accumulator!(arrow::datatypes::Int96Decimal5Type)
+            }
+            DataType::Int96Decimal(10) => {
+                make_max_accumulator!(arrow::datatypes::Int96Decimal10Type)
+            }
+            DataType::Int32 => make_max_accumulator!(arrow::datatypes::Int32Type),
+            DataType::Int16 => make_max_accumulator!(arrow::datatypes::Int16Type),
+            DataType::Int8 => make_max_accumulator!(arrow::datatypes::Int8Type),
+            DataType::UInt64 => make_max_accumulator!(arrow::datatypes::UInt64Type),
+            DataType::UInt32 => make_max_accumulator!(arrow::datatypes::UInt32Type),
+            DataType::UInt16 => make_max_accumulator!(arrow::datatypes::UInt16Type),
+            DataType::UInt8 => make_max_accumulator!(arrow::datatypes::UInt8Type),
+            _ => {
+                // Not all types (strings) can use primitive accumulators.  And strings use
+                // max_string as the $OP in typed_min_match_batch.
+
+                // Timestamps presently take this branch.
+                let data_type = self.data_type.clone();
+                Box::new(GroupsAccumulatorFlatAdapter::<MaxAccumulator>::new(
+                    move || MaxAccumulator::try_new(&data_type),
+                ))
+            }
+        };
+        Ok(Some(acc))
     }
 
     fn name(&self) -> &str {
@@ -547,12 +626,91 @@ impl AggregateExpr for Min {
     fn create_groups_accumulator(
         &self,
     ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
-        let data_type = self.data_type.clone();
-        Ok(Some(Box::new(
-            GroupsAccumulatorFlatAdapter::<MinAccumulator>::new(move || {
-                MinAccumulator::try_new(&data_type)
-            }),
-        )))
+        macro_rules! make_min_accumulator {
+            ($T:ty) => {
+                Box::new(
+                    PrimitiveGroupsAccumulator::<$T, $T, _, _>::new(
+                        &<$T as ArrowPrimitiveType>::DATA_TYPE,
+                        |x: &mut <$T as ArrowPrimitiveType>::Native,
+                         y: <$T as ArrowPrimitiveType>::Native| {
+                            *x = (*x).min(y);
+                        },
+                        |x: &mut <$T as ArrowPrimitiveType>::Native,
+                         y: <$T as ArrowPrimitiveType>::Native| {
+                            *x = (*x).min(y);
+                        },
+                    )
+                    .with_starting_value(<$T as ArrowPrimitiveType>::Native::MAX),
+                )
+            };
+        }
+
+        let acc: Box<dyn GroupsAccumulator> = match &self.data_type {
+            DataType::Float64 => make_min_accumulator!(arrow::datatypes::Float64Type),
+            DataType::Float32 => make_min_accumulator!(arrow::datatypes::Float32Type),
+            DataType::Int64 => make_min_accumulator!(arrow::datatypes::Int64Type),
+            DataType::Int96 => make_min_accumulator!(arrow::datatypes::Int96Type),
+            DataType::Int64Decimal(0) => {
+                make_min_accumulator!(arrow::datatypes::Int64Decimal0Type)
+            }
+            DataType::Int64Decimal(1) => {
+                make_min_accumulator!(arrow::datatypes::Int64Decimal1Type)
+            }
+            DataType::Int64Decimal(2) => {
+                make_min_accumulator!(arrow::datatypes::Int64Decimal2Type)
+            }
+            DataType::Int64Decimal(3) => {
+                make_min_accumulator!(arrow::datatypes::Int64Decimal3Type)
+            }
+            DataType::Int64Decimal(4) => {
+                make_min_accumulator!(arrow::datatypes::Int64Decimal4Type)
+            }
+            DataType::Int64Decimal(5) => {
+                make_min_accumulator!(arrow::datatypes::Int64Decimal5Type)
+            }
+            DataType::Int64Decimal(10) => {
+                make_min_accumulator!(arrow::datatypes::Int64Decimal10Type)
+            }
+            DataType::Int96Decimal(0) => {
+                make_min_accumulator!(arrow::datatypes::Int96Decimal0Type)
+            }
+            DataType::Int96Decimal(1) => {
+                make_min_accumulator!(arrow::datatypes::Int96Decimal1Type)
+            }
+            DataType::Int96Decimal(2) => {
+                make_min_accumulator!(arrow::datatypes::Int96Decimal2Type)
+            }
+            DataType::Int96Decimal(3) => {
+                make_min_accumulator!(arrow::datatypes::Int96Decimal3Type)
+            }
+            DataType::Int96Decimal(4) => {
+                make_min_accumulator!(arrow::datatypes::Int96Decimal4Type)
+            }
+            DataType::Int96Decimal(5) => {
+                make_min_accumulator!(arrow::datatypes::Int96Decimal5Type)
+            }
+            DataType::Int96Decimal(10) => {
+                make_min_accumulator!(arrow::datatypes::Int96Decimal10Type)
+            }
+            DataType::Int32 => make_min_accumulator!(arrow::datatypes::Int32Type),
+            DataType::Int16 => make_min_accumulator!(arrow::datatypes::Int16Type),
+            DataType::Int8 => make_min_accumulator!(arrow::datatypes::Int8Type),
+            DataType::UInt64 => make_min_accumulator!(arrow::datatypes::UInt64Type),
+            DataType::UInt32 => make_min_accumulator!(arrow::datatypes::UInt32Type),
+            DataType::UInt16 => make_min_accumulator!(arrow::datatypes::UInt16Type),
+            DataType::UInt8 => make_min_accumulator!(arrow::datatypes::UInt8Type),
+            _ => {
+                // Not all types (strings) can use primitive accumulators.  And strings use
+                // min_string as the $OP in typed_min_match_batch.
+
+                // Timestamps presently take this branch.
+                let data_type = self.data_type.clone();
+                Box::new(GroupsAccumulatorFlatAdapter::<MinAccumulator>::new(
+                    move || MinAccumulator::try_new(&data_type),
+                ))
+            }
+        };
+        Ok(Some(acc))
     }
 
     fn name(&self) -> &str {
