@@ -18,8 +18,8 @@
 //! Defines physical expressions that can evaluated at runtime during query execution
 
 use std::any::Any;
-use std::sync::Arc;
 use std::mem::size_of;
+use std::sync::Arc;
 
 use crate::error::{DataFusionError, Result};
 use crate::physical_plan::groups_accumulator::{EmitTo, GroupsAccumulator};

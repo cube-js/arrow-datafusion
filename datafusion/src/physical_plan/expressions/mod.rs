@@ -121,7 +121,14 @@ impl PhysicalSortExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{error::Result, physical_plan::AggregateExpr, scalar::ScalarValue};
+    use crate::{
+        error::Result,
+        physical_plan::{
+            groups_accumulator::{EmitTo, GroupsAccumulator},
+            AggregateExpr,
+        },
+        scalar::ScalarValue,
+    };
 
     /// macro to perform an aggregation and verify the result.
     #[macro_export]
@@ -158,5 +165,47 @@ mod tests {
             .collect::<Result<Vec<_>>>()?;
         accum.update_batch(&values)?;
         accum.evaluate()
+    }
+
+    /// macro to perform a grouped aggregation and verify the result.
+    #[macro_export]
+    macro_rules! generic_grouped_test_op {
+        ($ARRAY:expr, $DATATYPE:expr, $OP:ident, $EXPECTED:expr, $EXPECTED_DATATYPE:expr) => {{
+            let schema = Schema::new(vec![Field::new("a", $DATATYPE, false)]);
+
+            let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![$ARRAY])?;
+
+            let agg = Arc::new(<$OP>::new(
+                col("a", &schema)?,
+                "bla".to_string(),
+                $EXPECTED_DATATYPE,
+            ));
+            let actual = grouped_aggregate(&batch, agg)?;
+            let expected = ScalarValue::from($EXPECTED);
+
+            assert_eq!(expected, actual);
+
+            Ok(())
+        }};
+    }
+
+    pub fn grouped_aggregate(
+        batch: &RecordBatch,
+        agg: Arc<dyn AggregateExpr>,
+    ) -> Result<ScalarValue> {
+        let accum = agg.create_groups_accumulator()?;
+        let mut accum: Box<dyn GroupsAccumulator> =
+            accum.ok_or(DataFusionError::Internal(
+                "create_groups_accumulator not supported".to_owned(),
+            ))?;
+        let expr = agg.expressions();
+        let values = expr
+            .iter()
+            .map(|e| e.evaluate(batch))
+            .map(|r| r.map(|v| v.into_array(batch.num_rows())))
+            .collect::<Result<Vec<_>>>()?;
+        accum.update_batch(&values, &vec![0; values[0].len()], None, 1)?;
+        let results = accum.evaluate(EmitTo::All)?;
+        ScalarValue::try_from_array(&results, 0)
     }
 }

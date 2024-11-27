@@ -17,6 +17,7 @@
 
 //! Defines physical expressions that can evaluated at runtime during query execution
 
+use core::{f32, f64};
 use std::any::Any;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -111,6 +112,9 @@ impl AggregateExpr for Max {
     ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
         macro_rules! make_max_accumulator {
             ($T:ty) => {
+                make_max_accumulator!($T, <$T as ArrowPrimitiveType>::Native::MIN)
+            };
+            ($T:ty, $STARTING_VALUE:expr) => {
                 Box::new(
                     PrimitiveGroupsAccumulator::<$T, $T, _, _>::new(
                         &<$T as ArrowPrimitiveType>::DATA_TYPE,
@@ -123,13 +127,17 @@ impl AggregateExpr for Max {
                             *x = (*x).max(y);
                         },
                     )
-                    .with_starting_value(<$T as ArrowPrimitiveType>::Native::MIN),
+                    .with_starting_value($STARTING_VALUE),
                 )
             };
         }
         let acc: Box<dyn GroupsAccumulator> = match &self.data_type {
-            DataType::Float64 => make_max_accumulator!(arrow::datatypes::Float64Type),
-            DataType::Float32 => make_max_accumulator!(arrow::datatypes::Float32Type),
+            DataType::Float64 => {
+                make_max_accumulator!(arrow::datatypes::Float64Type, f64::NEG_INFINITY)
+            }
+            DataType::Float32 => {
+                make_max_accumulator!(arrow::datatypes::Float32Type, f32::NEG_INFINITY)
+            }
             DataType::Int64 => make_max_accumulator!(arrow::datatypes::Int64Type),
             DataType::Int96 => make_max_accumulator!(arrow::datatypes::Int96Type),
             DataType::Int64Decimal(0) => {
@@ -628,6 +636,9 @@ impl AggregateExpr for Min {
     ) -> arrow::error::Result<Option<Box<dyn GroupsAccumulator>>> {
         macro_rules! make_min_accumulator {
             ($T:ty) => {
+                make_min_accumulator!($T, <$T as ArrowPrimitiveType>::Native::MAX)
+            };
+            ($T:ty, $STARTING_VALUE:expr) => {
                 Box::new(
                     PrimitiveGroupsAccumulator::<$T, $T, _, _>::new(
                         &<$T as ArrowPrimitiveType>::DATA_TYPE,
@@ -640,14 +651,18 @@ impl AggregateExpr for Min {
                             *x = (*x).min(y);
                         },
                     )
-                    .with_starting_value(<$T as ArrowPrimitiveType>::Native::MAX),
+                    .with_starting_value($STARTING_VALUE),
                 )
             };
         }
 
         let acc: Box<dyn GroupsAccumulator> = match &self.data_type {
-            DataType::Float64 => make_min_accumulator!(arrow::datatypes::Float64Type),
-            DataType::Float32 => make_min_accumulator!(arrow::datatypes::Float32Type),
+            DataType::Float64 => {
+                make_min_accumulator!(arrow::datatypes::Float64Type, f64::INFINITY)
+            }
+            DataType::Float32 => {
+                make_min_accumulator!(arrow::datatypes::Float32Type, f32::INFINITY)
+            }
             DataType::Int64 => make_min_accumulator!(arrow::datatypes::Int64Type),
             DataType::Int96 => make_min_accumulator!(arrow::datatypes::Int96Type),
             DataType::Int64Decimal(0) => {
@@ -770,9 +785,13 @@ impl Accumulator for MinAccumulator {
 
 #[cfg(test)]
 mod tests {
+    use core::f64;
+
     use super::*;
+    use crate::generic_grouped_test_op;
     use crate::physical_plan::expressions::col;
     use crate::physical_plan::expressions::tests::aggregate;
+    use crate::physical_plan::expressions::tests::grouped_aggregate;
     use crate::{error::Result, generic_test_op};
     use arrow::datatypes::*;
     use arrow::record_batch::RecordBatch;
@@ -975,6 +994,30 @@ mod tests {
     }
 
     #[test]
+    fn max_f64_infinity() -> Result<()> {
+        let a: ArrayRef = Arc::new(Float64Array::from(vec![f64::NEG_INFINITY]));
+        generic_test_op!(
+            a,
+            DataType::Float64,
+            Max,
+            ScalarValue::from(f64::NEG_INFINITY),
+            DataType::Float64
+        )
+    }
+
+    #[test]
+    fn max_f64_infinity_grouped() -> Result<()> {
+        let a: ArrayRef = Arc::new(Float64Array::from(vec![f64::NEG_INFINITY]));
+        generic_grouped_test_op!(
+            a,
+            DataType::Float64,
+            Max,
+            ScalarValue::from(f64::NEG_INFINITY),
+            DataType::Float64
+        )
+    }
+
+    #[test]
     fn min_f64() -> Result<()> {
         let a: ArrayRef =
             Arc::new(Float64Array::from(vec![1_f64, 2_f64, 3_f64, 4_f64, 5_f64]));
@@ -983,6 +1026,30 @@ mod tests {
             DataType::Float64,
             Min,
             ScalarValue::from(1_f64),
+            DataType::Float64
+        )
+    }
+
+    #[test]
+    fn min_f64_infinity() -> Result<()> {
+        let a: ArrayRef = Arc::new(Float64Array::from(vec![f64::INFINITY]));
+        generic_test_op!(
+            a,
+            DataType::Float64,
+            Min,
+            ScalarValue::from(f64::INFINITY),
+            DataType::Float64
+        )
+    }
+
+    #[test]
+    fn min_f64_infinity_grouped() -> Result<()> {
+        let a: ArrayRef = Arc::new(Float64Array::from(vec![f64::INFINITY]));
+        generic_grouped_test_op!(
+            a,
+            DataType::Float64,
+            Min,
+            ScalarValue::from(f64::INFINITY),
             DataType::Float64
         )
     }
