@@ -732,7 +732,7 @@ impl AsLogicalPlan for LogicalPlanNode {
                     )));
                 }
 
-                let first = input_plans.pop().ok_or_else(|| DataFusionError::Internal(String::from(
+                let first = input_plans.drain(0..1).into_iter().next().ok_or_else(|| DataFusionError::Internal(String::from(
                     "Protobuf deserialization error, Union was require at least two input.",
                 )))?;
                 let mut builder = LogicalPlanBuilder::from(first);
