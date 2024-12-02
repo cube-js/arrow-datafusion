@@ -480,7 +480,19 @@ impl AsLogicalPlan for LogicalPlanNode {
                     into_logical_plan!(sort.input, ctx, extension_codec)?;
                 let sort_expr: Vec<SortExpr> =
                     from_proto::parse_sorts(&sort.expr, ctx, extension_codec)?;
-                LogicalPlanBuilder::from(input).sort(sort_expr)?.build()
+                let fetch = if sort.fetch < 0 {
+                    None
+                } else {
+                    Some(sort.fetch as usize)
+                };
+
+                match LogicalPlanBuilder::from(input).sort(sort_expr)?.build()? {
+                    LogicalPlan::Sort(mut sort) => {
+                        sort.fetch = fetch;
+                        Ok(LogicalPlan::Sort(sort))
+                    }
+                    p => LogicalPlanBuilder::from(p).limit(0, fetch)?.build()
+                }
             }
             LogicalPlanType::Repartition(repartition) => {
                 use datafusion::logical_expr::Partitioning;
