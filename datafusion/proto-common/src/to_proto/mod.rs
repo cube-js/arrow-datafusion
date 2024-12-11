@@ -225,7 +225,7 @@ impl From<Column> for protobuf::Column {
     fn from(c: Column) -> Self {
         Self {
             relation: c.relation.map(|relation| protobuf::ColumnRelation {
-                relation: relation.to_string(),
+                relation: relation.to_quoted_string(),
             }),
             name: c.name,
         }

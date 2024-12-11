@@ -53,8 +53,7 @@ use datafusion::test_util::{TestTableFactory, TestTableProvider};
 use datafusion_common::config::TableOptions;
 use datafusion_common::scalar::ScalarStructBuilder;
 use datafusion_common::{
-    internal_datafusion_err, internal_err, not_impl_err, plan_err, DFSchema, DFSchemaRef,
-    DataFusionError, Result, ScalarValue, TableReference,
+    internal_datafusion_err, internal_err, not_impl_err, plan_err, DFSchema, DFSchemaRef, DataFusionError, Result, ScalarValue, TableReference
 };
 use datafusion_expr::dml::CopyTo;
 use datafusion_expr::expr::{
@@ -136,6 +135,68 @@ async fn roundtrip_logical_plan() -> Result<()> {
     assert_eq!(format!("{topk_plan:?}"), format!("{logical_round_trip:?}"));
     Ok(())
 }
+
+async fn run_simple_roundtrip_with_table_name(table_name: &str) -> Result<()> {
+    let ctx = SessionContext::new();
+    ctx.register_csv(table_name, "tests/testdata/test.csv", CsvReadOptions::default())
+        .await?;
+    let scan = ctx.table(format!("`{}`", table_name)).await?
+        .into_optimized_plan()?;
+    let proj_scan = LogicalPlan::Projection(datafusion_expr::Projection::try_new(vec![col(&format!("`{}`.a", table_name)), col(&format!("`{}`.b", table_name))], Arc::new(scan))?);
+    let extension_codec = TopKExtensionCodec {};
+    let bytes = logical_plan_to_bytes_with_extension_codec(&proj_scan, &extension_codec)?;
+    let logical_round_trip =
+        logical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &extension_codec)?;
+    let formatted_proj_scan = format!("{proj_scan:?}");
+    // Sanity check that formatting includes the table name.
+    assert!(formatted_proj_scan.contains(table_name));
+    assert_eq!(formatted_proj_scan, format!("{logical_round_trip:?}"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn roundtrip_logical_plan_noncapitalized() -> Result<()> {
+    run_simple_roundtrip_with_table_name("table1").await
+}
+
+#[tokio::test]
+async fn roundtrip_logical_plan_capitalized() -> Result<()> {
+    run_simple_roundtrip_with_table_name("Table1").await
+}
+
+async fn run_roundtrip_with_column_names(table_name: &str, column_name: &str) -> Result<()> {
+    let ctx = SessionContext::new();
+    ctx.register_csv(table_name, "tests/testdata/test.csv", CsvReadOptions::default())
+        .await?;
+    let scan = ctx.table(format!("`{}`", table_name)).await?
+        .into_optimized_plan()?;
+    println!("Constructed scan");
+    let proj_scan = LogicalPlan::Projection(datafusion_expr::Projection::try_new(vec![col(&format!("`{}`.a", table_name)).alias(column_name), col(&format!("`{}`.b", table_name))], Arc::new(scan))?);
+    println!("Constructed proj_scan");
+    let proj_scan_ii = LogicalPlan::Projection(datafusion_expr::Projection::try_new(vec![col(&format!("`{}`", column_name)), col(&format!("`{}`.b", table_name))], Arc::new(proj_scan))?);
+    println!("Constructed proj_scan_ii");
+    let extension_codec = TopKExtensionCodec {};
+    let bytes = logical_plan_to_bytes_with_extension_codec(&proj_scan_ii, &extension_codec)?;
+    let logical_round_trip =
+        logical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &extension_codec)?;
+    let formatted_proj_scan = format!("{proj_scan_ii:?}");
+    // Sanity check that formatting includes the table name.
+    assert!(formatted_proj_scan.contains(table_name));
+    assert!(formatted_proj_scan.contains(column_name));
+    assert_eq!(formatted_proj_scan, format!("{logical_round_trip:?}"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn roundtrip_logical_plan_noncapitalized_column() -> Result<()> {
+    run_roundtrip_with_column_names("Table1", "alpha").await
+}
+
+#[tokio::test]
+async fn roundtrip_logical_plan_capitalized_column() -> Result<()> {
+    run_roundtrip_with_column_names("Table1", "Alpha").await
+}
+
 
 #[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct TestTableProto {
