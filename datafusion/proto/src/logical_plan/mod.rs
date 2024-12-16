@@ -903,7 +903,7 @@ impl AsLogicalPlan for LogicalPlanNode {
         Self: Sized,
     {
         match plan {
-            LogicalPlan::Values(Values { values, .. }) => {
+            LogicalPlan::Values(Values { values, .. }) => (|values: &Vec<Vec<Expr>>, extension_codec: &dyn LogicalExtensionCodec| -> Result<LogicalPlanNode> {
                 let n_cols = if values.is_empty() {
                     0
                 } else {
@@ -919,14 +919,14 @@ impl AsLogicalPlan for LogicalPlanNode {
                         },
                     )),
                 })
-            }
+            })(values, extension_codec),
             LogicalPlan::TableScan(TableScan {
                 table_name,
                 source,
                 filters,
                 projection,
                 ..
-            }) => {
+            }) => (|table_name: &TableReference, source: &Arc<dyn datafusion_expr::TableSource>, filters: &Vec<Expr>, projection: &Option<Vec<usize>>, extension_codec: &dyn LogicalExtensionCodec| -> Result<LogicalPlanNode> {
                 let provider = source_as_provider(source)?;
                 let schema = provider.schema();
                 let source = provider.as_any();
@@ -1065,7 +1065,7 @@ impl AsLogicalPlan for LogicalPlanNode {
                     };
                     Ok(node)
                 }
-            }
+            })(table_name, source, filters, projection, extension_codec),
             LogicalPlan::Projection(Projection { expr, input, .. }) => {
                 Ok(protobuf::LogicalPlanNode {
                     logical_plan_type: Some(LogicalPlanType::Projection(Box::new(
