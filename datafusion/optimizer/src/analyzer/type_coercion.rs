@@ -1473,10 +1473,21 @@ mod test {
         assert_analyzed_plan_eq(Arc::new(TypeCoercion::new()), plan, expected)?;
 
         let empty = empty_with_type(DataType::Int64);
+        let plan =
+            LogicalPlan::Projection(Projection::try_new(vec![expr.clone()], empty)?);
+        // Cube: We support type conversion for boolean-int comparisons.
+        let expected = "Projection: CAST(a AS Boolean) IS TRUE\n  EmptyRelation";
+        assert_analyzed_plan_eq(Arc::new(TypeCoercion::new()), plan, expected)?;
+        // let ret = assert_analyzed_plan_eq(Arc::new(TypeCoercion::new()), plan, "");
+        // let err = ret.unwrap_err().to_string();
+        // assert!(err.contains("Cannot infer common argument type for comparison operation Int64 IS DISTINCT FROM Boolean"), "{err}");
+
+        // Cube: Add original test case for non-coercion but with a non-numeric type.
+        let empty = empty_with_type(DataType::Binary);
         let plan = LogicalPlan::Projection(Projection::try_new(vec![expr], empty)?);
         let ret = assert_analyzed_plan_eq(Arc::new(TypeCoercion::new()), plan, "");
         let err = ret.unwrap_err().to_string();
-        assert!(err.contains("Cannot infer common argument type for comparison operation Int64 IS DISTINCT FROM Boolean"), "{err}");
+        assert!(err.contains("Cannot infer common argument type for comparison operation Binary IS DISTINCT FROM Boolean"), "{err}");
 
         // is not true
         let expr = col("a").is_not_true();
