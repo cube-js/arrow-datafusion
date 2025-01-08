@@ -713,6 +713,7 @@ pub fn comparison_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<D
         return Some(lhs_type.clone());
     }
     binary_numeric_coercion(lhs_type, rhs_type)
+        .or_else(|| number_boolean_coercion(lhs_type, rhs_type))
         .or_else(|| dictionary_comparison_coercion(lhs_type, rhs_type, true))
         .or_else(|| temporal_coercion_nonstrict_timezone(lhs_type, rhs_type))
         .or_else(|| string_coercion(lhs_type, rhs_type))
@@ -745,6 +746,16 @@ pub fn comparison_coercion_numeric(
         .or_else(|| string_coercion(lhs_type, rhs_type))
         .or_else(|| null_coercion(lhs_type, rhs_type))
         .or_else(|| string_numeric_coercion_as_numeric(lhs_type, rhs_type))
+}
+
+/// Coerce `lhs_type` and `rhs_type` to Boolean when doing a number-vs.-bool comparison.
+fn number_boolean_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
+    use arrow::datatypes::DataType::*;
+    match (lhs_type, rhs_type) {
+        (Boolean, _) if rhs_type.is_numeric() => Some(Boolean),
+        (_, Boolean) if lhs_type.is_numeric() => Some(Boolean),
+        _ => None,
+    }
 }
 
 /// Coerce `lhs_type` and `rhs_type` to a common type for the purposes of a comparison operation
