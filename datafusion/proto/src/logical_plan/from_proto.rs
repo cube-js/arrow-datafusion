@@ -270,7 +270,10 @@ pub fn parse_expr(
             let scalar_value: ScalarValue = literal.try_into()?;
             Ok(Expr::Literal(scalar_value))
         }
-        ExprType::WindowExpr(expr) => {
+        ExprType::WindowExpr(expr) => (|expr: &protobuf::WindowExprNode,
+                                        registry: &dyn FunctionRegistry,
+                                        codec: &dyn LogicalExtensionCodec|
+         -> Result<Expr, Error> {
             let window_function = expr
                 .window_function
                 .as_ref()
@@ -328,7 +331,7 @@ pub fn parse_expr(
                     .map_err(Error::DataFusionError)
                 }
             }
-        }
+        })(expr, registry, codec),
         ExprType::Alias(alias) => Ok(Expr::Alias(Alias::new(
             parse_required_expr(alias.expr.as_deref(), registry, "expr", codec)?,
             alias
