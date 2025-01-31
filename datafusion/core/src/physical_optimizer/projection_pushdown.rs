@@ -217,7 +217,11 @@ fn try_swapping_with_memory(
                 memory.original_schema(),
                 Some(new_projections),
             )
-            .map(|e| Arc::new(e) as _)
+            .map(|e| {
+                // The outer projection should have the correct sort information.
+                let e = e.with_sort_information(projection.properties().equivalence_properties().oeq_class().orderings.clone());
+                Arc::new(e) as _
+            })
         })
         .transpose()
 }
