@@ -64,8 +64,10 @@ impl CoalescePartitionsExec {
     fn compute_properties(input: &Arc<dyn ExecutionPlan>) -> PlanProperties {
         // Coalescing partitions loses existing orderings:
         let mut eq_properties = input.equivalence_properties().clone();
-        eq_properties.clear_orderings();
-        eq_properties.clear_per_partition_constants();
+        if input.output_partitioning().partition_count() > 1 {
+            eq_properties.clear_orderings();
+            eq_properties.clear_per_partition_constants();
+        }
         PlanProperties::new(
             eq_properties,                        // Equivalence Properties
             Partitioning::UnknownPartitioning(1), // Output Partitioning
