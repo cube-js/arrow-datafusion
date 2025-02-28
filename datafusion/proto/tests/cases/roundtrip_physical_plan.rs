@@ -27,6 +27,9 @@ use arrow::csv::WriterBuilder;
 use arrow::datatypes::{Fields, TimeUnit};
 use datafusion::physical_expr::aggregate::AggregateExprBuilder;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
+use datafusion_common::file_options::parquet_writer::{
+    WriterPropertiesConfig, WriterPropertiesCustomizer,
+};
 use datafusion_functions_aggregate::approx_percentile_cont::approx_percentile_cont_udaf;
 use datafusion_functions_aggregate::array_agg::array_agg_udaf;
 use datafusion_functions_aggregate::min_max::max_udaf;
@@ -1239,9 +1242,11 @@ fn roundtrip_parquet_sink() -> Result<()> {
         overwrite: true,
         keep_partition_by_columns: true,
     };
+    let customizer: Arc<dyn WriterPropertiesCustomizer> = WriterPropertiesConfig::noop();
     let data_sink = Arc::new(ParquetSink::new(
         file_sink_config,
         TableParquetOptions::default(),
+        customizer,
     ));
     let sort_order = vec![PhysicalSortRequirement::new(
         Arc::new(Column::new("plan_type", 0)),

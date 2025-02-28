@@ -612,8 +612,12 @@ impl AsyncFileReader for ParquetReaderWithCache {
 
     fn get_metadata(
         &mut self,
+        encryption_config: &Option<
+            datafusion::parquet::file::encryption::ParquetEncryptionConfig,
+        >,
     ) -> BoxFuture<'_, datafusion::parquet::errors::Result<Arc<ParquetMetaData>>> {
         println!("get_metadata: {} returning cached metadata", self.filename);
+        assert!(encryption_config.is_none());
 
         // return the cached metadata so the parquet reader does not read it
         let metadata = self.metadata.clone();

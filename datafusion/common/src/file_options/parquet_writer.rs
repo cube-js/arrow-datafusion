@@ -17,6 +17,8 @@
 
 //! Options related to how parquet files should be written
 
+use std::sync::Arc;
+
 use crate::{
     config::{ParquetOptions, TableParquetOptions},
     DataFusionError, Result,
@@ -51,15 +53,50 @@ impl ParquetWriterOptions {
     }
 }
 
-impl TryFrom<&TableParquetOptions> for ParquetWriterOptions {
-    type Error = DataFusionError;
-
-    fn try_from(parquet_table_options: &TableParquetOptions) -> Result<Self> {
+impl ParquetWriterOptions {
+    pub fn from_table_parquet_options(
+        parquet_table_options: &TableParquetOptions,
+        customizer: &dyn WriterPropertiesCustomizer,
+    ) -> Result<Self> {
         // ParquetWriterOptions will have defaults for the remaining fields (e.g. sorting_columns)
+        let mut builder = WriterPropertiesBuilder::try_from(parquet_table_options)?;
+        builder = customizer.adjust_write_properties(builder)?;
+
         Ok(ParquetWriterOptions {
-            writer_options: WriterPropertiesBuilder::try_from(parquet_table_options)?
-                .build(),
+            writer_options: builder.build(),
         })
+    }
+}
+
+pub struct WriterPropertiesConfig {
+    pub customizer: Arc<dyn WriterPropertiesCustomizer>,
+}
+
+impl WriterPropertiesConfig {
+    pub fn noop() -> Arc<dyn WriterPropertiesCustomizer> {
+        Arc::new(NoopWriterPropertiesCustomizer {})
+    }
+}
+
+pub trait WriterPropertiesCustomizer: Sync + Send + std::fmt::Debug {
+    fn adjust_write_properties(
+        &self,
+        builder: WriterPropertiesBuilder,
+    ) -> Result<WriterPropertiesBuilder>;
+    fn allow_single_file_parallelism(&self) -> Result<bool> {
+        Ok(true)
+    }
+}
+
+#[derive(Debug)]
+pub struct NoopWriterPropertiesCustomizer;
+
+impl WriterPropertiesCustomizer for NoopWriterPropertiesCustomizer {
+    fn adjust_write_properties(
+        &self,
+        builder: WriterPropertiesBuilder,
+    ) -> Result<WriterPropertiesBuilder> {
+        Ok(builder)
     }
 }
 

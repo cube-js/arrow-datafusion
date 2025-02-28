@@ -39,6 +39,8 @@ use parquet::arrow::async_reader::AsyncFileReader;
 use parquet::arrow::{ParquetRecordBatchStreamBuilder, ProjectionMask};
 use std::sync::Arc;
 
+use super::ReaderOptionsCustomizer;
+
 /// Implements [`FileOpener`] for a parquet file
 pub(super) struct ParquetOpener {
     pub partition_index: usize,
@@ -57,6 +59,7 @@ pub(super) struct ParquetOpener {
     pub enable_page_index: bool,
     pub enable_bloom_filter: bool,
     pub schema_adapter_factory: Arc<dyn SchemaAdapterFactory>,
+    pub reader_options_customizer: Arc<dyn ReaderOptionsCustomizer>,
 }
 
 impl FileOpener for ParquetOpener {
@@ -92,9 +95,11 @@ impl FileOpener for ParquetOpener {
         );
         let enable_bloom_filter = self.enable_bloom_filter;
         let limit = self.limit;
+        let reader_config_customizer = self.reader_options_customizer.clone();
 
         Ok(Box::pin(async move {
             let options = ArrowReaderOptions::new().with_page_index(enable_page_index);
+            let options = reader_config_customizer.adjust_reader_options(options)?;
 
             let metadata =
                 ArrowReaderMetadata::load_async(&mut reader, options.clone()).await?;
@@ -108,6 +113,7 @@ impl FileOpener for ParquetOpener {
             let options = ArrowReaderOptions::new()
                 .with_page_index(enable_page_index)
                 .with_schema(schema.clone());
+            let options = reader_config_customizer.adjust_reader_options(options)?;
             let metadata =
                 ArrowReaderMetadata::try_new(metadata.metadata().clone(), options)?;
 

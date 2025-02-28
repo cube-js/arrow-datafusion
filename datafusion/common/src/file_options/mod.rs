@@ -33,7 +33,10 @@ mod tests {
     use super::parquet_writer::ParquetWriterOptions;
     use crate::{
         config::{ConfigFileType, TableOptions},
-        file_options::{csv_writer::CsvWriterOptions, json_writer::JsonWriterOptions},
+        file_options::{
+            csv_writer::CsvWriterOptions, json_writer::JsonWriterOptions,
+            parquet_writer::WriterPropertiesConfig,
+        },
         parsers::CompressionTypeVariant,
         Result,
     };
@@ -79,7 +82,10 @@ mod tests {
         table_config.set_config_format(ConfigFileType::PARQUET);
         table_config.alter_with_string_hash_map(&option_map)?;
 
-        let parquet_options = ParquetWriterOptions::try_from(&table_config.parquet)?;
+        let parquet_options = ParquetWriterOptions::from_table_parquet_options(
+            &table_config.parquet,
+            WriterPropertiesConfig::noop().as_ref(),
+        )?;
         let properties = parquet_options.writer_options();
 
         // Verify the expected options propagated down to parquet crate WriterProperties struct
@@ -184,7 +190,10 @@ mod tests {
         table_config.set_config_format(ConfigFileType::PARQUET);
         table_config.alter_with_string_hash_map(&option_map)?;
 
-        let parquet_options = ParquetWriterOptions::try_from(&table_config.parquet)?;
+        let parquet_options = ParquetWriterOptions::from_table_parquet_options(
+            &table_config.parquet,
+            WriterPropertiesConfig::noop().as_ref(),
+        )?;
         let properties = parquet_options.writer_options();
 
         let col1 = ColumnPath::from(vec!["col1".to_owned()]);

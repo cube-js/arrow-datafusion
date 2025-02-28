@@ -21,6 +21,9 @@ use std::sync::Arc;
 
 use arrow::compute::SortOptions;
 use chrono::{TimeZone, Utc};
+use datafusion_common::file_options::parquet_writer::{
+    WriterPropertiesConfig, WriterPropertiesCustomizer,
+};
 use object_store::path::Path;
 use object_store::ObjectMeta;
 
@@ -600,9 +603,14 @@ impl TryFrom<&protobuf::ParquetSink> for ParquetSink {
     type Error = DataFusionError;
 
     fn try_from(value: &protobuf::ParquetSink) -> Result<Self, Self::Error> {
+        // Cube: This function isn't reached, so, we can have a noop hard-coded here.
+        let customizer: Arc<dyn WriterPropertiesCustomizer> =
+            WriterPropertiesConfig::noop();
+
         Ok(Self::new(
             convert_required!(value.config)?,
             convert_required!(value.parquet_options)?,
+            customizer,
         ))
     }
 }

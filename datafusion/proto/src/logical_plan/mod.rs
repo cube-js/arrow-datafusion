@@ -36,6 +36,7 @@ use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::{
     file_type_to_format, format_as_file_type, FileFormatFactory,
 };
+use datafusion::execution::options::get_writer_properties_customizer;
 use datafusion::{
     datasource::{
         file_format::{
@@ -364,7 +365,9 @@ impl AsLogicalPlan for LogicalPlanNode {
                     })? {
                         #[cfg(feature = "parquet")]
                         FileFormatType::Parquet(protobuf::ParquetFormat {options}) => {
-                            let mut parquet = ParquetFormat::default();
+                            let mut parquet = ParquetFormat::new();
+                            let customizer = get_writer_properties_customizer(ctx.state().config());
+                            parquet = parquet.with_customizer(customizer);
                             if let Some(options) = options {
                                 parquet = parquet.with_options(options.try_into()?)
                             }

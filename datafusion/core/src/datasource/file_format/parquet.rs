@@ -22,6 +22,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use super::options::get_writer_properties_customizer;
 use super::write::demux::start_demuxer_task;
 use super::write::{create_writer, SharedBuffer};
 use super::{
@@ -43,7 +44,9 @@ use crate::physical_plan::{
 
 use arrow::compute::sum;
 use datafusion_common::config::{ConfigField, ConfigFileType, TableParquetOptions};
-use datafusion_common::file_options::parquet_writer::ParquetWriterOptions;
+use datafusion_common::file_options::parquet_writer::{
+    ParquetWriterOptions, WriterPropertiesConfig, WriterPropertiesCustomizer,
+};
 use datafusion_common::parsers::CompressionTypeVariant;
 use datafusion_common::stats::Precision;
 use datafusion_common::{
@@ -79,7 +82,9 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinSet;
 
-use crate::datasource::physical_plan::parquet::ParquetExecBuilder;
+use crate::datasource::physical_plan::parquet::{
+    get_reader_options_config_or_default, MetadataFetcher, ParquetExecBuilder,
+};
 use datafusion_physical_expr_common::sort_expr::LexRequirement;
 use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
@@ -137,8 +142,12 @@ impl FileFormatFactory for ParquetFormatFactory {
             }
         };
 
+        let customizer = get_writer_properties_customizer(state.config());
+
         Ok(Arc::new(
-            ParquetFormat::default().with_options(parquet_options),
+            ParquetFormat::new()
+                .with_options(parquet_options)
+                .with_customizer(customizer),
         ))
     }
 
@@ -166,12 +175,21 @@ impl fmt::Debug for ParquetFormatFactory {
     }
 }
 /// The Apache Parquet `FileFormat` implementation
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ParquetFormat {
     options: TableParquetOptions,
+    customizer: Arc<dyn WriterPropertiesCustomizer>,
 }
 
 impl ParquetFormat {
+    /// Same as `ParquetFormat::new`
+    pub fn default() -> Self {
+        ParquetFormat {
+            options: TableParquetOptions::default(),
+            customizer: WriterPropertiesConfig::noop(),
+        }
+    }
+
     /// Construct a new Format with no local overrides
     pub fn new() -> Self {
         Self::default()
@@ -232,6 +250,20 @@ impl ParquetFormat {
         &self.options
     }
 
+    /// Set WriterPropertiesCustomizer for the ParquetFormat
+    pub fn with_customizer(
+        mut self,
+        customizer: Arc<dyn WriterPropertiesCustomizer>,
+    ) -> Self {
+        self.customizer = customizer;
+        self
+    }
+
+    /// Writer properties customizer
+    pub fn customizer(&self) -> &Arc<dyn WriterPropertiesCustomizer> {
+        &self.customizer
+    }
+
     /// Return `true` if should use view types.
     ///
     /// If this returns true, DataFusion will instruct the parquet reader
@@ -277,9 +309,10 @@ async fn fetch_schema_with_location(
     store: &dyn ObjectStore,
     file: &ObjectMeta,
     metadata_size_hint: Option<usize>,
+    metadata_fetcher: &dyn MetadataFetcher,
 ) -> Result<(Path, Schema)> {
     let loc_path = file.location.clone();
-    let schema = fetch_schema(store, file, metadata_size_hint).await?;
+    let schema = fetch_schema(store, file, metadata_size_hint, metadata_fetcher).await?;
     Ok((loc_path, schema))
 }
 
@@ -312,12 +345,14 @@ impl FileFormat for ParquetFormat {
         store: &Arc<dyn ObjectStore>,
         objects: &[ObjectMeta],
     ) -> Result<SchemaRef> {
+        let reader_options_config = get_reader_options_config_or_default(state.config());
         let mut schemas: Vec<_> = futures::stream::iter(objects)
             .map(|object| {
                 fetch_schema_with_location(
                     store.as_ref(),
                     object,
                     self.metadata_size_hint(),
+                    reader_options_config.metadata_fetcher.as_ref(),
                 )
             })
             .boxed() // Workaround https://github.com/rust-lang/rust/issues/64552
@@ -355,16 +390,18 @@ impl FileFormat for ParquetFormat {
 
     async fn infer_stats(
         &self,
-        _state: &SessionState,
+        state: &SessionState,
         store: &Arc<dyn ObjectStore>,
         table_schema: SchemaRef,
         object: &ObjectMeta,
     ) -> Result<Statistics> {
+        let reader_options_config = get_reader_options_config_or_default(state.config());
         let stats = fetch_statistics(
             store.as_ref(),
             table_schema,
             object,
             self.metadata_size_hint(),
+            reader_options_config.metadata_fetcher.as_ref(),
         )
         .await?;
         Ok(stats)
@@ -406,7 +443,11 @@ impl FileFormat for ParquetFormat {
         }
 
         let sink_schema = conf.output_schema().clone();
-        let sink = Arc::new(ParquetSink::new(conf, self.options.clone()));
+        let sink = Arc::new(ParquetSink::new(
+            conf,
+            self.options.clone(),
+            self.customizer.clone(),
+        ));
 
         Ok(Arc::new(DataSinkExec::new(
             input,
@@ -489,8 +530,11 @@ async fn fetch_schema(
     store: &dyn ObjectStore,
     file: &ObjectMeta,
     metadata_size_hint: Option<usize>,
+    metadata_fetcher: &dyn MetadataFetcher,
 ) -> Result<Schema> {
-    let metadata = fetch_parquet_metadata(store, file, metadata_size_hint).await?;
+    let metadata = metadata_fetcher
+        .fetch_metadata(store, file, metadata_size_hint)
+        .await?;
     let file_metadata = metadata.file_metadata();
     let schema = parquet_to_arrow_schema(
         file_metadata.schema_descr(),
@@ -507,8 +551,11 @@ async fn fetch_statistics(
     table_schema: SchemaRef,
     file: &ObjectMeta,
     metadata_size_hint: Option<usize>,
+    metadata_fetcher: &dyn MetadataFetcher,
 ) -> Result<Statistics> {
-    let metadata = fetch_parquet_metadata(store, file, metadata_size_hint).await?;
+    let metadata = metadata_fetcher
+        .fetch_metadata(store, file, metadata_size_hint)
+        .await?;
     statistics_from_parquet_meta_calc(&metadata, table_schema)
 }
 
@@ -645,6 +692,8 @@ pub struct ParquetSink {
     config: FileSinkConfig,
     /// Underlying parquet options
     parquet_options: TableParquetOptions,
+    /// Writer properties customizer
+    customizer: Arc<dyn WriterPropertiesCustomizer>,
     /// File metadata from successfully produced parquet files. The Mutex is only used
     /// to allow inserting to HashMap from behind borrowed reference in DataSink::write_all.
     written: Arc<parking_lot::Mutex<HashMap<Path, FileMetaData>>>,
@@ -670,10 +719,15 @@ impl DisplayAs for ParquetSink {
 
 impl ParquetSink {
     /// Create from config.
-    pub fn new(config: FileSinkConfig, parquet_options: TableParquetOptions) -> Self {
+    pub fn new(
+        config: FileSinkConfig,
+        parquet_options: TableParquetOptions,
+        customizer: Arc<dyn WriterPropertiesCustomizer>,
+    ) -> Self {
         Self {
             config,
             parquet_options,
+            customizer,
             written: Default::default(),
         }
     }
@@ -754,7 +808,10 @@ impl DataSink for ParquetSink {
         data: SendableRecordBatchStream,
         context: &Arc<TaskContext>,
     ) -> Result<u64> {
-        let parquet_props = ParquetWriterOptions::try_from(&self.parquet_options)?;
+        let parquet_props = ParquetWriterOptions::from_table_parquet_options(
+            &self.parquet_options,
+            self.customizer.as_ref(),
+        )?;
 
         let object_store = context
             .runtime_env()
@@ -762,7 +819,8 @@ impl DataSink for ParquetSink {
 
         let parquet_opts = &self.parquet_options;
         let allow_single_file_parallelism =
-            parquet_opts.global.allow_single_file_parallelism;
+            parquet_opts.global.allow_single_file_parallelism
+                && self.customizer.allow_single_file_parallelism()?;
 
         let part_col = if !self.config.table_partition_cols.is_empty() {
             Some(self.config.table_partition_cols.clone())
@@ -901,7 +959,7 @@ fn spawn_column_parallel_row_group_writer(
     pool: &Arc<dyn MemoryPool>,
 ) -> Result<(Vec<ColumnWriterTask>, Vec<ColSender>)> {
     let schema_desc = arrow_to_parquet_schema(&schema)?;
-    let col_writers = get_column_writers(&schema_desc, &parquet_props, &schema)?;
+    let col_writers = get_column_writers(&schema_desc, &parquet_props, &schema, None)?;
     let num_columns = col_writers.len();
 
     let mut col_writer_tasks = Vec::with_capacity(num_columns);
@@ -1260,6 +1318,7 @@ pub(crate) mod test_util {
 mod tests {
     use super::super::test_util::scan_format;
     use crate::datasource::listing::{ListingTableUrl, PartitionedFile};
+    use crate::datasource::physical_plan::parquet::DefaultMetadataFetcher;
     use crate::physical_plan::collect;
     use crate::test_util::bounded_stream;
     use std::fmt::{Display, Formatter};
@@ -1325,8 +1384,14 @@ mod tests {
         let format = ParquetFormat::default().with_force_view_types(force_views);
         let schema = format.infer_schema(&ctx, &store, &meta).await.unwrap();
 
-        let stats =
-            fetch_statistics(store.as_ref(), schema.clone(), &meta[0], None).await?;
+        let stats = fetch_statistics(
+            store.as_ref(),
+            schema.clone(),
+            &meta[0],
+            None,
+            &DefaultMetadataFetcher {},
+        )
+        .await?;
 
         assert_eq!(stats.num_rows, Precision::Exact(3));
         let c1_stats = &stats.column_statistics[0];
@@ -1334,7 +1399,14 @@ mod tests {
         assert_eq!(c1_stats.null_count, Precision::Exact(1));
         assert_eq!(c2_stats.null_count, Precision::Exact(3));
 
-        let stats = fetch_statistics(store.as_ref(), schema, &meta[1], None).await?;
+        let stats = fetch_statistics(
+            store.as_ref(),
+            schema,
+            &meta[1],
+            None,
+            &DefaultMetadataFetcher {},
+        )
+        .await?;
         assert_eq!(stats.num_rows, Precision::Exact(3));
         let c1_stats = &stats.column_statistics[0];
         let c2_stats = &stats.column_statistics[1];
@@ -1526,9 +1598,14 @@ mod tests {
             .await
             .unwrap();
 
-        let stats =
-            fetch_statistics(store.upcast().as_ref(), schema.clone(), &meta[0], Some(9))
-                .await?;
+        let stats = fetch_statistics(
+            store.upcast().as_ref(),
+            schema.clone(),
+            &meta[0],
+            Some(9),
+            &DefaultMetadataFetcher {},
+        )
+        .await?;
 
         assert_eq!(stats.num_rows, Precision::Exact(3));
         let c1_stats = &stats.column_statistics[0];
@@ -1562,6 +1639,7 @@ mod tests {
             schema.clone(),
             &meta[0],
             Some(size_hint),
+            &DefaultMetadataFetcher {},
         )
         .await?;
 
@@ -2252,6 +2330,8 @@ mod tests {
             overwrite: true,
             keep_partition_by_columns: false,
         };
+        let customizer: Arc<dyn WriterPropertiesCustomizer> =
+            WriterPropertiesConfig::noop();
         let parquet_sink = Arc::new(ParquetSink::new(
             file_sink_config,
             TableParquetOptions {
@@ -2261,6 +2341,7 @@ mod tests {
                 ]),
                 ..Default::default()
             },
+            customizer,
         ));
 
         // create data
@@ -2347,9 +2428,12 @@ mod tests {
             overwrite: true,
             keep_partition_by_columns: false,
         };
+        let customizer: Arc<dyn WriterPropertiesCustomizer> =
+            WriterPropertiesConfig::noop();
         let parquet_sink = Arc::new(ParquetSink::new(
             file_sink_config,
             TableParquetOptions::default(),
+            customizer,
         ));
 
         // create data with 2 partitions
@@ -2430,6 +2514,8 @@ mod tests {
                 overwrite: true,
                 keep_partition_by_columns: false,
             };
+            let customizer: Arc<dyn WriterPropertiesCustomizer> =
+                WriterPropertiesConfig::noop();
             let parquet_sink = Arc::new(ParquetSink::new(
                 file_sink_config,
                 TableParquetOptions {
@@ -2440,6 +2526,7 @@ mod tests {
                     global,
                     ..Default::default()
                 },
+                customizer,
             ));
 
             // create data
