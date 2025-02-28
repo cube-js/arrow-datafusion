@@ -42,6 +42,8 @@ use itertools::Itertools;
 use log::debug;
 use object_store::ObjectStore;
 
+use super::{NoopReaderOptionsCustomizer, ReaderOptionsCustomizer};
+
 /// Execution plan for reading one or more Parquet files.
 ///
 /// ```text
@@ -249,7 +251,7 @@ use object_store::ObjectStore;
 /// [`RecordBatch`]: arrow::record_batch::RecordBatch
 /// [`SchemaAdapter`]: crate::datasource::schema_adapter::SchemaAdapter
 /// [`ParquetMetadata`]: parquet::file::metadata::ParquetMetaData
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct ParquetSource {
     /// Options for reading Parquet files
     pub(crate) table_parquet_options: TableParquetOptions,
@@ -270,15 +272,35 @@ pub struct ParquetSource {
     /// Optional hint for the size of the parquet metadata
     pub(crate) metadata_size_hint: Option<usize>,
     pub(crate) projected_statistics: Option<Statistics>,
+    pub(crate) reader_options_customizer: Arc<dyn ReaderOptionsCustomizer>,
+}
+
+impl Default for ParquetSource {
+    fn default() -> Self {
+        Self {
+            table_parquet_options: Default::default(),
+            metrics: Default::default(),
+            predicate: Default::default(),
+            pruning_predicate: Default::default(),
+            page_pruning_predicate: Default::default(),
+            parquet_file_reader_factory: Default::default(),
+            schema_adapter_factory: Default::default(),
+            batch_size: Default::default(),
+            metadata_size_hint: Default::default(),
+            projected_statistics: Default::default(),
+            reader_options_customizer: Arc::new(NoopReaderOptionsCustomizer{}),
+        }
+    }
 }
 
 impl ParquetSource {
     /// Create a new ParquetSource to read the data specified in the file scan
     /// configuration with the provided `TableParquetOptions`.
     /// if default values are going to be used, use `ParguetConfig::default()` instead
-    pub fn new(table_parquet_options: TableParquetOptions) -> Self {
+    pub fn new(table_parquet_options: TableParquetOptions, reader_options_customizer: Arc<dyn ReaderOptionsCustomizer>) -> Self {
         Self {
             table_parquet_options,
+            reader_options_customizer,
             ..Self::default()
         }
     }
@@ -498,6 +520,7 @@ impl FileSource for ParquetSource {
             enable_page_index: self.enable_page_index(),
             enable_bloom_filter: self.bloom_filter_on_read(),
             schema_adapter_factory,
+            reader_options_customizer: self.reader_options_customizer.clone(),
         })
     }
 

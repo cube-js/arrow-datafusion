@@ -46,15 +46,20 @@ use crate::{
 
 pub use access_plan::{ParquetAccessPlan, RowGroupAccess};
 use arrow::datatypes::SchemaRef;
+use async_trait::async_trait;
 use datafusion_common::config::ConfigOptions;
 use datafusion_common::Constraints;
 use datafusion_datasource::file_scan_config::FileScanConfig;
 use datafusion_datasource::source::DataSourceExec;
+use datafusion_execution::config::SessionConfig;
 use datafusion_physical_expr::{EquivalenceProperties, LexOrdering, PhysicalExpr};
 use datafusion_physical_optimizer::pruning::PruningPredicate;
 use datafusion_physical_plan::execution_plan::{Boundedness, EmissionType};
 pub use metrics::ParquetFileMetrics;
+use object_store::{ObjectMeta, ObjectStore};
 pub use page_filter::PagePruningAccessPlanFilter;
+use parquet::arrow::arrow_reader::ArrowReaderOptions;
+use parquet::file::metadata::ParquetMetaData;
 pub use reader::{DefaultParquetFileReaderFactory, ParquetFileReaderFactory};
 pub use row_filter::build_row_filter;
 pub use row_filter::can_expr_be_pushed_down_with_schemas;
@@ -217,7 +222,7 @@ impl ParquetExecBuilder {
             parquet_file_reader_factory,
             schema_adapter_factory,
         } = self;
-        let mut parquet = ParquetSource::new(table_parquet_options);
+        let mut parquet = ParquetSource::new(table_parquet_options, ReaderOptionsConfig::noop());  // TODO upgrade DF
         if let Some(predicate) = predicate.clone() {
             parquet = parquet
                 .with_predicate(Arc::clone(&file_scan_config.file_schema), predicate);
@@ -517,7 +522,16 @@ impl ExecutionPlan for ParquetExec {
         partition_index: usize,
         ctx: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
+        // TODO upgrade DF: we need  reader_options_customizer used as in the commented code below.
         self.inner.execute(partition_index, ctx)
+
+        // let reader_options_customizer =
+        //     get_reader_options_customizer(ctx.session_config());
+
+        // let opener = ParquetOpener {
+        // ...
+        //     reader_options_customizer,
+        // };
     }
     fn metrics(&self) -> Option<MetricsSet> {
         self.inner.metrics()
@@ -544,6 +558,97 @@ fn should_enable_page_index(
             .as_ref()
             .map(|p| p.filter_number() > 0)
             .unwrap_or(false)
+}
+
+// TODO: Where (in what file) should we put ReaderOptionsConfig and such?
+
+/// ReaderOptionsConfig, passed in SessionConfig::extensions.
+pub struct ReaderOptionsConfig {
+    /// The reader options customizer
+    pub customizer: Arc<dyn ReaderOptionsCustomizer>,
+    /// The parquet metadata fetcher
+    pub metadata_fetcher: Arc<dyn MetadataFetcher>,
+}
+
+impl ReaderOptionsConfig {
+    /// Constructs a `NoopReaderOptionsCustomizer`.
+    pub fn noop() -> Arc<dyn ReaderOptionsCustomizer> {
+        Arc::new(NoopReaderOptionsCustomizer {})
+    }
+    /// Constructs default behavior configuration.
+    pub fn default() -> ReaderOptionsConfig {
+        ReaderOptionsConfig {
+            customizer: Arc::new(NoopReaderOptionsCustomizer {}),
+            metadata_fetcher: Arc::new(DefaultMetadataFetcher {}),
+        }
+    }
+}
+
+/// Trait for adjusting `ArrowReaderOptions`.
+pub trait ReaderOptionsCustomizer: Sync + Send + std::fmt::Debug {
+    /// Performs some modification of ArrowReaderOptions
+    fn adjust_reader_options(&self, options: ArrowReaderOptions) -> Result<ArrowReaderOptions>;
+}
+
+/// Retrieves customizer from `ReaderOptionsConfig` or produces a default customizer.
+pub fn get_reader_options_customizer(
+    config: &SessionConfig,
+) -> Arc<dyn ReaderOptionsCustomizer> {
+    config
+        .get_extension::<ReaderOptionsConfig>()
+        .map_or_else(|| ReaderOptionsConfig::noop(), |cfg| cfg.customizer.clone())
+}
+
+/// Retrieves `ReaderOptionsConfig` from SessionConfig extensions or produces `ReaderOptionsConfig::default()`.
+pub fn get_reader_options_config_or_default(
+    config: &SessionConfig,
+) -> Arc<ReaderOptionsConfig> {
+    config.get_extension::<ReaderOptionsConfig>().map_or_else(
+        || Arc::new(ReaderOptionsConfig::default()),
+        |cfg| cfg.clone(),
+    )
+}
+
+#[derive(Debug)]
+/// Performs noop adjustment.
+pub struct NoopReaderOptionsCustomizer;
+
+impl ReaderOptionsCustomizer for NoopReaderOptionsCustomizer {
+    fn adjust_reader_options(&self, options: ArrowReaderOptions) -> Result<ArrowReaderOptions> {
+        Ok(options)
+    }
+}
+
+#[async_trait]
+/// A trait for fetching parquet metadata from an `ObjectStore`.
+pub trait MetadataFetcher: Send + Sync {
+    /// Fetches the metadata from the object store, with a provided guess of the metadata size.
+    async fn fetch_metadata(
+        &self,
+        store: &dyn ObjectStore,
+        file: &ObjectMeta,
+        metadata_size_hint: Option<usize>,
+    ) -> Result<ParquetMetaData>;
+}
+
+/// Fetches parquet metadata normally.
+pub struct DefaultMetadataFetcher;
+
+#[async_trait]
+impl MetadataFetcher for DefaultMetadataFetcher {
+    async fn fetch_metadata(
+        &self,
+        store: &dyn ObjectStore,
+        file: &ObjectMeta,
+        metadata_size_hint: Option<usize>,
+    ) -> Result<ParquetMetaData> {
+        crate::datasource::file_format::parquet::fetch_parquet_metadata(
+            store,
+            file,
+            metadata_size_hint,
+        )
+        .await
+    }
 }
 
 #[cfg(test)]

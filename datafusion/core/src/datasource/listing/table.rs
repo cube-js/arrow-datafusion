@@ -686,7 +686,7 @@ impl ListingOptions {
 /// let table_path = ListingTableUrl::parse(table_path)?;
 ///
 /// // Create default parquet options
-/// let file_format = ParquetFormat::new();
+/// let file_format = ParquetFormat::default();
 /// let listing_options = ListingOptions::new(Arc::new(file_format))
 ///   .with_file_extension(".parquet");
 ///

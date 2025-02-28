@@ -230,7 +230,9 @@ impl AsyncFileReader for ParquetFileReader {
 
     fn get_metadata(
         &mut self,
+        encryption_config: &Option<parquet::file::encryption::ParquetEncryptionConfig>,
     ) -> BoxFuture<'_, parquet::errors::Result<Arc<ParquetMetaData>>> {
+        assert!(encryption_config.is_none());
         Box::pin(async move {
             let metadata = fetch_parquet_metadata(
                 self.store.as_ref(),

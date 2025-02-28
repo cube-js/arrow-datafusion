@@ -32,7 +32,9 @@ mod tests {
 
     use crate::{
         config::{ConfigFileType, TableOptions},
-        file_options::{csv_writer::CsvWriterOptions, json_writer::JsonWriterOptions},
+        file_options::{
+            csv_writer::CsvWriterOptions, json_writer::JsonWriterOptions,
+        },
         parsers::CompressionTypeVariant,
         Result,
     };

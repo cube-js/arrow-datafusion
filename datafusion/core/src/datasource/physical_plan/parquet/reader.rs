@@ -24,6 +24,7 @@ use datafusion_physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::future::BoxFuture;
 use object_store::ObjectStore;
 use parquet::arrow::async_reader::{AsyncFileReader, ParquetObjectReader};
+use parquet::file::encryption::ParquetEncryptionConfig;
 use parquet::file::metadata::ParquetMetaData;
 use std::fmt::Debug;
 use std::ops::Range;
@@ -114,8 +115,9 @@ impl AsyncFileReader for ParquetFileReader {
 
     fn get_metadata(
         &mut self,
+        encryption_config: &Option<ParquetEncryptionConfig>,
     ) -> BoxFuture<'_, parquet::errors::Result<Arc<ParquetMetaData>>> {
-        self.inner.get_metadata()
+        self.inner.get_metadata(encryption_config)
     }
 }
 

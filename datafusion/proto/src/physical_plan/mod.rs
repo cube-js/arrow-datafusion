@@ -18,6 +18,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use datafusion::datasource::physical_plan::parquet::ReaderOptionsConfig;
 use datafusion::physical_expr::aggregate::AggregateExprBuilder;
 use prost::bytes::BufMut;
 use prost::Message;
@@ -269,7 +270,7 @@ impl AsExecutionPlan for protobuf::PhysicalPlanNode {
                     if let Some(table_options) = scan.parquet_options.as_ref() {
                         options = table_options.try_into()?;
                     }
-                    let mut source = ParquetSource::new(options);
+                    let mut source = ParquetSource::new(options, ReaderOptionsConfig::noop());  // TODO upgrade DF
 
                     if let Some(predicate) = predicate {
                         source = source.with_predicate(Arc::clone(&schema), predicate);

@@ -26,6 +26,7 @@ use crate::common::ToDFSchema;
 use crate::config::ConfigOptions;
 use crate::datasource::listing::{ListingTableUrl, PartitionedFile};
 use crate::datasource::object_store::ObjectStoreUrl;
+use crate::datasource::physical_plan::parquet::ReaderOptionsConfig;
 use crate::datasource::physical_plan::ParquetSource;
 use crate::error::Result;
 use crate::logical_expr::execution_props::ExecutionProps;
@@ -156,7 +157,7 @@ impl TestParquetFile {
         maybe_filter: Option<Expr>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let parquet_options = ctx.copied_table_options().parquet;
-        let source = Arc::new(ParquetSource::new(parquet_options.clone()));
+        let source = Arc::new(ParquetSource::new(parquet_options.clone(), ReaderOptionsConfig::noop()));
         let scan_config = FileScanConfig::new(
             self.object_store_url.clone(),
             Arc::clone(&self.schema),
@@ -182,7 +183,7 @@ impl TestParquetFile {
             let physical_filter_expr =
                 create_physical_expr(&filter, &df_schema, &ExecutionProps::default())?;
 
-            let source = Arc::new(ParquetSource::new(parquet_options).with_predicate(
+            let source = Arc::new(ParquetSource::new(parquet_options, ReaderOptionsConfig::noop()).with_predicate(
                 Arc::clone(&scan_config.file_schema),
                 Arc::clone(&physical_filter_expr),
             ));

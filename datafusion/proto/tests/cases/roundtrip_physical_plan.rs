@@ -24,9 +24,13 @@ use std::vec;
 use arrow::array::RecordBatch;
 use arrow::csv::WriterBuilder;
 use arrow::datatypes::{Fields, TimeUnit};
+use datafusion::datasource::physical_plan::parquet::ReaderOptionsConfig;
 use datafusion::physical_expr::aggregate::AggregateExprBuilder;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion_expr::dml::InsertOp;
+use datafusion_common::file_options::parquet_writer::{
+    WriterPropertiesConfig, WriterPropertiesCustomizer,
+};
 use datafusion_functions_aggregate::approx_percentile_cont::approx_percentile_cont_udaf;
 use datafusion_functions_aggregate::array_agg::array_agg_udaf;
 use datafusion_functions_aggregate::min_max::max_udaf;
@@ -739,7 +743,7 @@ fn roundtrip_parquet_exec_with_pruning_predicate() -> Result<()> {
     options.global.pushdown_filters = true;
 
     let source = Arc::new(
-        ParquetSource::new(options).with_predicate(Arc::clone(&file_schema), predicate),
+        ParquetSource::new(options, ReaderOptionsConfig::noop()).with_predicate(Arc::clone(&file_schema), predicate),
     );
 
     let scan_config = FileScanConfig {
@@ -1402,9 +1406,11 @@ fn roundtrip_parquet_sink() -> Result<()> {
         keep_partition_by_columns: true,
         file_extension: "parquet".into(),
     };
+    let customizer: Arc<dyn WriterPropertiesCustomizer> = WriterPropertiesConfig::noop();
     let data_sink = Arc::new(ParquetSink::new(
         file_sink_config,
         TableParquetOptions::default(),
+        customizer,
     ));
     let sort_order = LexRequirement::new(vec![PhysicalSortRequirement::new(
         Arc::new(Column::new("plan_type", 0)),

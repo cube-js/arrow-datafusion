@@ -34,6 +34,9 @@ use crate::execution::context::{SessionConfig, SessionState};
 
 use arrow::datatypes::{DataType, Schema, SchemaRef};
 use datafusion_common::config::TableOptions;
+use datafusion_common::file_options::parquet_writer::{
+    WriterPropertiesConfig, WriterPropertiesCustomizer,
+};
 use datafusion_common::{
     DEFAULT_ARROW_EXTENSION, DEFAULT_AVRO_EXTENSION, DEFAULT_CSV_EXTENSION,
     DEFAULT_JSON_EXTENSION, DEFAULT_PARQUET_EXTENSION,
@@ -564,6 +567,18 @@ impl ReadOptions<'_> for CsvReadOptions<'_> {
     }
 }
 
+/// Retrieves `WriterPropertiesConfig` from the `SessionConfig::extensions` field, constructing a Noop customizer if not present.
+pub fn get_writer_properties_customizer(
+    config: &SessionConfig,
+) -> Arc<dyn WriterPropertiesCustomizer> {
+    config
+        .get_extension::<WriterPropertiesConfig>()
+        .map_or_else(
+            || WriterPropertiesConfig::noop(),
+            |cfg| cfg.customizer.clone(),
+        )
+}
+
 #[cfg(feature = "parquet")]
 #[async_trait]
 impl ReadOptions<'_> for ParquetReadOptions<'_> {
@@ -572,7 +587,10 @@ impl ReadOptions<'_> for ParquetReadOptions<'_> {
         config: &SessionConfig,
         table_options: TableOptions,
     ) -> ListingOptions {
-        let mut file_format = ParquetFormat::new().with_options(table_options.parquet);
+        let customizer = get_writer_properties_customizer(config);
+        let mut file_format = ParquetFormat::new()
+            .with_options(table_options.parquet)
+            .with_customizer(customizer);
 
         if let Some(parquet_pruning) = self.parquet_pruning {
             file_format = file_format.with_enable_pruning(parquet_pruning)
