@@ -772,6 +772,9 @@ fn create_function_name(
     args: &[Expr],
     input_schema: &DFSchema,
 ) -> Result<String> {
+    if !distinct && args.is_empty() {
+        return Ok(fun.to_ascii_lowercase());
+    }
     let names: Vec<String> = args
         .iter()
         .map(|e| create_name(e, input_schema))
