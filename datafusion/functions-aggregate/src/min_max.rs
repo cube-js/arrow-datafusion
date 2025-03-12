@@ -930,6 +930,21 @@ impl Accumulator for MaxAccumulator {
     fn size(&self) -> usize {
         size_of_val(self) - size_of_val(&self.max) + self.max.size()
     }
+
+    // Cube exts:
+    fn peek_evaluate(&self) -> Result<ScalarValue> {
+        Ok(self.max.clone())
+    }
+    fn reset(&mut self) -> Result<()> {
+        self.max = ScalarValue::try_from(self.max.data_type())?;
+        Ok(())
+    }
+    fn peek_state(&self) -> Result<Vec<ScalarValue>> {
+        Ok(vec![self.peek_evaluate()?])
+    }
+    fn supports_cube_ext(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug)]
@@ -1235,6 +1250,21 @@ impl Accumulator for MinAccumulator {
 
     fn size(&self) -> usize {
         size_of_val(self) - size_of_val(&self.min) + self.min.size()
+    }
+
+    // Cube exts:
+    fn peek_evaluate(&self) -> Result<ScalarValue> {
+        Ok(self.min.clone())
+    }
+    fn reset(&mut self) -> Result<()> {
+        self.min = ScalarValue::try_from(self.min.data_type())?;
+        Ok(())
+    }
+    fn peek_state(&self) -> Result<Vec<ScalarValue>> {
+        Ok(vec![self.peek_evaluate()?])
+    }
+    fn supports_cube_ext(&self) -> bool {
+        true
     }
 }
 

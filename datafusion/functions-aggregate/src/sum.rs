@@ -314,6 +314,21 @@ impl<T: ArrowNumericType> Accumulator for SumAccumulator<T> {
     fn size(&self) -> usize {
         size_of_val(self)
     }
+
+    // Cube exts:
+    fn peek_evaluate(&self) -> Result<ScalarValue> {
+        ScalarValue::new_primitive::<T>(self.sum, &self.data_type)
+    }
+    fn reset(&mut self) -> Result<()> {
+        self.sum = None;
+        Ok(())
+    }
+    fn peek_state(&self) -> Result<Vec<ScalarValue>> {
+        Ok(vec![self.peek_evaluate()?])
+    }
+    fn supports_cube_ext(&self) -> bool {
+        true
+    }
 }
 
 /// This accumulator incrementally computes sums over a sliding window
