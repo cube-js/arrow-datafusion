@@ -18,7 +18,7 @@
 //! Accumulator module contains the trait definition for aggregation function's accumulators.
 
 use arrow::array::ArrayRef;
-use datafusion_common::{internal_err, Result, ScalarValue};
+use datafusion_common::{internal_err, not_impl_err, Result, ScalarValue};
 use std::fmt::Debug;
 
 /// Tracks an aggregate function's state.
@@ -71,6 +71,23 @@ pub trait Accumulator: Send + Sync + Debug {
     /// arrow compatible internal state that can be returned without copying
     /// when possible (for example distinct strings)
     fn evaluate(&mut self) -> Result<ScalarValue>;
+
+    /// Cube: Like evaluate() but doesn't modify the accumulator.
+    fn peek_evaluate(&self) -> Result<ScalarValue> {
+        not_impl_err!("Accumulator::peek_evaluate not implemented for {}", std::any::type_name::<Self>())
+    }
+    /// Cube: Resets the accumulator to its initial (zero-like) state.
+    fn reset(&mut self) -> Result<()> {
+        not_impl_err!("Accumulator::reset not implemented for {}", std::any::type_name::<Self>())
+    }
+    /// Cube: Like state() but doesn't modify the accumulator.
+    fn peek_state(&self) -> Result<Vec<ScalarValue>> {
+        not_impl_err!("Accumulator::peek_state not implemented for {}", std::any::type_name::<Self>())
+    }
+    /// Cube: true if this Accumulator supports these Cube accumulator functions.
+    fn supports_cube_ext(&self) -> bool {
+        false
+    }
 
     /// Returns the allocated size required for this accumulator, in
     /// bytes, including `Self`.
