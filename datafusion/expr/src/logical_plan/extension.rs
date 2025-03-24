@@ -60,20 +60,6 @@ pub trait UserDefinedLogicalNode: fmt::Debug + Send + Sync {
     /// passes and rewrites. See [`LogicalPlan::expressions`] for more details.
     fn expressions(&self) -> Vec<Expr>;
 
-    /// Cube extension: Returns expressions defined on the output schema.  This should be removed
-    /// (to avoid diverging from upstream DF) and such logical nodes should be split into two nodes.
-    fn upper_expressions(&self) -> Vec<Expr> {
-        Vec::new()
-    }
-
-    // Cube extension: Replaces upper_expressions().  Returns None if no replacement is needed (as a
-    // hack allowing default implementation without making `UserDefinedLogicalNode` derive from
-    // `Clone`).
-    fn with_upper_expressions(&self, upper_exprs: Vec<Expr>) -> Result<Option<Arc<dyn UserDefinedLogicalNode>>> {
-        assert_eq!(upper_exprs.len(), 0);
-        Ok(None)
-    }
-
     /// A list of output columns (e.g. the names of columns in
     /// self.schema()) for which predicates can not be pushed below
     /// this node without changing the output.

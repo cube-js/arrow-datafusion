@@ -26,7 +26,7 @@ use arrow::datatypes::{DataType, Field, IntervalUnit, Schema};
 use crate::analyzer::AnalyzerRule;
 use crate::utils::NamePreserver;
 use datafusion_common::config::ConfigOptions;
-use datafusion_common::tree_node::{Transformed, TreeNode, TreeNodeIterator, TreeNodeRewriter};
+use datafusion_common::tree_node::{Transformed, TreeNode, TreeNodeRewriter};
 use datafusion_common::{
     exec_err, internal_err, not_impl_err, plan_datafusion_err, plan_err, Column,
     DFSchema, DFSchemaRef, DataFusionError, Result, ScalarValue, TableReference,
@@ -50,7 +50,9 @@ use datafusion_expr::type_coercion::other::{
 use datafusion_expr::type_coercion::{is_datetime, is_utf8_or_large_utf8};
 use datafusion_expr::utils::merge_schema;
 use datafusion_expr::{
-    is_false, is_not_false, is_not_true, is_not_unknown, is_true, is_unknown, not, AggregateUDF, Expr, ExprFunctionExt, ExprSchemable, Extension, Join, LogicalPlan, Operator, Projection, ScalarUDF, Union, WindowFrame, WindowFrameBound, WindowFrameUnits
+    is_false, is_not_false, is_not_true, is_not_unknown, is_true, is_unknown, not,
+    AggregateUDF, Expr, ExprFunctionExt, ExprSchemable, Join, LogicalPlan, Operator,
+    Projection, ScalarUDF, Union, WindowFrame, WindowFrameBound, WindowFrameUnits,
 };
 
 /// Performs type coercion by determining the schema
@@ -144,37 +146,7 @@ fn analyze_internal(
     // some plans need extra coercion after their expressions are coerced
     .map_data(|plan| expr_rewrite.coerce_plan(plan))?
     // recompute the schema after the expressions have been rewritten as the types may have changed
-    .map_data(|plan| plan.recompute_schema())?
-    // Cube extension: Map "upper" expressions (after this node's output schema has been recomputed)
-    .transform_data(|plan| {
-        match &plan {
-            LogicalPlan::Extension(Extension { node }) => {
-                let upper_expressions = node.upper_expressions();
-                if upper_expressions.is_empty() {
-                    Ok(Transformed::no(plan))
-                } else {
-                    let output_schema = plan.schema().clone();
-                    let mut upper_expr_rewrite = TypeCoercionRewriter::new(&output_schema);
-                    upper_expressions.into_iter().map_until_stop_and_collect(|expr| {
-                        // No need for name preserver on upper expressions.  (Why?  Because
-                        // upper_expressions cannot change the output schema -- they use the output
-                        // schema, already defined by the node, as input.  (They are filter
-                        // expressions.))
-                        expr.rewrite(&mut upper_expr_rewrite)
-                    })?
-                    .map_data(|upper_expressions| {
-                        let new_node =  node.with_upper_expressions(upper_expressions)?;
-                        if let Some(new_node) = new_node {
-                            Ok(LogicalPlan::Extension(Extension { node: new_node }))
-                        } else {
-                            internal_err!("with_upper_expressions must not return None when upper_expressions() was non-empty")
-                        }
-                    })
-                }
-            },
-            _ => Ok(Transformed::no(plan))
-        }
-    })
+    .map_data(|plan| plan.recompute_schema())
 }
 
 /// Rewrite expressions to apply type coercion.
