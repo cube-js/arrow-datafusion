@@ -133,7 +133,7 @@ impl RepartitionExecState {
 
             let r_metrics = RepartitionMetrics::new(i, num_output_partitions, &metrics);
 
-            let input_task = SpawnedTask::spawn(RepartitionExec::pull_from_input(
+            let input_task = crate::cube_ext::spawn_spawned_task(RepartitionExec::pull_from_input(
                 Arc::clone(&input),
                 i,
                 txs.clone(),
@@ -144,7 +144,7 @@ impl RepartitionExecState {
 
             // In a separate task, wait for each input to be done
             // (and pass along any errors, including panic!s)
-            let wait_for_task = SpawnedTask::spawn(RepartitionExec::wait_for_task(
+            let wait_for_task = crate::cube_ext::spawn_spawned_task(RepartitionExec::wait_for_task(
                 input_task,
                 txs.into_iter()
                     .map(|(partition, (tx, _reservation))| (partition, tx))
