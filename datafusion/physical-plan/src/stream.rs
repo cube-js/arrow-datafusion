@@ -78,7 +78,7 @@ impl<O: Send + 'static> ReceiverStreamBuilder<O> {
         F: Future<Output = Result<()>>,
         F: Send + 'static,
     {
-        self.join_set.spawn(task);
+        crate::cube_ext::spawn_on_joinset(&mut self.join_set, task);
     }
 
     /// Spawn a blocking task that will be aborted if this builder (or the stream
@@ -91,7 +91,7 @@ impl<O: Send + 'static> ReceiverStreamBuilder<O> {
         F: FnOnce() -> Result<()>,
         F: Send + 'static,
     {
-        self.join_set.spawn_blocking(f);
+        crate::cube_ext::spawn_blocking_on_joinset(&mut self.join_set, f);
     }
 
     /// Create a stream of all data written to `tx`

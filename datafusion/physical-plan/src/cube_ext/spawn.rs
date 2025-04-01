@@ -19,8 +19,9 @@ use std::future::Future;
 use crate::cube_ext::catch_unwind::{
     async_try_with_catch_unwind, try_with_catch_unwind, PanicError,
 };
+use datafusion_common_runtime::SpawnedTask;
 use futures::sink::SinkExt;
-use tokio::task::JoinHandle;
+use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use tracing_futures::Instrument;
 
 /// Calls [tokio::spawn] and additionally enables tracing of the spawned task as part of the current
@@ -54,6 +55,56 @@ where
         })
     } else {
         tokio::task::spawn_blocking(f)
+    }
+}
+
+/// Propagates current span to the spawned task.  See [spawn] for details.
+pub fn spawn_on_joinset<F, T>(join_set: &mut JoinSet<T>, task: F) -> AbortHandle
+    where
+        F: Future<Output = T>,
+        F: Send + 'static,
+        T: Send + 'static,
+{
+    if let Some(s) = new_subtask_span() {
+        join_set.spawn(async move {
+            let _p = s.parent;  // ensure parent stays alive.
+            task.instrument(s.child).await
+        })
+    } else {
+        join_set.spawn(task)
+    }
+}
+
+/// Propagates current span to the blocking operation.  See [spawn] for details.
+pub fn spawn_blocking_on_joinset<F, T>(join_set: &mut JoinSet<T>, f: F) -> AbortHandle
+    where
+        F: FnOnce() -> T,
+        F: Send + 'static,
+        T: Send + 'static,
+{
+    if let Some(s) = new_subtask_span() {
+        join_set.spawn_blocking(move || {
+            let _p = s.parent;  // ensure parent stays alive.
+            s.child.in_scope(f)
+        })
+    } else {
+        join_set.spawn_blocking(f)
+    }
+}
+
+/// Propagates current span to the spawned task.  See [spawn] for details.
+pub fn spawn_spawned_task<T>(task: T) -> SpawnedTask<T::Output>
+where
+    T: Future + Send + 'static,
+    T::Output: Send + 'static,
+{
+    if let Some(s) = new_subtask_span() {
+        SpawnedTask::spawn(async move {
+            let _p = s.parent; // ensure parent stays alive.
+            task.instrument(s.child).await
+        })
+    } else {
+        SpawnedTask::spawn(task)
     }
 }
 
