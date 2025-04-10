@@ -38,6 +38,8 @@ use datafusion_physical_expr::EquivalenceProperties;
 use futures::Stream;
 use parking_lot::RwLock;
 
+// TODO upgrade DF: Tracing span for MemoryStream in some MemoryExec node...
+
 /// Iterator over batches
 pub struct MemoryStream {
     /// Vector of record batches

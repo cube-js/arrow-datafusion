@@ -428,6 +428,8 @@ impl LimitStream {
             self.fetch = 0;
             self.input = None; // Clear input so it can be dropped early
 
+            let span = tracing::trace_span!("truncate_batch");  // TODO upgrade DF: We could use the baseline_metrics values.
+            let _guard = span.enter();
             // It is guaranteed that batch_rows is <= batch.num_rows
             Some(batch.slice(0, batch_rows))
         } else {

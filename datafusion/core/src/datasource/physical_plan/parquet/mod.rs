@@ -65,6 +65,7 @@ pub use row_filter::build_row_filter;
 pub use row_filter::can_expr_be_pushed_down_with_schemas;
 pub use row_group_filter::RowGroupAccessPlanFilter;
 pub use writer::plan_to_parquet;
+use tracing_futures::Instrument;
 
 use log::debug;
 
@@ -524,6 +525,8 @@ impl ExecutionPlan for ParquetExec {
     ) -> Result<SendableRecordBatchStream> {
         // TODO upgrade DF: we need  reader_options_customizer used as in the commented code below.
         self.inner.execute(partition_index, ctx)
+
+        // TODO upgrade DF:  We also want Ok(Box::pin(stream.instrument(tracing::trace_span!("read_files")))) applied, probably in inner.
 
         // let reader_options_customizer =
         //     get_reader_options_customizer(ctx.session_config());

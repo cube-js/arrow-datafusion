@@ -35,6 +35,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::coalesce_partitions::CoalescePartitionsExec;
+use crate::cube_ext;
 use crate::display::DisplayableExecutionPlan;
 use crate::metrics::MetricsSet;
 use crate::projection::ProjectionExec;
@@ -884,7 +885,7 @@ pub async fn collect_partitioned(
     let mut join_set = JoinSet::new();
     // Execute the plan and collect the results into batches.
     streams.into_iter().enumerate().for_each(|(idx, stream)| {
-        join_set.spawn(async move {
+        cube_ext::spawn_on_joinset(&mut join_set, async move {
             let result: Result<Vec<RecordBatch>> = stream.try_collect().await;
             (idx, result)
         });

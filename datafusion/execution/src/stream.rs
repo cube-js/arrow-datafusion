@@ -58,3 +58,12 @@ pub trait RecordBatchStream: Stream<Item = Result<RecordBatch>> {
 /// [`Stream`]s there is no mechanism to prevent callers polling  so returning
 /// `Ready(None)` is recommended.
 pub type SendableRecordBatchStream = Pin<Box<dyn RecordBatchStream + Send>>;
+
+// Cube extension
+impl<T> RecordBatchStream for tracing_futures::Instrumented<T>
+    where T: Stream<Item = Result<RecordBatch>>,
+        T: RecordBatchStream {
+    fn schema(&self) -> SchemaRef {
+        self.inner().schema()
+    }
+}

@@ -733,6 +733,7 @@ impl Debug for ExternalSorter {
     }
 }
 
+#[tracing::instrument(level = "trace", skip(batch, expressions, fetch))]
 pub fn sort_batch(
     batch: &RecordBatch,
     expressions: &LexOrdering,
