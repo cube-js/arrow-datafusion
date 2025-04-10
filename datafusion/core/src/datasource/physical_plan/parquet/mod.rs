@@ -67,6 +67,7 @@ pub use metrics::ParquetFileMetrics;
 use opener::ParquetOpener;
 pub use reader::{DefaultParquetFileReaderFactory, ParquetFileReaderFactory};
 pub use writer::plan_to_parquet;
+use tracing_futures::Instrument;
 
 /// Execution plan for reading one or more Parquet files.
 ///
@@ -740,7 +741,7 @@ impl ExecutionPlan for ParquetExec {
         let stream =
             FileStream::new(&self.base_config, partition_index, opener, &self.metrics)?;
 
-        Ok(Box::pin(stream))
+        Ok(Box::pin(stream.instrument(tracing::trace_span!("read_files"))))
     }
 
     fn metrics(&self) -> Option<MetricsSet> {

@@ -36,6 +36,7 @@ use datafusion_execution::TaskContext;
 use datafusion_physical_expr::{EquivalenceProperties, LexOrdering};
 
 use futures::Stream;
+use tracing_futures::Instrument;
 
 /// Execution plan for reading in-memory batches of data
 pub struct MemoryExec {
@@ -142,7 +143,7 @@ impl ExecutionPlan for MemoryExec {
             self.partitions[partition].clone(),
             Arc::clone(&self.projected_schema),
             self.projection.clone(),
-        )?))
+        )?.instrument(tracing::trace_span!("MemoryStream"))))
     }
 
     /// We recompute the statistics dynamically from the arrow metadata as it is pretty cheap to do so

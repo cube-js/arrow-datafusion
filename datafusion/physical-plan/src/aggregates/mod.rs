@@ -49,6 +49,7 @@ use datafusion_physical_expr::{
 
 use datafusion_physical_expr::aggregate::AggregateFunctionExpr;
 use itertools::Itertools;
+use tracing_futures::Instrument;
 
 pub mod group_values;
 mod no_grouping;
@@ -248,9 +249,9 @@ enum StreamType {
 impl From<StreamType> for SendableRecordBatchStream {
     fn from(stream: StreamType) -> Self {
         match stream {
-            StreamType::AggregateStream(stream) => Box::pin(stream),
-            StreamType::GroupedHash(stream) => Box::pin(stream),
-            StreamType::GroupedPriorityQueue(stream) => Box::pin(stream),
+            StreamType::AggregateStream(stream) => Box::pin(stream.instrument(tracing::trace_span!("AggregateStream"))),
+            StreamType::GroupedHash(stream) => Box::pin(stream.instrument(tracing::trace_span!("GroupedHashAggregateStream"))),
+            StreamType::GroupedPriorityQueue(stream) => Box::pin(stream.instrument(tracing::trace_span!("GroupedTopKAggregateStream"))),
         }
     }
 }

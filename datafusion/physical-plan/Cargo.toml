@@ -67,8 +67,8 @@ pin-project-lite = "^0.2.7"
 rand = { workspace = true }
 tokio = { workspace = true }
 serde = { version = "1.0.214", features = ["derive"] }
-tracing = "0.1.25"
-tracing-futures = { version = "0.2.5" }
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

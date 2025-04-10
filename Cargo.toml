@@ -141,6 +141,8 @@ sqlparser = { git = "https://github.com/cube-js/sqlparser-rs.git", branch = "cub
 tempfile = "3"
 thiserror = "1.0.44"
 tokio = { version = "1.36", features = ["macros", "rt", "sync"] }
+tracing = "0.1.25"
+tracing-futures = { version = "0.2.5", features = ["futures-03"] }
 url = "2.2"
 
 [profile.release]

@@ -49,3 +49,7 @@ parking_lot = { workspace = true }
 rand = { workspace = true }
 tempfile = { workspace = true }
 url = { workspace = true }
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
+
+

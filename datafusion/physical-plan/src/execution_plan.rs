@@ -40,6 +40,7 @@ use datafusion_physical_expr::{EquivalenceProperties, LexOrdering, PhysicalSortE
 use datafusion_physical_expr_common::sort_expr::LexRequirement;
 
 use crate::coalesce_partitions::CoalescePartitionsExec;
+use crate::cube_ext;
 use crate::display::DisplayableExecutionPlan;
 pub use crate::display::{DefaultDisplay, DisplayAs, DisplayFormatType, VerboseDisplay};
 pub use crate::metrics::Metric;
@@ -738,7 +739,7 @@ pub async fn collect_partitioned(
     let mut join_set = JoinSet::new();
     // Execute the plan and collect the results into batches.
     streams.into_iter().enumerate().for_each(|(idx, stream)| {
-        join_set.spawn(async move {
+        cube_ext::spawn_on_joinset(&mut join_set, async move {
             let result: Result<Vec<RecordBatch>> = stream.try_collect().await;
             (idx, result)
         });

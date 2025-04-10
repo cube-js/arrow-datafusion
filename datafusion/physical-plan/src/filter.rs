@@ -426,6 +426,7 @@ struct FilterExecStream {
     projection: Option<Vec<usize>>,
 }
 
+#[tracing::instrument(level = "trace", skip(batch))]
 pub fn batch_filter(
     batch: &RecordBatch,
     predicate: &Arc<dyn PhysicalExpr>,

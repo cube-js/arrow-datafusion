@@ -28,12 +28,14 @@ use arrow::datatypes::{DataType, SchemaRef};
 use arrow_array::*;
 use datafusion_common::{internal_err, Result};
 use datafusion_execution::memory_pool::MemoryReservation;
+use tracing_futures::Instrument;
 
 macro_rules! primitive_merge_helper {
     ($t:ty, $($v:ident),+) => {
         merge_helper!(PrimitiveArray<$t>, $($v),+)
     };
 }
+
 
 macro_rules! merge_helper {
     ($t:ty, $sort:ident, $streams:ident, $schema:ident, $tracking_metrics:ident, $batch_size:ident, $fetch:ident, $reservation:ident) => {{
@@ -45,7 +47,7 @@ macro_rules! merge_helper {
             $batch_size,
             $fetch,
             $reservation,
-        )));
+        ).instrument(merge_sort_span())));
     }};
 }
 
@@ -93,5 +95,10 @@ pub fn streaming_merge(
         batch_size,
         fetch,
         reservation,
-    )))
+    ).instrument(merge_sort_span())))
+}
+
+
+fn merge_sort_span() -> tracing::Span {
+    tracing::trace_span!("merge_sort")
 }
