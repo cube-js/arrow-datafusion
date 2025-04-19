@@ -219,7 +219,8 @@ pub fn serialize_expr(
                 expr_type: Some(ExprType::Literal(pb_value)),
             }
         }
-        Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
+        Expr::BinaryExpr(binary_expr) => (|binary_expr: &BinaryExpr, codec: &dyn LogicalExtensionCodec| {
+            let BinaryExpr { left, op, right } = binary_expr;
             // Try to linerize a nested binary expression tree of the same operator
             // into a flat vector of expressions.
             let mut exprs = vec![right.as_ref()];
@@ -246,17 +247,18 @@ pub fn serialize_expr(
                 operands: serialize_exprs(exprs.into_iter().rev(), codec)?,
                 op: format!("{op:?}"),
             };
-            protobuf::LogicalExprNode {
+            Ok(protobuf::LogicalExprNode {
                 expr_type: Some(ExprType::BinaryExpr(binary_expr)),
-            }
-        }
-        Expr::Like(Like {
-            negated,
-            expr,
-            pattern,
-            escape_char,
-            case_insensitive,
-        }) => {
+            })
+        })(binary_expr, codec)?,
+        Expr::Like(like) => (|like: &Like, codec: &dyn LogicalExtensionCodec| {
+            let Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+                case_insensitive,
+            } = like;
             if *case_insensitive {
                 let pb = Box::new(protobuf::ILikeNode {
                     negated: *negated,
@@ -265,9 +267,9 @@ pub fn serialize_expr(
                     escape_char: escape_char.map(|ch| ch.to_string()).unwrap_or_default(),
                 });
 
-                protobuf::LogicalExprNode {
+                Ok(protobuf::LogicalExprNode {
                     expr_type: Some(ExprType::Ilike(pb)),
-                }
+                })
             } else {
                 let pb = Box::new(protobuf::LikeNode {
                     negated: *negated,
@@ -276,11 +278,11 @@ pub fn serialize_expr(
                     escape_char: escape_char.map(|ch| ch.to_string()).unwrap_or_default(),
                 });
 
-                protobuf::LogicalExprNode {
+                Ok(protobuf::LogicalExprNode {
                     expr_type: Some(ExprType::Like(pb)),
-                }
+                })
             }
-        }
+        })(like, codec)?,
         Expr::SimilarTo(Like {
             negated,
             expr,
@@ -298,18 +300,19 @@ pub fn serialize_expr(
                 expr_type: Some(ExprType::SimilarTo(pb)),
             }
         }
-        Expr::WindowFunction(expr::WindowFunction {
-            ref fun,
-            params:
-                expr::WindowFunctionParams {
-                    ref args,
-                    ref partition_by,
-                    ref order_by,
-                    ref window_frame,
-                    // TODO: support null treatment in proto
-                    null_treatment: _,
-                },
-        }) => {
+        Expr::WindowFunction(window_function) => (|window_function: &expr::WindowFunction, codec: &dyn LogicalExtensionCodec| {
+            let expr::WindowFunction {
+                ref fun,
+                params:
+                    expr::WindowFunctionParams {
+                        ref args,
+                        ref partition_by,
+                        ref order_by,
+                        ref window_frame,
+                        // TODO: support null treatment in proto
+                        null_treatment: _,
+                    },
+            } = window_function;
             let (window_function, fun_definition) = match fun {
                 WindowFunctionDefinition::AggregateUDF(aggr_udf) => {
                     let mut buf = Vec::new();
@@ -345,10 +348,10 @@ pub fn serialize_expr(
                 window_frame,
                 fun_definition,
             };
-            protobuf::LogicalExprNode {
+            Ok(protobuf::LogicalExprNode {
                 expr_type: Some(ExprType::WindowExpr(window_expr)),
-            }
-        }
+            })
+        })(window_function, codec)?,
         Expr::AggregateFunction(expr::AggregateFunction {
             ref func,
             params:
@@ -486,7 +489,7 @@ pub fn serialize_expr(
                 expr_type: Some(ExprType::Between(expr)),
             }
         }
-        Expr::Case(case) => {
+        Expr::Case(case) => (|case: &expr::Case, codec: &dyn LogicalExtensionCodec| {
             let when_then_expr = case
                 .when_then_expr
                 .iter()
@@ -508,10 +511,10 @@ pub fn serialize_expr(
                     None => None,
                 },
             });
-            protobuf::LogicalExprNode {
+            Ok(protobuf::LogicalExprNode {
                 expr_type: Some(ExprType::Case(expr)),
-            }
-        }
+            })
+        })(case, codec)?,
         Expr::Cast(Cast { expr, data_type }) => {
             let expr = Box::new(protobuf::CastNode {
                 expr: Some(Box::new(serialize_expr(expr.as_ref(), codec)?)),
