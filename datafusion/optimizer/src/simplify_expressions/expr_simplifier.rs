@@ -1512,7 +1512,7 @@ impl<S: SimplifyInfo> TreeNodeRewriter for Simplifier<'_, S> {
                                 }))
                             }
                             Some(pattern_str)
-                                if !pattern_str
+                                if !like.case_insensitive && !pattern_str
                                     .contains(['%', '_', escape_char].as_ref()) =>
                             {
                                 // If the pattern does not contain any wildcards, we can simplify the like expression to an equality expression
