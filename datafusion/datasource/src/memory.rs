@@ -469,12 +469,15 @@ impl DataSource for MemorySourceConfig {
                     self.projection().as_ref().unwrap_or(&all_projections),
                 );
 
-                MemorySourceConfig::try_new_exec(
+                MemorySourceConfig::try_new(
                     self.partitions(),
                     self.original_schema(),
                     Some(new_projections),
-                )
-                .map(|e| e as _)
+                ).and_then(|memory_source| {
+                    // The projection gets applied to the sort information -- so we use the original underlying sort information.
+                    let s = memory_source.try_with_sort_information(self.sort_information.clone())?;
+                    Ok(Arc::new(DataSourceExec::new(Arc::new(s))) as _)
+                })
             })
             .transpose()
     }
