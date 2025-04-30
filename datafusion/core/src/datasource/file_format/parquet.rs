@@ -31,7 +31,7 @@ use crate::arrow::array::RecordBatch;
 use crate::arrow::datatypes::{Fields, Schema, SchemaRef};
 use crate::datasource::file_format::file_compression_type::FileCompressionType;
 use crate::datasource::file_format::write::get_writer_schema;
-use crate::datasource::physical_plan::parquet::{can_expr_be_pushed_down_with_schemas, get_reader_options_config_or_default, MetadataFetcher, ReaderOptionsConfig};
+use crate::datasource::physical_plan::parquet::{can_expr_be_pushed_down_with_schemas, get_reader_options_config_or_default, get_reader_options_customizer, MetadataFetcher};
 use crate::datasource::physical_plan::parquet::source::ParquetSource;
 use crate::datasource::physical_plan::{FileSink, FileSinkConfig};
 use crate::datasource::statistics::{create_max_min_accs, get_col_stats};
@@ -432,7 +432,7 @@ impl FileFormat for ParquetFormat {
 
     async fn create_physical_plan(
         &self,
-        _state: &dyn Session,
+        state: &dyn Session,
         conf: FileScanConfig,
         filters: Option<&Arc<dyn PhysicalExpr>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -451,7 +451,7 @@ impl FileFormat for ParquetFormat {
             metadata_size_hint = Some(metadata);
         }
 
-        let mut source = ParquetSource::new(self.options.clone(), ReaderOptionsConfig::noop());  // TODO upgrade DF
+        let mut source = ParquetSource::new(self.options.clone(), get_reader_options_customizer(state.config()));
 
         if let Some(predicate) = predicate {
             source = source.with_predicate(Arc::clone(&conf.file_schema), predicate);

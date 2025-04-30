@@ -523,18 +523,9 @@ impl ExecutionPlan for ParquetExec {
         partition_index: usize,
         ctx: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        // TODO upgrade DF: we need  reader_options_customizer used as in the commented code below.
         self.inner.execute(partition_index, ctx)
 
         // TODO upgrade DF:  We also want Ok(Box::pin(stream.instrument(tracing::trace_span!("read_files")))) applied, probably in inner.
-
-        // let reader_options_customizer =
-        //     get_reader_options_customizer(ctx.session_config());
-
-        // let opener = ParquetOpener {
-        // ...
-        //     reader_options_customizer,
-        // };
     }
     fn metrics(&self) -> Option<MetricsSet> {
         self.inner.metrics()

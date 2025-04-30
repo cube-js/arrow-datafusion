@@ -300,8 +300,16 @@ impl ParquetSource {
     pub fn new(table_parquet_options: TableParquetOptions, reader_options_customizer: Arc<dyn ReaderOptionsCustomizer>) -> Self {
         Self {
             table_parquet_options,
+            metrics: Default::default(),
+            predicate: Default::default(),
+            pruning_predicate: Default::default(),
+            page_pruning_predicate: Default::default(),
+            parquet_file_reader_factory: Default::default(),
+            schema_adapter_factory: Default::default(),
+            batch_size: Default::default(),
+            metadata_size_hint: Default::default(),
+            projected_statistics: Default::default(),
             reader_options_customizer,
-            ..Self::default()
         }
     }
 
