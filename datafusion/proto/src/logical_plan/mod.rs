@@ -785,16 +785,12 @@ impl AsLogicalPlan for LogicalPlanNode {
                         "Protobuf deserialization error, Union was require at least two input.",
                     )));
                 }
-                let (first, rest) = union.inputs.split_first().unwrap();
-                let mut builder = LogicalPlanBuilder::from(
-                    first.try_into_logical_plan(ctx, extension_codec)?,
-                );
 
-                for i in rest {
-                    let plan = i.try_into_logical_plan(ctx, extension_codec)?;
-                    builder = builder.union(plan)?;
+                let mut input_plans = Vec::with_capacity(union.inputs.len());
+                for input in &union.inputs {
+                    input_plans.push(Arc::new(input.try_into_logical_plan(ctx, extension_codec)?));
                 }
-                builder.build()
+                Ok(LogicalPlan::Union(datafusion_expr::Union::try_new_with_loose_types(input_plans)?))
             }
             LogicalPlanType::CrossJoin(crossjoin) => {
                 let left = into_logical_plan!(crossjoin.left, ctx, extension_codec)?;

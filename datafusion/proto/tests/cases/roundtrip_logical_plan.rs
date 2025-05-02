@@ -25,8 +25,6 @@ use arrow::datatypes::{
 };
 use arrow::util::pretty::pretty_format_batches;
 use datafusion::datasource::file_format::json::JsonFormatFactory;
-use datafusion::optimizer::eliminate_nested_union::EliminateNestedUnion;
-use datafusion::optimizer::Optimizer;
 use datafusion_common::parsers::CompressionTypeVariant;
 use prost::Message;
 use std::any::Any;
@@ -2603,13 +2601,9 @@ async fn roundtrip_union_query() -> Result<()> {
     ctx.register_csv("t2", "tests/testdata/test.csv", CsvReadOptions::default())
         .await?;
     let logical_round_trip = logical_plan_from_bytes(&bytes, &ctx)?;
-    // proto deserialization only supports 2-way union, hence this plan has nested unions
-    // apply the flatten unions optimizer rule to be able to compare
-    let optimizer = Optimizer::with_rules(vec![Arc::new(EliminateNestedUnion::new())]);
-    let unnested = optimizer.optimize(logical_round_trip, &(ctx.state()), |_x, _y| {})?;
     assert_eq!(
         format!("{}", plan.display_indent_schema()),
-        format!("{}", unnested.display_indent_schema()),
+        format!("{}", logical_round_trip.display_indent_schema()),
     );
     Ok(())
 }
