@@ -1632,11 +1632,15 @@ mod test {
         let expected = "Projection: a IS UNKNOWN\n  EmptyRelation";
         assert_analyzed_plan_eq(Arc::new(TypeCoercion::new()), plan, expected)?;
 
-        let empty = empty_with_type(Utf8);
+        // Cube: Using Binary instead of Utf8, because string->boolean coercion has been added.
+        // let empty = empty_with_type(Utf8);
+        let empty = empty_with_type(DataType::Binary);
         let plan = LogicalPlan::Projection(Projection::try_new(vec![expr], empty)?);
         let ret = assert_analyzed_plan_eq(Arc::new(TypeCoercion::new()), plan, expected);
         let err = ret.unwrap_err().to_string();
-        assert!(err.contains("Cannot infer common argument type for comparison operation Utf8 IS DISTINCT FROM Boolean"), "{err}");
+        // Cube:
+        // assert!(err.contains("Cannot infer common argument type for comparison operation Utf8 IS DISTINCT FROM Boolean"), "{err}");
+        assert!(err.contains("Cannot infer common argument type for comparison operation Binary IS DISTINCT FROM Boolean"), "{err}");
 
         // is not unknown
         let expr = col("a").is_not_unknown();

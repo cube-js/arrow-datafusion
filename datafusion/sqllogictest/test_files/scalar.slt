@@ -1548,7 +1548,9 @@ SELECT null, not(null)
 ----
 NULL NULL
 
-query error type_coercion\ncaused by\nError during planning: Cannot infer common argument type for comparison operation Utf8 IS DISTINCT FROM Boolean
+# Cube: We added string->bool conversion
+# query error type_coercion\ncaused by\nError during planning: Cannot infer common argument type for comparison operation Utf8 IS DISTINCT FROM Boolean
+query error DataFusion error: Arrow error: Cast error: Cannot cast value 'hi' to value of Boolean type
 SELECT NOT('hi')
 
 # test_negative_expressions()

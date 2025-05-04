@@ -239,8 +239,9 @@ logical_plan
 11)----------EmptyRelation
 
 # union_with_incompatible_data_types()
-query error Incompatible inputs for Union: Previous inputs were of type Utf8, but got incompatible type Boolean on column 'a'
-SELECT 'a' a UNION ALL SELECT true a
+# Cube: Changed this test to avoid string->boolean coercion that was added
+query error Incompatible inputs for Union: Previous inputs were of type Binary, but got incompatible type Boolean on column 'a'
+SELECT CAST('a' AS BYTEA) a UNION ALL SELECT true a
 
 statement ok
 SET datafusion.optimizer.max_passes = 3;
