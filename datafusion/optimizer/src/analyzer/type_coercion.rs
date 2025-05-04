@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use datafusion_expr::binary::BinaryTypeCoercer;
+use datafusion_expr::binary::{union_value_comparison_coercion, BinaryTypeCoercer};
 use itertools::izip;
 
 use arrow::datatypes::{DataType, Field, IntervalUnit, Schema};
@@ -971,7 +971,7 @@ pub fn coerce_union_schema(inputs: &[Arc<LogicalPlan>]) -> Result<DFSchema> {
             plan_schema.fields().iter()
         ) {
             let coerced_type =
-                comparison_coercion(union_datatype, plan_field.data_type()).ok_or_else(
+                union_value_comparison_coercion(union_datatype, plan_field.data_type()).ok_or_else(
                     || {
                         plan_datafusion_err!(
                             "Incompatible inputs for Union: Previous inputs were \

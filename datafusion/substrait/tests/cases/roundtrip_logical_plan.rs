@@ -449,7 +449,11 @@ async fn try_cast_decimal_to_int() -> Result<()> {
 
 #[tokio::test]
 async fn try_cast_decimal_to_string() -> Result<()> {
-    roundtrip("SELECT * FROM data WHERE a = TRY_CAST(b AS string)").await
+    // Cube: We now type coerce comparisons, int = utf8, by casting to the numeric type.  So this
+    // test has to be altered by avoiding casting '2.00' to int64.
+
+    // roundtrip("SELECT * FROM data WHERE a = TRY_CAST(b AS string)").await
+    roundtrip("SELECT * FROM data WHERE CAST(a AS string) = TRY_CAST(b AS string)").await
 }
 
 #[tokio::test]

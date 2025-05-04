@@ -1003,25 +1003,21 @@ SELECT 0.3 NOT IN (0.0,0.1,0.2,NULL)
 ----
 NULL
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '1' IN ('a','b',1)
-----
-true
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '2' IN ('a','b',1)
-----
-false
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '2' NOT IN ('a','b',1)
-----
-true
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '1' NOT IN ('a','b',1)
-----
-false
 
 query B
 SELECT NULL IN ('a','b',1)
@@ -1033,25 +1029,21 @@ SELECT NULL NOT IN ('a','b',1)
 ----
 NULL
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '1' IN ('a','b',NULL,1)
-----
-true
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '2' IN ('a','b',NULL,1)
-----
-NULL
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '1' NOT IN ('a','b',NULL,1)
-----
-false
 
-query B
+# Cube: Changed due to string->number coercion.
+query error DataFusion error: Arrow error: Cast error: Cannot cast string 'a' to value of Int64 type
 SELECT '2' NOT IN ('a','b',NULL,1)
-----
-NULL
 
 query T
 SELECT encode('tom','base64');

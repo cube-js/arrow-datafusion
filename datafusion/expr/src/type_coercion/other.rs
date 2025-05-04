@@ -16,8 +16,7 @@
 // under the License.
 
 use arrow::datatypes::DataType;
-
-use super::binary::comparison_coercion;
+use super::binary::{case_value_comparison_coercion, comparison_coercion};
 
 /// Attempts to coerce the types of `list_types` to be comparable with the
 /// `expr_type`.
@@ -49,6 +48,9 @@ pub fn get_coerce_type_for_case_expression(
         .try_fold(case_or_else_type, |left_type, right_type| {
             // TODO: now just use the `equal` coercion rule for case when. If find the issue, and
             // refactor again.
-            comparison_coercion(&left_type, right_type)
+
+            // Cube: comparison_coercion now does (string, int) -> int.  But we want (string, int) -> string here.
+            // comparison_coercion(&left_type, right_type)
+            case_value_comparison_coercion(&left_type, right_type)
         })
 }

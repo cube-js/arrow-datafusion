@@ -719,11 +719,40 @@ pub fn comparison_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<D
         .or_else(|| string_coercion(lhs_type, rhs_type))
         .or_else(|| list_coercion(lhs_type, rhs_type))
         .or_else(|| null_coercion(lhs_type, rhs_type))
+        // TODO upgrade DF: Look at non-comparison coercions and figure out desirable behavior
+        .or_else(|| string_numeric_coercion_as_numeric(lhs_type, rhs_type))
+        .or_else(|| string_boolean_coercion(lhs_type, rhs_type))
+        .or_else(|| string_temporal_coercion(lhs_type, rhs_type))
+        .or_else(|| binary_coercion(lhs_type, rhs_type))
+        .or_else(|| struct_coercion(lhs_type, rhs_type))
+}
+
+/// Cube: DF 46 had case expressions use comparison_coercion to find the common type for the value
+/// expression.  We changed comparison_coercion but for case value expressions we want
+/// string_numeric_coercion to be used.
+//
+// TODO upgrade DF: What behavior do we want for numeric_boolean and string_boolean coercion here?  Probably boolean->string
+pub fn case_value_comparison_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
+    if lhs_type == rhs_type {
+        // same type => equality is possible
+        return Some(lhs_type.clone());
+    }
+    binary_numeric_coercion(lhs_type, rhs_type)
+        .or_else(|| number_boolean_coercion(lhs_type, rhs_type))
+        .or_else(|| dictionary_comparison_coercion(lhs_type, rhs_type, true))
+        .or_else(|| temporal_coercion_nonstrict_timezone(lhs_type, rhs_type))
+        .or_else(|| string_coercion(lhs_type, rhs_type))
+        .or_else(|| list_coercion(lhs_type, rhs_type))
+        .or_else(|| null_coercion(lhs_type, rhs_type))
         .or_else(|| string_numeric_coercion(lhs_type, rhs_type))
         .or_else(|| string_boolean_coercion(lhs_type, rhs_type))
         .or_else(|| string_temporal_coercion(lhs_type, rhs_type))
         .or_else(|| binary_coercion(lhs_type, rhs_type))
         .or_else(|| struct_coercion(lhs_type, rhs_type))
+}
+
+pub fn union_value_comparison_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
+    case_value_comparison_coercion(lhs_type, rhs_type)
 }
 
 /// Similar to [`comparison_coercion`] but prefers numeric if compares with
@@ -1630,7 +1659,9 @@ mod tests {
         let rhs_type = Dictionary(Box::new(Int8), Box::new(Int16));
         assert_eq!(
             dictionary_comparison_coercion(&lhs_type, &rhs_type, true),
-            Some(Utf8)
+            // Cube: We switched the direction of int/numeric comparison coercion
+            Some(Int16)
+            // Some(Utf8)
         );
 
         // Since we can coerce values of Utf8 to Binary can support this

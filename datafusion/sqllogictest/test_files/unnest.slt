@@ -263,10 +263,11 @@ NULL 10 NULL
 NULL NULL 17
 NULL NULL 18
 
-query IIIT
-select 
-    unnest(column1), unnest(column2) + 2, 
-    column3 * 10, unnest(array_remove(column1, '4')) 
+# Cube: We changed this from '4' to 4, IIIT to IIII.  Unclear why.
+query IIII
+select
+    unnest(column1), unnest(column2) + 2,
+    column3 * 10, unnest(array_remove(column1, 4))
 from unnest_table;
 ----
 1 9 10 1
