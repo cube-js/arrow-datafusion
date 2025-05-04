@@ -1607,7 +1607,16 @@ mod tests {
         let result_type =
             BinaryTypeCoercer::new(&input_decimal, &Operator::Eq, &DataType::Boolean)
                 .get_input_types();
+        // Cube: Actually we pass this one with number->bool conversion
+        // assert!(result_type.is_err());
+        assert!(result_type.is_ok());
+
+        // Cube: Here's a failing one
+        let result_type =
+            BinaryTypeCoercer::new(&input_decimal, &Operator::Eq, &DataType::Binary)
+                .get_input_types();
         assert!(result_type.is_err());
+
         Ok(())
     }
 

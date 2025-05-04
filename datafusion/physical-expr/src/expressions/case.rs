@@ -1077,7 +1077,9 @@ mod tests {
             None,
             schema.as_ref(),
         );
-        assert!(expr.is_err());
+        // Cube: expr is not err because of number to boolean conversion
+        // assert!(expr.is_err());
+        assert!(!expr.is_err());
 
         // then 1 is int32
         // then 2 is int64
