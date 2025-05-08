@@ -336,11 +336,12 @@ fn test_propagate_empty_relation_inner_join_and_unions() {
 
     let plan = test_sql(sql).unwrap();
     let expected = "\
-        Union\
-        \n  TableScan: test projection=[col_int32]\
-        \n  TableScan: test projection=[col_int32]\
-        \n  Filter: test.col_int32 < Int32(0)\
-        \n    TableScan: test projection=[col_int32]";
+        Projection: test.col_int32 AS col_int32\
+        \n  Union\
+        \n    TableScan: test projection=[col_int32]\
+        \n    TableScan: test projection=[col_int32]\
+        \n    Filter: test.col_int32 < Int32(0)\
+        \n      TableScan: test projection=[col_int32]";
     assert_eq!(expected, format!("{plan}"));
 }
 
