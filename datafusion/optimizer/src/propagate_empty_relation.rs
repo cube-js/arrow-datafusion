@@ -192,7 +192,11 @@ impl OptimizerRule for PropagateEmptyRelation {
     }
 }
 
-fn apply_aliasing_projection_if_necessary(
+/// Takes an inner LogicalPlan, whose schema has the same length and names as
+/// `union_schema`, but (perhaps) different table qualifiers.  Assumes the
+/// DataTypes are the same.  Wraps the inner LogicalPlan with a Projection
+/// having the correct alias expressions for the output schema.
+pub fn apply_aliasing_projection_if_necessary(
     input: LogicalPlan,
     output_schema: &DFSchema,
 ) -> Result<LogicalPlan> {
