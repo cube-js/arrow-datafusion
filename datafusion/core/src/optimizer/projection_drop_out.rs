@@ -631,7 +631,7 @@ mod tests {
             )?
             .project_with_alias(
                 vec![
-                    round(col("id")).alias("first"),
+                    round(vec![col("id")]).alias("first"),
                     col("n").alias("second"),
                     lit(2).alias("third"),
                 ],
@@ -649,7 +649,7 @@ mod tests {
         // select * from (select id first, a second, 2 third from (select round(a) id, 1 num from table) a) x;
         let plan = LogicalPlanBuilder::from(table_scan)
             .project_with_alias(
-                vec![round(col("a")).alias("id"), lit(1).alias("n")],
+                vec![round(vec![col("a")]).alias("id"), lit(1).alias("n")],
                 Some("a".to_string()),
             )?
             .project_with_alias(
@@ -748,7 +748,7 @@ mod tests {
             )?
             .project_with_alias(
                 vec![
-                    round(col("id")).alias("first"),
+                    round(vec![col("id")]).alias("first"),
                     col("n").alias("second"),
                     lit(2).alias("third"),
                 ],
@@ -826,7 +826,10 @@ mod tests {
         let plan = LogicalPlanBuilder::from(table_scan)
             .project_with_alias(vec![col("a").alias("id")], Some("a".to_string()))?
             .project_with_alias(
-                vec![round(col("id")).alias("first"), lit(2).alias("second")],
+                vec![
+                    round(vec![col("id")]).alias("first"),
+                    lit(2).alias("second"),
+                ],
                 Some("b".to_string()),
             )?
             .sort(vec![col("first")])?
@@ -1019,7 +1022,7 @@ mod tests {
             .project_with_alias(vec![col("a").alias("num")], Some("a".to_string()))?
             .project_with_alias(vec![col("num")], Some("b".to_string()))?
             .filter(col("num").gt(lit(0)))?
-            .aggregate(vec![round(col("num"))], Vec::<Expr>::new())?
+            .aggregate(vec![round(vec![col("num")])], Vec::<Expr>::new())?
             .project(vec![col("Round(b.num)")])?
             .sort(vec![col("Round(b.num)")])?
             .build()?;
@@ -1044,7 +1047,7 @@ mod tests {
         let plan = LogicalPlanBuilder::from(table_scan.clone())
             .project_with_alias(vec![col("a").alias("num")], Some("a".to_string()))?
             .project_with_alias(vec![col("num")], Some("b".to_string()))?
-            .aggregate(vec![round(col("num"))], Vec::<Expr>::new())?
+            .aggregate(vec![round(vec![col("num")])], Vec::<Expr>::new())?
             .project(vec![col("Round(b.num)")])?
             .sort(vec![col("Round(b.num)")])?
             .build()?;
@@ -1061,7 +1064,7 @@ mod tests {
         let plan = LogicalPlanBuilder::from(table_scan)
             .project_with_alias(vec![col("a").alias("num")], Some("a".to_string()))?
             .project_with_alias(vec![col("num")], Some("b".to_string()))?
-            .aggregate(vec![round(col("num"))], Vec::<Expr>::new())?
+            .aggregate(vec![round(vec![col("num")])], Vec::<Expr>::new())?
             .project(vec![col("Round(b.num)")])?
             .sort(vec![col("Round(b.num)")])?
             .project_with_alias(vec![col("Round(b.num)")], Some("x".to_string()))?
@@ -1099,7 +1102,7 @@ mod tests {
             .project_with_alias(vec![col("num")], Some("x".to_string()))?
             .join(&right, JoinType::Left, (vec!["num"], vec!["a"]))?
             .project_with_alias(
-                vec![col("num"), col("a"), round(col("num"))],
+                vec![col("num"), col("a"), round(vec![col("num")])],
                 Some("b".to_string()),
             )?
             .build()?;
