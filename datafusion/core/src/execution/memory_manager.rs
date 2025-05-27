@@ -288,21 +288,12 @@ impl MemoryManager {
     }
 
     pub(crate) fn shrink_tracker_usage(&self, delta: usize) {
-        let update =
-            self.trackers_total
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                    if x >= delta {
-                        Some(x - delta)
-                    } else {
-                        None
-                    }
-                });
-        update.unwrap_or_else(|_| {
-            panic!(
-                "Tracker total memory shrink by {} underflow, current value is ",
-                delta
-            )
-        });
+        self.trackers_total
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                // Do not panic, set to usize::MIN on underflow
+                Some(x.saturating_sub(delta))
+            })
+            .expect("Unexpected underflow in tracker memory usage");
     }
 
     fn get_requester_total(&self) -> usize {
