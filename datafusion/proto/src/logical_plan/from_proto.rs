@@ -303,7 +303,7 @@ pub fn parse_expr(
                     };
 
                     let args = parse_exprs(&expr.exprs, registry, codec)?;
-                    Expr::WindowFunction(WindowFunction::new(
+                    Expr::from(WindowFunction::new(
                         expr::WindowFunctionDefinition::AggregateUDF(udaf_function),
                         args,
                     ))
@@ -320,7 +320,7 @@ pub fn parse_expr(
                     };
 
                     let args = parse_exprs(&expr.exprs, registry, codec)?;
-                    Expr::WindowFunction(WindowFunction::new(
+                    Expr::from(WindowFunction::new(
                         expr::WindowFunctionDefinition::WindowUDF(udwf_function),
                         args,
                     ))

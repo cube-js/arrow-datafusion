@@ -300,7 +300,7 @@ pub fn serialize_expr(
                 expr_type: Some(ExprType::SimilarTo(pb)),
             }
         }
-        Expr::WindowFunction(window_function) => (|window_function: &expr::WindowFunction, codec: &dyn LogicalExtensionCodec| {
+        Expr::WindowFunction(window_function) => (|window_function: &Box<expr::WindowFunction>, codec: &dyn LogicalExtensionCodec| {
             let expr::WindowFunction {
                 ref fun,
                 params:
@@ -312,7 +312,7 @@ pub fn serialize_expr(
                         // TODO: support null treatment in proto
                         null_treatment: _,
                     },
-            } = window_function;
+            } = window_function.as_ref();
             let (window_function, fun_definition) = match fun {
                 WindowFunctionDefinition::AggregateUDF(aggr_udf) => {
                     let mut buf = Vec::new();

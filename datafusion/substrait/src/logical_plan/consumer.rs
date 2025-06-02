@@ -2214,7 +2214,7 @@ pub async fn from_window_function(
 
     window_frame.regularize_order_bys(&mut order_by)?;
 
-    Ok(Expr::WindowFunction(expr::WindowFunction {
+    Ok(Expr::from(expr::WindowFunction {
         fun,
         params: WindowFunctionParams {
             args: from_substrait_func_args(consumer, &window.arguments, input_schema)

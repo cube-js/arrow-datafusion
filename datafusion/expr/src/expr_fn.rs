@@ -841,7 +841,7 @@ impl ExprFuncBuilder {
                 params: WindowFunctionParams { args, .. },
             }) => {
                 let has_order_by = order_by.as_ref().map(|o| !o.is_empty());
-                Expr::WindowFunction(WindowFunction {
+                Expr::from(WindowFunction {
                     fun,
                     params: WindowFunctionParams {
                         args,
@@ -905,7 +905,7 @@ impl ExprFunctionExt for Expr {
                 ExprFuncBuilder::new(Some(ExprFuncKind::Aggregate(udaf)))
             }
             Expr::WindowFunction(udwf) => {
-                ExprFuncBuilder::new(Some(ExprFuncKind::Window(udwf)))
+                ExprFuncBuilder::new(Some(ExprFuncKind::Window(*udwf)))
             }
             _ => ExprFuncBuilder::new(None),
         };
@@ -945,7 +945,7 @@ impl ExprFunctionExt for Expr {
                 ExprFuncBuilder::new(Some(ExprFuncKind::Aggregate(udaf)))
             }
             Expr::WindowFunction(udwf) => {
-                ExprFuncBuilder::new(Some(ExprFuncKind::Window(udwf)))
+                ExprFuncBuilder::new(Some(ExprFuncKind::Window(*udwf)))
             }
             _ => ExprFuncBuilder::new(None),
         };
@@ -958,7 +958,7 @@ impl ExprFunctionExt for Expr {
     fn partition_by(self, partition_by: Vec<Expr>) -> ExprFuncBuilder {
         match self {
             Expr::WindowFunction(udwf) => {
-                let mut builder = ExprFuncBuilder::new(Some(ExprFuncKind::Window(udwf)));
+                let mut builder = ExprFuncBuilder::new(Some(ExprFuncKind::Window(*udwf)));
                 builder.partition_by = Some(partition_by);
                 builder
             }
@@ -969,7 +969,7 @@ impl ExprFunctionExt for Expr {
     fn window_frame(self, window_frame: WindowFrame) -> ExprFuncBuilder {
         match self {
             Expr::WindowFunction(udwf) => {
-                let mut builder = ExprFuncBuilder::new(Some(ExprFuncKind::Window(udwf)));
+                let mut builder = ExprFuncBuilder::new(Some(ExprFuncKind::Window(*udwf)));
                 builder.window_frame = Some(window_frame);
                 builder
             }

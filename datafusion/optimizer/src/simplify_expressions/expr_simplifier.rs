@@ -35,11 +35,10 @@ use datafusion_common::{internal_err, DFSchema, DataFusionError, Result, ScalarV
 use datafusion_expr::simplify::ExprSimplifyResult;
 use datafusion_expr::{
     and, lit, or, BinaryExpr, Case, ColumnarValue, Expr, Like, Operator, Volatility,
-    WindowFunctionDefinition,
 };
 use datafusion_expr::{expr::ScalarFunction, interval_arithmetic::NullableInterval};
 use datafusion_expr::{
-    expr::{InList, InSubquery, WindowFunction},
+    expr::{InList, InSubquery},
     utils::{iter_conjunction, iter_conjunction_owned},
 };
 use datafusion_physical_expr::{create_physical_expr, execution_props::ExecutionProps};
@@ -1428,12 +1427,9 @@ impl<S: SimplifyInfo> TreeNodeRewriter for Simplifier<'_, S> {
                 (_, expr) => Transformed::no(expr),
             },
 
-            Expr::WindowFunction(WindowFunction {
-                fun: WindowFunctionDefinition::WindowUDF(ref udwf),
-                ..
-            }) => match (udwf.simplify(), expr) {
+            Expr::WindowFunction(ref window_fun) => match (window_fun.simplify(), expr) {
                 (Some(simplify_function), Expr::WindowFunction(wf)) => {
-                    Transformed::yes(simplify_function(wf, info)?)
+                    Transformed::yes(simplify_function(*wf, info)?)
                 }
                 (_, expr) => Transformed::no(expr),
             },
@@ -1894,6 +1890,7 @@ mod tests {
     use crate::test::test_table_scan_with_name;
     use datafusion_common::{assert_contains, DFSchemaRef, ToDFSchema};
     use datafusion_expr::{
+        expr::WindowFunction,
         function::{
             AccumulatorArgs, AggregateFunctionSimplification,
             WindowFunctionSimplification,
@@ -4104,8 +4101,7 @@ mod tests {
         let udwf = WindowFunctionDefinition::WindowUDF(
             WindowUDF::new_from_impl(SimplifyMockUdwf::new_with_simplify()).into(),
         );
-        let window_function_expr =
-            Expr::WindowFunction(WindowFunction::new(udwf, vec![]));
+        let window_function_expr = Expr::from(WindowFunction::new(udwf, vec![]));
 
         let expected = col("result_column");
         assert_eq!(simplify(window_function_expr), expected);
@@ -4113,8 +4109,7 @@ mod tests {
         let udwf = WindowFunctionDefinition::WindowUDF(
             WindowUDF::new_from_impl(SimplifyMockUdwf::new_without_simplify()).into(),
         );
-        let window_function_expr =
-            Expr::WindowFunction(WindowFunction::new(udwf, vec![]));
+        let window_function_expr = Expr::from(WindowFunction::new(udwf, vec![]));
 
         let expected = window_function_expr.clone();
         assert_eq!(simplify(window_function_expr), expected);
