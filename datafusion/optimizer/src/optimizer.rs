@@ -356,6 +356,9 @@ impl Optimizer {
     where
         F: FnMut(&LogicalPlan, &dyn OptimizerRule),
     {
+        let span = tracing::trace_span!("optimize");
+        let _span_guard = span.enter();
+
         // verify LP is valid, before the first LP optimizer pass.
         plan.check_invariants(InvariantLevel::Executable)
             .map_err(|e| e.context("Invalid input plan before LP Optimizers"))?;
@@ -373,7 +376,13 @@ impl Optimizer {
         while i < options.optimizer.max_passes {
             log_plan(&format!("Optimizer input (pass {i})"), &new_plan);
 
+            let optimizer_pass_span = tracing::trace_span!("pass", number = i);
+            let _optimizer_pass_span_guard = optimizer_pass_span.enter();
+
             for rule in &self.rules {
+                let rule_span = tracing::trace_span!("rule", name = rule.name());
+                let _rule_span_guard = rule_span.enter();
+
                 // If skipping failed rules, copy plan before attempting to rewrite
                 // as rewriting is destructive
                 let prev_plan = options
