@@ -52,7 +52,6 @@ log = { workspace = true }
 recursive = { workspace = true, optional = true }
 regex = { workspace = true }
 regex-syntax = "0.8.0"
-tracing = { workspace = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }

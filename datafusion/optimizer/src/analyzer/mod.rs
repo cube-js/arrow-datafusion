@@ -140,9 +140,6 @@ impl Analyzer {
     where
         F: FnMut(&LogicalPlan, &dyn AnalyzerRule),
     {
-        let analyzer_span = tracing::trace_span!("logical_plan_analyzer");
-        let _guard = analyzer_span.enter();
-
         // verify the logical plan required invariants at the start, before analyzer
         plan.check_invariants(InvariantLevel::Always)
             .map_err(|e| e.context("Invalid input plan passed to Analyzer"))?;
@@ -168,8 +165,6 @@ impl Analyzer {
 
         // TODO add common rule executor for Analyzer and Optimizer
         for rule in rules {
-            let rule_span = tracing::trace_span!("analyze", name = rule.name());
-            let _rule_span_guard = rule_span.enter();
             new_plan = rule
                 .analyze(new_plan, config)
                 .map_err(|e| e.context(rule.name()))?;

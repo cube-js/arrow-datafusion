@@ -2236,7 +2236,6 @@ dependencies = [
  "recursive",
  "regex",
  "regex-syntax",
- "tracing",
 ]
 
 [[package]]
