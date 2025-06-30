@@ -636,34 +636,67 @@ pub fn date_part(args: &[ColumnarValue]) -> Result<ColumnarValue> {
     };
 
     let arr = match date_part.to_lowercase().as_str() {
-        "doy" => {
-            extract_date_part!(array, date_part, cube_ext::temporal::doy, DataType::Int32)
-        }
-        "dow" => {
-            extract_date_part!(array, date_part, cube_ext::temporal::dow, DataType::Int32)
-        }
-        "year" => extract_date_part!(array, date_part, temporal::year, DataType::Int32),
-        "quarter" => {
-            extract_date_part!(array, date_part, temporal::quarter, DataType::Int32)
-        }
-        "month" => extract_date_part!(array, date_part, temporal::month, DataType::Int32),
-        "week" => extract_date_part!(array, date_part, temporal::week, DataType::Int32),
-        "day" => extract_date_part!(array, date_part, temporal::day, DataType::Int32),
-        "hour" => extract_date_part!(array, date_part, temporal::hour, DataType::Int32),
-        "minute" => {
-            extract_date_part!(array, date_part, temporal::minute, DataType::Int32)
-        }
-        "second" => {
-            extract_date_part!(array, date_part, temporal::second, DataType::Int32)
-        }
-        "epoch" => {
-            extract_date_part_from_date_or_interval!(
-                array,
-                date_part,
-                cube_ext::temporal::epoch,
-                DataType::Float64
-            )
-        }
+        "doy" => extract_date_part!(
+            array,
+            date_part,
+            cube_ext::temporal::doy,
+            DataType::Float64
+        ),
+        "dow" => extract_date_part!(
+            array,
+            date_part,
+            cube_ext::temporal::dow,
+            DataType::Float64
+        ),
+        "year" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::year,
+            DataType::Float64
+        ),
+        "quarter" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::quarter,
+            DataType::Float64
+        ),
+        "month" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::month,
+            DataType::Float64
+        ),
+        "week" => extract_date_part!(array, date_part, temporal::week, DataType::Float64),
+        "day" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::day,
+            DataType::Float64
+        ),
+        "hour" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::hour,
+            DataType::Float64
+        ),
+        "minute" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::minute,
+            DataType::Float64
+        ),
+        "second" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::second,
+            DataType::Float64
+        ),
+        "epoch" => extract_date_part_from_date_or_interval!(
+            array,
+            date_part,
+            cube_ext::temporal::epoch,
+            DataType::Float64
+        ),
         _ => Err(DataFusionError::Execution(format!(
             "Date part '{}' not supported",
             date_part
