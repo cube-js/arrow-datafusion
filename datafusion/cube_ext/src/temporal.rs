@@ -15,8 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use arrow::array::{Array, Float64Array, Int32Array, Int32Builder, PrimitiveArray};
-use arrow::compute::kernels::arity::unary;
+use arrow::array::{
+    Array, Date32Array, Date64Array, Float64Array, Int32Array, Int32Builder,
+    IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
+    PrimitiveArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+    TimestampNanosecondArray, TimestampSecondArray,
+};
+use arrow::compute::kernels::{arity::unary, temporal as arrow_temporal};
 use arrow::datatypes::{
     ArrowNumericType, ArrowPrimitiveType, ArrowTemporalType, DataType, Date32Type,
     Date64Type, Float64Type, IntervalDayTimeType, IntervalMonthDayNanoType,
@@ -294,4 +299,267 @@ where
     }
 
     Ok(b.finish())
+}
+
+/// This macro will generate a trait `DatePartable` that is automatically implemented
+/// for all Arrow temporal types.
+macro_rules! date_partable {
+    ($($gran:ident),*) => {
+        pub trait DatePartable: ArrowPrimitiveType + Sized {
+            $(
+                fn $gran(array: &PrimitiveArray<Self>) -> Result<Int32Array>;
+            )*
+        }
+
+        impl DatePartable for TimestampSecondType {
+            $(
+                fn $gran(array: &TimestampSecondArray) -> Result<Int32Array> {
+                    arrow_temporal::$gran(array)
+                }
+            )*
+        }
+
+        impl DatePartable for TimestampMillisecondType {
+            $(
+                fn $gran(array: &TimestampMillisecondArray) -> Result<Int32Array> {
+                    arrow_temporal::$gran(array)
+                }
+            )*
+        }
+
+        impl DatePartable for TimestampMicrosecondType {
+            $(
+                fn $gran(array: &TimestampMicrosecondArray) -> Result<Int32Array> {
+                    arrow_temporal::$gran(array)
+                }
+            )*
+        }
+
+        impl DatePartable for TimestampNanosecondType {
+            $(
+                fn $gran(array: &TimestampNanosecondArray) -> Result<Int32Array> {
+                    arrow_temporal::$gran(array)
+                }
+            )*
+        }
+
+        impl DatePartable for Date32Type {
+            $(
+                fn $gran(array: &Date32Array) -> Result<Int32Array> {
+                    arrow_temporal::$gran(array)
+                }
+            )*
+        }
+
+        impl DatePartable for Date64Type {
+            $(
+                fn $gran(array: &Date64Array) -> Result<Int32Array> {
+                    arrow_temporal::$gran(array)
+                }
+            )*
+        }
+
+        $(
+            pub fn $gran<T>(array: &PrimitiveArray<T>) -> Result<Int32Array>
+            where
+                T: DatePartable,
+            {
+                DatePartable::$gran(array)
+            }
+        )*
+    };
+}
+
+date_partable!(year, quarter, month, day, hour, minute, second);
+
+fn interval_year_month_op(
+    array: &IntervalYearMonthArray,
+    op: fn(i32) -> Result<i32>,
+) -> Result<Int32Array> {
+    let mut builder = Int32Builder::new(array.len());
+    for i in 0..array.len() {
+        if array.is_null(i) {
+            builder.append_null()?;
+            continue;
+        }
+        let value = array.value(i);
+        let result = op(value)?;
+        builder.append_value(result)?;
+    }
+    Ok(builder.finish())
+}
+
+fn interval_day_time_op(
+    array: &IntervalDayTimeArray,
+    op: fn(i64) -> Result<i32>,
+) -> Result<Int32Array> {
+    let mut builder = Int32Builder::new(array.len());
+    for i in 0..array.len() {
+        if array.is_null(i) {
+            builder.append_null()?;
+            continue;
+        }
+        let value = array.value(i);
+        let result = op(value)?;
+        builder.append_value(result)?;
+    }
+    Ok(builder.finish())
+}
+
+fn interval_month_day_nano_op(
+    array: &IntervalMonthDayNanoArray,
+    op: fn(i128) -> Result<i32>,
+) -> Result<Int32Array> {
+    let mut builder = Int32Builder::new(array.len());
+    for i in 0..array.len() {
+        if array.is_null(i) {
+            builder.append_null()?;
+            continue;
+        }
+        let value = array.value(i);
+        let result = op(value)?;
+        builder.append_value(result)?;
+    }
+    Ok(builder.finish())
+}
+
+impl DatePartable for IntervalYearMonthType {
+    fn year(array: &IntervalYearMonthArray) -> Result<Int32Array> {
+        interval_year_month_op(array, |v| Ok(v / 12))
+    }
+
+    fn quarter(array: &IntervalYearMonthArray) -> Result<Int32Array> {
+        interval_year_month_op(array, |v| Ok(v % 12 / 3 + 1))
+    }
+
+    fn month(array: &IntervalYearMonthArray) -> Result<Int32Array> {
+        interval_year_month_op(array, |v| Ok(v % 12))
+    }
+
+    fn day(array: &IntervalYearMonthArray) -> Result<Int32Array> {
+        interval_year_month_op(array, |_| Ok(0))
+    }
+
+    fn hour(array: &IntervalYearMonthArray) -> Result<Int32Array> {
+        interval_year_month_op(array, |_| Ok(0))
+    }
+
+    fn minute(array: &IntervalYearMonthArray) -> Result<Int32Array> {
+        interval_year_month_op(array, |_| Ok(0))
+    }
+
+    fn second(array: &IntervalYearMonthArray) -> Result<Int32Array> {
+        interval_year_month_op(array, |_| Ok(0))
+    }
+}
+
+impl DatePartable for IntervalDayTimeType {
+    fn year(array: &IntervalDayTimeArray) -> Result<Int32Array> {
+        interval_day_time_op(array, |_| Ok(0))
+    }
+
+    fn quarter(array: &IntervalDayTimeArray) -> Result<Int32Array> {
+        interval_day_time_op(array, |_| Ok(1))
+    }
+
+    fn month(array: &IntervalDayTimeArray) -> Result<Int32Array> {
+        interval_day_time_op(array, |_| Ok(0))
+    }
+
+    fn day(array: &IntervalDayTimeArray) -> Result<Int32Array> {
+        interval_day_time_op(array, |v| {
+            let (days, _) = IntervalDayTimeType::to_parts(v);
+            Ok(days)
+        })
+    }
+
+    fn hour(array: &IntervalDayTimeArray) -> Result<Int32Array> {
+        interval_day_time_op(array, |v| {
+            let (_, millis) = IntervalDayTimeType::to_parts(v);
+            Ok(millis / 3_600_000)
+        })
+    }
+
+    fn minute(array: &IntervalDayTimeArray) -> Result<Int32Array> {
+        interval_day_time_op(array, |v| {
+            let (_, millis) = IntervalDayTimeType::to_parts(v);
+            Ok(millis % 3_600_000 / 60_000)
+        })
+    }
+
+    fn second(array: &IntervalDayTimeArray) -> Result<Int32Array> {
+        // NOTE: this technically should return Float64 with millis in the decimal part,
+        // but we are returning Int32 for compatibility with the original implementation.
+        interval_day_time_op(array, |v| {
+            let (_, millis) = IntervalDayTimeType::to_parts(v);
+            Ok(millis % 60_000 / 1_000)
+        })
+    }
+}
+
+impl DatePartable for IntervalMonthDayNanoType {
+    fn year(array: &IntervalMonthDayNanoArray) -> Result<Int32Array> {
+        interval_month_day_nano_op(array, |v| {
+            let (months, _, _) = IntervalMonthDayNanoType::to_parts(v);
+            Ok(months / 12)
+        })
+    }
+
+    fn quarter(array: &IntervalMonthDayNanoArray) -> Result<Int32Array> {
+        interval_month_day_nano_op(array, |v| {
+            let (months, _, _) = IntervalMonthDayNanoType::to_parts(v);
+            Ok(months % 12 / 3 + 1)
+        })
+    }
+
+    fn month(array: &IntervalMonthDayNanoArray) -> Result<Int32Array> {
+        interval_month_day_nano_op(array, |v| {
+            let (months, _, _) = IntervalMonthDayNanoType::to_parts(v);
+            Ok(months % 12)
+        })
+    }
+
+    fn day(array: &IntervalMonthDayNanoArray) -> Result<Int32Array> {
+        interval_month_day_nano_op(array, |v| {
+            let (_, days, _) = IntervalMonthDayNanoType::to_parts(v);
+            Ok(days)
+        })
+    }
+
+    fn hour(array: &IntervalMonthDayNanoArray) -> Result<Int32Array> {
+        interval_month_day_nano_op(array, |v| {
+            let (_, _, nanos) = IntervalMonthDayNanoType::to_parts(v);
+            (nanos / 3_600_000_000_000).try_into().map_err(|_| {
+                ArrowError::ComputeError("Unable to convert i64 nanos to i32".to_string())
+            })
+        })
+    }
+
+    fn minute(array: &IntervalMonthDayNanoArray) -> Result<Int32Array> {
+        interval_month_day_nano_op(array, |v| {
+            let (_, _, nanos) = IntervalMonthDayNanoType::to_parts(v);
+            (nanos % 3_600_000_000_000 / 60_000_000_000)
+                .try_into()
+                .map_err(|_| {
+                    ArrowError::ComputeError(
+                        "Unable to convert i64 nanos to i32".to_string(),
+                    )
+                })
+        })
+    }
+
+    fn second(array: &IntervalMonthDayNanoArray) -> Result<Int32Array> {
+        // NOTE: this technically should return Float64 with millis in the decimal part,
+        // but we are returning Int32 for compatibility with the original implementation.
+        interval_month_day_nano_op(array, |v| {
+            let (_, _, nanos) = IntervalMonthDayNanoType::to_parts(v);
+            (nanos % 60_000_000_000 / 1_000_000_000)
+                .try_into()
+                .map_err(|_| {
+                    ArrowError::ComputeError(
+                        "Unable to convert i64 nanos to i32".to_string(),
+                    )
+                })
+        })
+    }
 }

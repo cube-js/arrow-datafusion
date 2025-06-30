@@ -1124,10 +1124,18 @@ async fn test_extract_date_part() -> Result<()> {
         "EXTRACT(year FROM to_timestamp('2020-09-08T12:00:00+00:00'))",
         "2020"
     );
+    test_expression!(
+        "date_part('YEAR', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
+        "1"
+    );
     test_expression!("date_part('MONTH', CAST('2000-01-01' AS DATE))", "1");
     test_expression!(
         "EXTRACT(month FROM to_timestamp('2020-09-08T12:00:00+00:00'))",
         "9"
+    );
+    test_expression!(
+        "date_part('MONTH', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
+        "2"
     );
     test_expression!("date_part('WEEK', CAST('2003-01-01' AS DATE))", "1");
 
@@ -1144,10 +1152,18 @@ async fn test_extract_date_part() -> Result<()> {
         "EXTRACT(day FROM to_timestamp('2020-09-08T12:00:00+00:00'))",
         "8"
     );
+    test_expression!(
+        "date_part('DAY', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
+        "3"
+    );
     test_expression!("date_part('HOUR', CAST('2000-01-01' AS DATE))", "0");
     test_expression!(
         "EXTRACT(hour FROM to_timestamp('2020-09-08T12:03:03+00:00'))",
         "12"
+    );
+    test_expression!(
+        "date_part('HOUR', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
+        "4"
     );
     test_expression!(
         "EXTRACT(minute FROM to_timestamp('2020-09-08T12:12:00+00:00'))",
@@ -1158,12 +1174,20 @@ async fn test_extract_date_part() -> Result<()> {
         "12"
     );
     test_expression!(
+        "date_part('MINUTE', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
+        "5"
+    );
+    test_expression!(
         "EXTRACT(second FROM to_timestamp('2020-09-08T12:00:12+00:00'))",
         "12"
     );
     test_expression!(
         "date_part('second', to_timestamp('2020-09-08T12:00:12+00:00'))",
         "12"
+    );
+    test_expression!(
+        "date_part('SECOND', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
+        "6"
     );
 
     // DOY
