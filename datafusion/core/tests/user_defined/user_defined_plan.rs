@@ -79,8 +79,7 @@ use datafusion::{
         runtime_env::RuntimeEnv,
     },
     logical_expr::{
-        Expr, Extension, LogicalPlan, Sort, UserDefinedLogicalNode,
-        UserDefinedLogicalNodeCore,
+        Expr, Extension, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore,
     },
     optimizer::{OptimizerConfig, OptimizerRule},
     physical_expr::EquivalenceProperties,
@@ -519,30 +518,49 @@ impl OptimizerRule for TopKOptimizerRule {
         // Note: this code simply looks for the pattern of a Limit followed by a
         // Sort and replaces it by a TopK node. It does not handle many
         // edge cases (e.g multiple sort columns, sort ASC / DESC), etc.
-        let LogicalPlan::Limit(ref limit) = plan else {
-            return Ok(Transformed::no(plan));
-        };
-        let FetchType::Literal(Some(fetch)) = limit.get_fetch_type()? else {
-            return Ok(Transformed::no(plan));
-        };
-
-        if let LogicalPlan::Sort(Sort {
-            ref expr,
-            ref input,
-            ..
-        }) = limit.input.as_ref()
-        {
-            if expr.len() == 1 {
-                // we found a sort with a single sort expr, replace with a a TopK
-                return Ok(Transformed::yes(LogicalPlan::Extension(Extension {
-                    node: Arc::new(TopKPlanNode {
-                        k: fetch,
-                        input: input.as_ref().clone(),
-                        expr: expr[0].clone(),
-                        invariant_mock: self.invariant_mock.clone(),
-                    }),
-                })));
+        //
+        // Because Limit > Sort can get optimized to Sort, fetch in the first pass, we
+        // also support bare Sort (as we are running in ApplyOrder::TopDown mode).
+        let expr: &Vec<SortExpr>;
+        let input: &Arc<LogicalPlan>;
+        let fetch: usize;
+        match plan {
+            LogicalPlan::Limit(ref limit) => {
+                let FetchType::Literal(Some(limit_fetch)) = limit.get_fetch_type()?
+                else {
+                    return Ok(Transformed::no(plan));
+                };
+                let LogicalPlan::Sort(ref sort) = limit.input.as_ref() else {
+                    return Ok(Transformed::no(plan));
+                };
+                expr = &sort.expr;
+                input = &sort.input;
+                fetch = limit_fetch;
             }
+            LogicalPlan::Sort(ref sort) => {
+                let Some(sort_fetch) = sort.fetch else {
+                    return Ok(Transformed::no(plan));
+                };
+
+                expr = &sort.expr;
+                input = &sort.input;
+                fetch = sort_fetch;
+            }
+            _ => {
+                return Ok(Transformed::no(plan));
+            }
+        }
+
+        if expr.len() == 1 {
+            // we found a sort with a single sort expr, replace with a a TopK
+            return Ok(Transformed::yes(LogicalPlan::Extension(Extension {
+                node: Arc::new(TopKPlanNode {
+                    k: fetch,
+                    input: input.as_ref().clone(),
+                    expr: expr[0].clone(),
+                    invariant_mock: self.invariant_mock.clone(),
+                }),
+            })));
         }
 
         Ok(Transformed::no(plan))

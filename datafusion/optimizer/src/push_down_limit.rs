@@ -136,8 +136,13 @@ impl OptimizerRule for PushDownLimit {
                     }
                 } else {
                     sort.fetch = new_fetch;
-                    limit.input = Arc::new(LogicalPlan::Sort(sort));
-                    Ok(Transformed::yes(LogicalPlan::Limit(limit)))
+                    let new_plan = if skip > 0 {
+                        limit.input = Arc::new(LogicalPlan::Sort(sort));
+                        LogicalPlan::Limit(limit)
+                    } else {
+                        LogicalPlan::Sort(sort)
+                    };
+                    Ok(Transformed::yes(new_plan))
                 }
             }
             LogicalPlan::Projection(mut proj) => {
@@ -591,9 +596,8 @@ mod test {
             .build()?;
 
         // Should push down limit to sort
-        let expected = "Limit: skip=0, fetch=10\
-        \n  Sort: test.a ASC NULLS LAST, fetch=10\
-        \n    TableScan: test";
+        let expected = "Sort: test.a ASC NULLS LAST, fetch=10\
+        \n  TableScan: test";
 
         assert_optimized_plan_equal(plan, expected)
     }
