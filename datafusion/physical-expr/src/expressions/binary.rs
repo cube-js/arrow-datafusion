@@ -322,6 +322,19 @@ fn is_not_distinct_from_decimal(
     Ok(bool_builder.finish())
 }
 
+fn add_decimal_scalar(left: &DecimalArray, right: i128) -> Result<DecimalArray> {
+    let mut decimal_builder =
+        DecimalBuilder::new(left.len(), left.precision(), left.scale());
+    for i in 0..left.len() {
+        if left.is_null(i) {
+            decimal_builder.append_null()?;
+        } else {
+            decimal_builder.append_value(left.value(i) + right)?;
+        }
+    }
+    Ok(decimal_builder.finish())
+}
+
 fn add_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<DecimalArray> {
     let mut decimal_builder =
         DecimalBuilder::new(left.len(), left.precision(), left.scale());
@@ -335,6 +348,19 @@ fn add_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<DecimalArray
     Ok(decimal_builder.finish())
 }
 
+fn subtract_decimal_scalar(left: &DecimalArray, right: i128) -> Result<DecimalArray> {
+    let mut decimal_builder =
+        DecimalBuilder::new(left.len(), left.precision(), left.scale());
+    for i in 0..left.len() {
+        if left.is_null(i) {
+            decimal_builder.append_null()?;
+        } else {
+            decimal_builder.append_value(left.value(i) - right)?;
+        }
+    }
+    Ok(decimal_builder.finish())
+}
+
 fn subtract_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<DecimalArray> {
     let mut decimal_builder =
         DecimalBuilder::new(left.len(), left.precision(), left.scale());
@@ -343,6 +369,20 @@ fn subtract_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<Decimal
             decimal_builder.append_null()?;
         } else {
             decimal_builder.append_value(left.value(i) - right.value(i))?;
+        }
+    }
+    Ok(decimal_builder.finish())
+}
+
+fn multiply_decimal_scalar(left: &DecimalArray, right: i128) -> Result<DecimalArray> {
+    let mut decimal_builder =
+        DecimalBuilder::new(left.len(), left.precision(), left.scale());
+    let divide = 10_i128.pow(left.scale() as u32);
+    for i in 0..left.len() {
+        if left.is_null(i) {
+            decimal_builder.append_null()?;
+        } else {
+            decimal_builder.append_value(left.value(i) * right / divide)?;
         }
     }
     Ok(decimal_builder.finish())
@@ -362,6 +402,24 @@ fn multiply_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<Decimal
     Ok(decimal_builder.finish())
 }
 
+fn divide_decimal_scalar(left: &DecimalArray, right: i128) -> Result<DecimalArray> {
+    let mut decimal_builder =
+        DecimalBuilder::new(left.len(), left.precision(), left.scale());
+    let mul = 10_f64.powi(left.scale() as i32);
+    for i in 0..left.len() {
+        if left.is_null(i) {
+            decimal_builder.append_null()?;
+        } else if right == 0 {
+            return Err(DataFusionError::ArrowError(DivideByZero));
+        } else {
+            let l_value = left.value(i) as f64;
+            let result = ((l_value / right as f64) * mul) as i128;
+            decimal_builder.append_value(result)?;
+        }
+    }
+    Ok(decimal_builder.finish())
+}
+
 fn divide_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<DecimalArray> {
     let mut decimal_builder =
         DecimalBuilder::new(left.len(), left.precision(), left.scale());
@@ -376,6 +434,21 @@ fn divide_decimal(left: &DecimalArray, right: &DecimalArray) -> Result<DecimalAr
             let r_value = right.value(i) as f64;
             let result = ((l_value / r_value) * mul) as i128;
             decimal_builder.append_value(result)?;
+        }
+    }
+    Ok(decimal_builder.finish())
+}
+
+fn modulus_decimal_scalar(left: &DecimalArray, right: i128) -> Result<DecimalArray> {
+    let mut decimal_builder =
+        DecimalBuilder::new(left.len(), left.precision(), left.scale());
+    for i in 0..left.len() {
+        if left.is_null(i) {
+            decimal_builder.append_null()?;
+        } else if right == 0 {
+            return Err(DataFusionError::ArrowError(DivideByZero));
+        } else {
+            decimal_builder.append_value(left.value(i) % right)?;
         }
     }
     Ok(decimal_builder.finish())
@@ -1049,6 +1122,9 @@ macro_rules! binary_primitive_array_op {
 macro_rules! binary_primitive_array_op_scalar {
     ($LEFT:expr, $RIGHT:expr, $OP:ident) => {{
         let result: Result<Arc<dyn Array>> = match $LEFT.data_type() {
+            // TODO support decimal type
+            // which is not the primitive type
+            DataType::Decimal(_,_) => compute_decimal_op_scalar!($LEFT, $RIGHT, $OP, DecimalArray),
             DataType::Int8 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int8Array),
             DataType::Int16 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int16Array),
             DataType::Int32 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int32Array),
