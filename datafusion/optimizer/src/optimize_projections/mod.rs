@@ -147,7 +147,7 @@ fn optimize_projections(
                 // functional dependency.
                 group_by_reqs
                     .append(&simplest_groupby_indices)
-                    .get_at_indices(&aggregate.group_expr)
+                    .take_at_indices(aggregate.group_expr)
             } else {
                 aggregate.group_expr
             };
@@ -212,7 +212,7 @@ fn optimize_projections(
 
             // Only use window expressions that are absolutely necessary according
             // to parent requirements:
-            let new_window_expr = window_reqs.get_at_indices(&window.window_expr);
+            let new_window_expr = window_reqs.take_at_indices(window.window_expr);
 
             // Get all the required column indices at the input, either by the
             // parent or window expression requirements.
@@ -749,7 +749,7 @@ fn rewrite_projection_given_requirements(
 ) -> Result<Transformed<LogicalPlan>> {
     let Projection { expr, input, .. } = proj;
 
-    let exprs_used = indices.get_at_indices(&expr);
+    let exprs_used = indices.take_at_indices(expr);
 
     let required_indices =
         RequiredIndices::new().with_exprs(input.schema(), exprs_used.iter());

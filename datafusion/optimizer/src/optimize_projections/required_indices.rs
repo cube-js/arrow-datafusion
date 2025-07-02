@@ -207,6 +207,17 @@ impl RequiredIndices {
         self.indices.iter().map(|&idx| exprs[idx].clone()).collect()
     }
 
+    /// Same as `get_at_indices` except avoids cloning Exprs.
+    pub fn take_at_indices(&self, mut exprs: Vec<Expr>) -> Vec<Expr> {
+        let mut builder = Vec::with_capacity(self.indices.len());
+        for &index in &self.indices {
+            // Note that self.indices has no duplicates.
+            let expr = std::mem::take(&mut exprs[index]);
+            builder.push(expr);
+        }
+        builder
+    }
+
     /// Generates the required expressions (columns) that reside at `indices` of
     /// the given `input_schema`.
     pub fn get_required_exprs(&self, input_schema: &DFSchemaRef) -> Vec<Expr> {
