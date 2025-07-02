@@ -19,10 +19,9 @@
 use crate::optimizer::ApplyOrder;
 use crate::{OptimizerConfig, OptimizerRule};
 use datafusion_common::tree_node::Transformed;
-use datafusion_common::Result;
+use datafusion_common::{internal_err, DFSchema, Result};
 use datafusion_expr::expr_rewriter::coerce_plan_expr_for_schema;
 use datafusion_expr::{Distinct, LogicalPlan, Union};
-use itertools::Itertools;
 use std::sync::Arc;
 
 #[derive(Default, Debug)]
@@ -56,30 +55,56 @@ impl OptimizerRule for EliminateNestedUnion {
     ) -> Result<Transformed<LogicalPlan>> {
         match plan {
             LogicalPlan::Union(Union { inputs, schema }) => {
-                let inputs = inputs
-                    .into_iter()
-                    .flat_map(extract_plans_from_union)
-                    .map(|plan| coerce_plan_expr_for_schema(plan, &schema))
-                    .collect::<Result<Vec<_>>>()?;
+                let mut has_subunion = false;
+                let mut flattened_length = 0;
+                for input in &inputs {
+                    if let LogicalPlan::Union(Union { inputs, schema: _ }) =
+                        input.as_ref()
+                    {
+                        flattened_length += inputs.len();
+                        has_subunion = true;
+                    } else {
+                        flattened_length += 1;
+                    }
+                }
+                if !has_subunion {
+                    return Ok(Transformed::no(LogicalPlan::Union(Union {
+                        inputs,
+                        schema,
+                    })));
+                }
+
+                let mut flattened_inputs = Vec::with_capacity(flattened_length);
+                for input in inputs {
+                    extract_plans_and_coerce_plan_expr_from_union(
+                        input,
+                        schema.as_ref(),
+                        &mut flattened_inputs,
+                    )?;
+                }
 
                 Ok(Transformed::yes(LogicalPlan::Union(Union {
-                    inputs: inputs.into_iter().map(Arc::new).collect_vec(),
+                    inputs: flattened_inputs,
                     schema,
                 })))
             }
             LogicalPlan::Distinct(Distinct::All(nested_plan)) => {
                 match Arc::unwrap_or_clone(nested_plan) {
                     LogicalPlan::Union(Union { inputs, schema }) => {
-                        let inputs = inputs
-                            .into_iter()
-                            .map(extract_plan_from_distinct)
-                            .flat_map(extract_plans_from_union)
-                            .map(|plan| coerce_plan_expr_for_schema(plan, &schema))
-                            .collect::<Result<Vec<_>>>()?;
+                        let mut flattened_inputs = Vec::new();
+                        for input in inputs {
+                            let input = extract_plan_from_distinct(input);
+                            extract_plans_and_coerce_plan_expr_from_union(
+                                input,
+                                schema.as_ref(),
+                                &mut flattened_inputs,
+                            )?;
+                        }
 
+                        // Note: The top-level Union case takes care to return Transformed::no when it can, but this case still does not.
                         Ok(Transformed::yes(LogicalPlan::Distinct(Distinct::All(
                             Arc::new(LogicalPlan::Union(Union {
-                                inputs: inputs.into_iter().map(Arc::new).collect_vec(),
+                                inputs: flattened_inputs,
                                 schema: Arc::clone(&schema),
                             })),
                         ))))
@@ -94,14 +119,30 @@ impl OptimizerRule for EliminateNestedUnion {
     }
 }
 
-fn extract_plans_from_union(plan: Arc<LogicalPlan>) -> Vec<LogicalPlan> {
-    match Arc::unwrap_or_clone(plan) {
-        LogicalPlan::Union(Union { inputs, .. }) => inputs
-            .into_iter()
-            .map(Arc::unwrap_or_clone)
-            .collect::<Vec<_>>(),
-        plan => vec![plan],
+fn extract_plans_and_coerce_plan_expr_from_union(
+    plan: Arc<LogicalPlan>,
+    schema: &DFSchema,
+    onto: &mut Vec<Arc<LogicalPlan>>,
+) -> Result<()> {
+    // `plan` is a child of a Union with the Union having schema `schema`. This takes care to avoid
+    // unnecessary plan expr coercion for children that aren't also unions.
+    let LogicalPlan::Union(Union { .. }) = plan.as_ref() else {
+        onto.push(plan);
+        return Ok(());
+    };
+
+    let LogicalPlan::Union(Union { inputs, .. }) = Arc::unwrap_or_clone(plan) else {
+        return internal_err!(
+            "plan was tested to be a LogicalPlan::Union, but it is not"
+        );
+    };
+
+    for input in inputs {
+        let plan = Arc::unwrap_or_clone(input);
+        let coerced_plan = Arc::new(coerce_plan_expr_for_schema(plan, schema)?);
+        onto.push(coerced_plan);
     }
+    Ok(())
 }
 
 fn extract_plan_from_distinct(plan: Arc<LogicalPlan>) -> Arc<LogicalPlan> {
