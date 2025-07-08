@@ -617,7 +617,9 @@ impl ScalarValue {
             | ScalarValue::Int16(None)
             | ScalarValue::Int32(None)
             | ScalarValue::Int64(None)
+            | ScalarValue::Float64(None)
             | ScalarValue::Float32(None)
+            | ScalarValue::Decimal128(None, _, _)
             | ScalarValue::IntervalYearMonth(None)
             | ScalarValue::IntervalDayTime(None) => self.clone(),
             ScalarValue::Float64(Some(v)) => ScalarValue::Float64(Some(-v)),
