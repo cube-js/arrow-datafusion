@@ -573,6 +573,7 @@ pub(crate) fn extract_aliases(exprs: &[Expr]) -> HashMap<String, Expr> {
 pub(crate) fn extract_aliased_expr_names(
     exprs: &[Expr],
     input_schema: &DFSchema,
+    aliased_projection: bool,
 ) -> HashMap<String, String> {
     exprs
         .iter()
@@ -580,6 +581,13 @@ pub(crate) fn extract_aliased_expr_names(
             Expr::Alias(nested_expr, alias_name) => {
                 if let Ok(expr_name) = nested_expr.name(input_schema) {
                     Some((expr_name, alias_name.clone()))
+                } else {
+                    None
+                }
+            }
+            Expr::Column(column) if aliased_projection => {
+                if let Ok(expr_name) = expr.name(input_schema) {
+                    Some((expr_name, column.name.clone()))
                 } else {
                     None
                 }

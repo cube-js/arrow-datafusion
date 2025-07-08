@@ -51,7 +51,7 @@ use crate::logical_plan::{
     CrossJoin, DFField, DFSchema, DFSchemaRef, Limit, Partitioning, Repartition,
     SubqueryType, Values,
 };
-use crate::sql::utils::group_window_expr_by_sort_keys;
+use crate::sql::utils::{group_window_expr_by_sort_keys, resolve_exprs_to_aliases};
 
 /// Default table name for unnamed table
 pub const UNNAMED_TABLE: &str = "?table?";
@@ -549,12 +549,13 @@ impl LogicalPlanBuilder {
         &self,
         curr_plan: LogicalPlan,
         missing_cols: &[Column],
+        alias_map: &mut HashMap<String, String>,
     ) -> Result<LogicalPlan> {
         match curr_plan {
             LogicalPlan::Projection(Projection {
                 input,
                 mut expr,
-                schema: _,
+                schema,
                 alias,
             }) if missing_cols
                 .iter()
@@ -562,10 +563,22 @@ impl LogicalPlanBuilder {
             {
                 let input_schema = input.schema();
 
-                let missing_exprs = missing_cols
-                    .iter()
-                    .map(|c| normalize_col(Expr::Column(c.clone()), &input))
-                    .collect::<Result<Vec<_>>>()?;
+                let mut missing_exprs = Vec::with_capacity(missing_cols.len());
+                for missing_col in missing_cols {
+                    let mut normalized_col =
+                        normalize_col(Expr::Column(missing_col.clone()), &input)?;
+                    if let Ok(old_field) =
+                        schema.field_with_unqualified_name(&missing_col.name)
+                    {
+                        if old_field.qualifier().is_none() {
+                            let expr_name = normalized_col.name(input_schema)?;
+                            let alias = missing_col.flat_name();
+                            normalized_col = normalized_col.alias(&alias);
+                            alias_map.insert(expr_name, alias);
+                        }
+                    }
+                    missing_exprs.push(normalized_col);
+                }
 
                 expr.extend(missing_exprs);
 
@@ -586,7 +599,11 @@ impl LogicalPlanBuilder {
                     .inputs()
                     .into_iter()
                     .map(|input_plan| {
-                        self.add_missing_columns((*input_plan).clone(), missing_cols)
+                        self.add_missing_columns(
+                            (*input_plan).clone(),
+                            missing_cols,
+                            alias_map,
+                        )
                     })
                     .collect::<Result<Vec<_>>>()?;
 
@@ -607,21 +624,18 @@ impl LogicalPlanBuilder {
 
         // Collect sort columns that are missing in the input plan's schema
         let mut missing_cols: Vec<Column> = vec![];
+        let mut columns: HashSet<Column> = HashSet::new();
         exprs
             .clone()
             .into_iter()
             .try_for_each::<_, Result<()>>(|expr| {
-                let mut columns: HashSet<Column> = HashSet::new();
-                utils::expr_to_columns(&expr, &mut columns)?;
-
-                columns.into_iter().for_each(|c| {
-                    if schema.field_from_column(&c).is_err() {
-                        missing_cols.push(c);
-                    }
-                });
-
-                Ok(())
+                utils::expr_to_columns(&expr, &mut columns)
             })?;
+        columns.into_iter().for_each(|c| {
+            if schema.field_from_column(&c).is_err() {
+                missing_cols.push(c);
+            }
+        });
 
         if missing_cols.is_empty() {
             return Ok(Self::from(LogicalPlan::Sort(Sort {
@@ -630,7 +644,18 @@ impl LogicalPlanBuilder {
             })));
         }
 
-        let plan = self.add_missing_columns(self.plan.clone(), &missing_cols)?;
+        let mut alias_map = HashMap::new();
+        let plan =
+            self.add_missing_columns(self.plan.clone(), &missing_cols, &mut alias_map)?;
+        let exprs = if alias_map.is_empty() {
+            exprs
+        } else {
+            exprs
+                .into_iter()
+                .map(|expr| resolve_exprs_to_aliases(&expr, &alias_map, plan.schema()))
+                .collect::<Result<Vec<_>>>()?
+        };
+
         let sort_plan = LogicalPlan::Sort(Sort {
             expr: normalize_cols(exprs, &plan)?,
             input: Arc::new(plan.clone()),

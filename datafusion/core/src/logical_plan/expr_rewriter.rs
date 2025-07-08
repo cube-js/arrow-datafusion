@@ -399,19 +399,16 @@ fn rewrite_sort_col_by_aggs(expr: Expr, plan: &LogicalPlan) -> Result<Expr> {
             LogicalPlan::Projection(Projection {
                 input,
                 expr: projection_expr,
+                alias,
                 ..
             }) => {
-                let alias_map =
-                    extract_aliased_expr_names(projection_expr, input.schema());
+                let alias_map = extract_aliased_expr_names(
+                    projection_expr,
+                    input.schema(),
+                    alias.is_some(),
+                );
                 let res = resolve_exprs_to_aliases(&expr, &alias_map, input.schema())?;
-                let res = normalize_col(
-                    unnormalize_col(rebase_expr(
-                        &res,
-                        projection_expr.as_slice(),
-                        input,
-                    )?),
-                    plan,
-                )?;
+                let res = rebase_expr(&res, projection_expr.as_slice(), input)?;
 
                 Ok(if let LogicalPlan::Aggregate(_) = **input {
                     rewrite_sort_col(res, input)?
