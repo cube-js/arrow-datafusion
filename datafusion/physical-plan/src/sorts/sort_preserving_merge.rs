@@ -297,11 +297,18 @@ impl ExecutionPlan for SortPreservingMergeExec {
                 }
             },
             _ => {
+                // Cube: If true, overrides upstream DF default behavior.  The parallelized
+                // implementation will store one RecordBatch in the mpsc channel, and one more
+                // RecordBatch in the blocked subtask waiting to be pushed onto the channel.
+
+                // Cube TODO: If memory tracking can be made to account for those batches, make use of it (in general).
+                let dont_parallelize = context.session_config().options().execution.dont_parallelize_sort_preserving_merge_exec_inputs;
+
                 let receivers = (0..input_partitions)
                     .map(|partition| {
                         let stream =
                             self.input.execute(partition, Arc::clone(&context))?;
-                        Ok(spawn_buffered(stream, 1))
+                        Ok(if dont_parallelize { stream } else { spawn_buffered(stream, 1) })
                     })
                     .collect::<Result<_>>()?;
 

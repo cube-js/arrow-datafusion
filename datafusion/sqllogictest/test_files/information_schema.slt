@@ -184,6 +184,7 @@ datafusion.catalog.newlines_in_values false
 datafusion.execution.batch_size 8192
 datafusion.execution.coalesce_batches true
 datafusion.execution.collect_statistics false
+datafusion.execution.dont_parallelize_sort_preserving_merge_exec_inputs false
 datafusion.execution.enable_recursive_ctes true
 datafusion.execution.enforce_batch_size_in_joins false
 datafusion.execution.keep_partition_by_columns false
@@ -281,6 +282,7 @@ datafusion.catalog.newlines_in_values false Specifies whether newlines in (quote
 datafusion.execution.batch_size 8192 Default batch size while creating new batches, it's especially useful for buffer-in-memory batches since creating tiny batches would result in too much metadata memory consumption
 datafusion.execution.coalesce_batches true When set to true, record batches will be examined between each operator and small batches will be coalesced into larger batches. This is helpful when there are highly selective filters or joins that could produce tiny output batches. The target batch size is determined by the configuration setting
 datafusion.execution.collect_statistics false Should DataFusion collect statistics after listing files
+datafusion.execution.dont_parallelize_sort_preserving_merge_exec_inputs false Cube: If true, makes SortPreservingMergeExec not parallelize merge sort inputs, to save memory consumption of intermediate batches (1 in the mpsc channel buffer, and 1 in the subtask waiting to be pushed onto the buffer).  If false, maintains upstream DF behavior.
 datafusion.execution.enable_recursive_ctes true Should DataFusion support recursive CTEs
 datafusion.execution.enforce_batch_size_in_joins false Should DataFusion enforce batch size in joins or not. By default, DataFusion will not enforce batch size in joins. Enforcing batch size in joins can reduce memory usage when joining large tables with a highly-selective join filter, but is also slightly slower.
 datafusion.execution.keep_partition_by_columns false Should DataFusion keep the columns used for partition_by in the output RecordBatches

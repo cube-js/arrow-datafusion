@@ -387,6 +387,12 @@ config_namespace! {
         /// We plan to make this the default in the future.
         pub use_row_number_estimates_to_optimize_partitioning: bool, default = false
 
+        /// Cube: If true, makes SortPreservingMergeExec not parallelize merge sort inputs, to save
+        /// memory consumption of intermediate batches (1 in the mpsc channel buffer, and 1 in the
+        /// subtask waiting to be pushed onto the buffer).  If false, maintains upstream DF
+        /// behavior.
+        pub dont_parallelize_sort_preserving_merge_exec_inputs: bool, default = false
+
         /// Should DataFusion enforce batch size in joins or not. By default,
         /// DataFusion will not enforce batch size in joins. Enforcing batch size
         /// in joins can reduce memory usage when joining large
