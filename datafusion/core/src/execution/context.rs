@@ -2402,6 +2402,23 @@ mod tests {
         ];
         assert_batches_eq!(expected, &result);
 
+        let result = ctx
+            .sql("SELECT 1 UNION DISTINCT SELECT 1")
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+
+        let expected = vec![
+            "+----------+",
+            "| Int64(1) |",
+            "+----------+",
+            "| 1        |",
+            "+----------+",
+        ];
+        assert_batches_eq!(expected, &result);
+
         Ok(())
     }
 

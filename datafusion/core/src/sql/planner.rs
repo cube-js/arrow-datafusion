@@ -57,8 +57,8 @@ use sqlparser::ast::{
     ArrayAgg, BinaryOperator, DataType as SQLDataType, DateTimeField, Expr as SQLExpr,
     Fetch, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator,
     ObjectName, Offset as SQLOffset, Query, Select, SelectItem, SetExpr, SetOperator,
-    ShowStatementFilter, TableFactor, TableWithJoins, TrimWhereField, UnaryOperator,
-    Value, Values as SQLValues, WithinGroup,
+    SetOperatorOption, ShowStatementFilter, TableFactor, TableWithJoins, TrimWhereField,
+    UnaryOperator, Value, Values as SQLValues, WithinGroup,
 };
 use sqlparser::ast::{ColumnDef as SQLColumnDef, ColumnOption};
 use sqlparser::ast::{ObjectType, OrderByExpr, Statement};
@@ -365,27 +365,34 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 op,
                 left,
                 right,
-                all,
+                option,
             } => {
                 let left_plan = self.set_expr_to_plan(*left, None)?;
                 let right_plan = self.set_expr_to_plan(*right, None)?;
-                match (op, all) {
-                    (SetOperator::Union, true) => LogicalPlanBuilder::from(left_plan)
-                        .union(right_plan)?
-                        .build(),
-                    (SetOperator::Union, false) => LogicalPlanBuilder::from(left_plan)
-                        .union_distinct(right_plan)?
-                        .build(),
-                    (SetOperator::Intersect, true) => {
+                match (op, option) {
+                    (SetOperator::Union, Some(SetOperatorOption::All)) => {
+                        LogicalPlanBuilder::from(left_plan)
+                            .union(right_plan)?
+                            .build()
+                    }
+                    (SetOperator::Union, None)
+                    | (SetOperator::Union, Some(SetOperatorOption::Distinct)) => {
+                        LogicalPlanBuilder::from(left_plan)
+                            .union_distinct(right_plan)?
+                            .build()
+                    }
+                    (SetOperator::Intersect, Some(SetOperatorOption::All)) => {
                         LogicalPlanBuilder::intersect(left_plan, right_plan, true)
                     }
-                    (SetOperator::Intersect, false) => {
+                    (SetOperator::Intersect, None)
+                    | (SetOperator::Intersect, Some(SetOperatorOption::Distinct)) => {
                         LogicalPlanBuilder::intersect(left_plan, right_plan, false)
                     }
-                    (SetOperator::Except, true) => {
+                    (SetOperator::Except, Some(SetOperatorOption::All)) => {
                         LogicalPlanBuilder::except(left_plan, right_plan, true)
                     }
-                    (SetOperator::Except, false) => {
+                    (SetOperator::Except, None)
+                    | (SetOperator::Except, Some(SetOperatorOption::Distinct)) => {
                         LogicalPlanBuilder::except(left_plan, right_plan, false)
                     }
                 }
