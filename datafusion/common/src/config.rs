@@ -452,6 +452,9 @@ config_namespace! {
         /// BLOB instead.
         pub binary_as_string: bool, default = false
 
+        /// (reading) Allows multiple I/O's per row group, if the batch size is small enough.
+        pub split_row_group_reads: bool, default = false
+
         // The following options affect writing to parquet files
         // and map to parquet::file::properties::WriterProperties
 

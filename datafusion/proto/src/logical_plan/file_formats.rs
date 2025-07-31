@@ -414,6 +414,7 @@ impl TableParquetOptionsProto {
                 maximum_buffered_record_batches_per_stream: global_options.global.maximum_buffered_record_batches_per_stream as u64,
                 schema_force_view_types: global_options.global.schema_force_view_types,
                 binary_as_string: global_options.global.binary_as_string,
+                split_row_group_reads: global_options.global.split_row_group_reads,
                 skip_arrow_metadata: global_options.global.skip_arrow_metadata,
             }),
             column_specific_options: column_specific_options.into_iter().map(|(column_name, options)| {
@@ -510,6 +511,7 @@ impl From<&ParquetOptionsProto> for ParquetOptions {
             maximum_buffered_record_batches_per_stream: proto.maximum_buffered_record_batches_per_stream as usize,
             schema_force_view_types: proto.schema_force_view_types,
             binary_as_string: proto.binary_as_string,
+            split_row_group_reads: proto.split_row_group_reads,
             skip_arrow_metadata: proto.skip_arrow_metadata,
         }
     }

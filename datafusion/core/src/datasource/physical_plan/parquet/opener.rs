@@ -55,6 +55,8 @@ pub(super) struct ParquetOpener {
     pub projection: Arc<[usize]>,
     /// Target number of rows in each output RecordBatch
     pub batch_size: usize,
+    /// If true, perform multiple I/O's per row group (if batch size is smaller than row group size)
+    pub split_row_group_reads: bool,
     /// Optional limit on the number of rows to read
     pub limit: Option<usize>,
     /// Optional predicate to apply during the scan
@@ -107,6 +109,7 @@ impl FileOpener for ParquetOpener {
             )?;
 
         let batch_size = self.batch_size;
+        let split_row_group_reads = self.split_row_group_reads;
 
         let projected_schema =
             SchemaRef::from(self.table_schema.project(&self.projection)?);
@@ -262,6 +265,7 @@ impl FileOpener for ParquetOpener {
             let stream = builder
                 .with_projection(mask)
                 .with_batch_size(batch_size)
+                .with_split_row_group_reads(split_row_group_reads)
                 .with_row_groups(row_group_indexes)
                 .build()?;
 

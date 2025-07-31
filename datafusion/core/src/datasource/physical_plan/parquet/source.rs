@@ -515,6 +515,7 @@ impl FileSource for ParquetSource {
             batch_size: self
                 .batch_size
                 .expect("Batch size must set before creating ParquetOpener"),
+            split_row_group_reads: self.table_parquet_options.global.split_row_group_reads,
             limit: base_config.limit,
             predicate: self.predicate.clone(),
             pruning_predicate: self.pruning_predicate.clone(),
