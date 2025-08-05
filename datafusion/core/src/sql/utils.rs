@@ -21,15 +21,16 @@ use arrow::datatypes::{DataType, DECIMAL_DEFAULT_SCALE, DECIMAL_MAX_PRECISION};
 use datafusion_common::DFSchema;
 use sqlparser::ast::Ident;
 
-use crate::logical_plan::ExprVisitable;
 use crate::logical_plan::{Expr, Like, LogicalPlan};
+use crate::logical_plan::{ExprSchemable, ExprVisitable};
 use crate::scalar::ScalarValue;
 use crate::{
     error::{DataFusionError, Result},
     logical_plan::{Column, ExpressionVisitor, Recursion},
 };
 use datafusion_expr::expr::GroupingSet;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::mem::replace;
 
 /// Collect all deeply nested `Expr::AggregateFunction` and
 /// `Expr::AggregateUDF`. They are returned in order of occurrence (depth
@@ -779,6 +780,94 @@ pub(crate) fn make_decimal_type(
 pub(crate) fn normalize_ident(id: Ident) -> String {
     // Hacky solution for compatibility with MySQL
     id.value
+}
+
+/// Structure holding qualifier and name of an alias.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct QualifiedAlias {
+    qualifier: Option<String>,
+    name: String,
+}
+
+impl QualifiedAlias {
+    fn new(qualifier: Option<String>, name: String) -> Self {
+        Self { qualifier, name }
+    }
+
+    fn from_expr_schema_and_alias(
+        expr: &Expr,
+        schema: &DFSchema,
+        alias: Option<String>,
+    ) -> Result<Self> {
+        let field = expr.to_field(schema)?;
+        let qualifier = alias.or_else(|| field.qualifier().cloned());
+        let name = field.name().clone();
+        Ok(Self::new(qualifier, name))
+    }
+
+    fn with_name(&self, name: &str) -> Self {
+        Self {
+            qualifier: self.qualifier.clone(),
+            name: name.to_string(),
+        }
+    }
+}
+
+/// Realias duplicate expression aliases in the provided list of expressions.
+pub(crate) fn realias_duplicate_expr_aliases(
+    mut exprs: Vec<Expr>,
+    schema: &DFSchema,
+    alias: Option<String>,
+) -> Result<Vec<Expr>> {
+    // Two-pass algorithm is used: first collect all the aliases and indices of repeated aliases,
+    // then realias the collected indices on the second pass.
+    // This is to avoid realiasing to a name that is valid but is used by another expression
+    // that was not originally processed.
+    let mut aliases = HashSet::new();
+    let mut indices_to_realias = vec![];
+    for (index, expr) in exprs.iter().enumerate() {
+        let qualified_alias =
+            QualifiedAlias::from_expr_schema_and_alias(expr, schema, alias.clone())?;
+        let is_duplicate = !aliases.insert(qualified_alias);
+        if is_duplicate {
+            indices_to_realias.push(index);
+        }
+    }
+    const MAX_SUFFIX_LIMIT: usize = 100;
+    'outer: for index in indices_to_realias {
+        let qualified_alias = QualifiedAlias::from_expr_schema_and_alias(
+            &exprs[index],
+            schema,
+            alias.clone(),
+        )?;
+        for suffix in 1..=MAX_SUFFIX_LIMIT {
+            let new_name = format!("{}__{}", qualified_alias.name, suffix);
+            let new_qualified_alias = qualified_alias.with_name(&new_name);
+            let is_duplicate = !aliases.insert(new_qualified_alias);
+            if !is_duplicate {
+                set_expr_alias(&mut exprs[index], new_name);
+                continue 'outer;
+            }
+        }
+        return Err(DataFusionError::Internal(format!(
+            "Unable to realias duplicate expression alias: {:?}",
+            exprs[index]
+        )));
+    }
+    Ok(exprs)
+}
+
+/// Set an alias for an expression, replacing an existing alias or adding one if necessary.
+fn set_expr_alias(expr: &mut Expr, alias: String) {
+    match expr {
+        Expr::Alias(_, name) => {
+            *name = alias;
+        }
+        _ => {
+            // Expr::Wildcard is simply a placeholder to please borrow checker
+            *expr = Expr::Alias(Box::new(replace(expr, Expr::Wildcard)), alias);
+        }
+    }
 }
 
 #[cfg(test)]

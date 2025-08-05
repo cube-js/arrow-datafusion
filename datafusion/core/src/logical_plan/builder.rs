@@ -51,7 +51,10 @@ use crate::logical_plan::{
     CrossJoin, DFField, DFSchema, DFSchemaRef, Limit, Partitioning, Repartition,
     SubqueryType, Values,
 };
-use crate::sql::utils::{group_window_expr_by_sort_keys, resolve_exprs_to_aliases};
+use crate::sql::utils::{
+    group_window_expr_by_sort_keys, realias_duplicate_expr_aliases,
+    resolve_exprs_to_aliases,
+};
 
 /// Default table name for unnamed table
 pub const UNNAMED_TABLE: &str = "?table?";
@@ -1222,6 +1225,13 @@ pub fn project_with_alias(
                 .push(columnize_expr(normalize_col(e, &plan)?, input_schema)),
         }
     }
+
+    // NOTE (cubesql): realias expressions that have the same name and qualifier
+    if alias.is_some() {
+        projected_expr =
+            realias_duplicate_expr_aliases(projected_expr, input_schema, alias.clone())?;
+    }
+
     validate_unique_names("Projections", projected_expr.iter(), input_schema)?;
     let input_schema = DFSchema::new_with_metadata(
         exprlist_to_fields(&projected_expr, &plan)?,

@@ -38,7 +38,9 @@ use crate::logical_plan::{
 use crate::optimizer::utils::exprlist_to_columns;
 use crate::prelude::JoinType;
 use crate::scalar::ScalarValue;
-use crate::sql::utils::{find_udtf_exprs, make_decimal_type, normalize_ident};
+use crate::sql::utils::{
+    find_udtf_exprs, make_decimal_type, normalize_ident, realias_duplicate_expr_aliases,
+};
 use crate::{
     error::{DataFusionError, Result},
     physical_plan::aggregates,
@@ -1037,6 +1039,10 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 plan.schema().clone().as_ref().to_owned(),
             );
         }
+
+        // NOTE (cubesql): realias expressions that have the same name and qualifier
+        let select_exprs =
+            realias_duplicate_expr_aliases(select_exprs, plan.schema(), None)?;
 
         // having and group by clause may reference aliases defined in select projection
         let projected_plan = self.project(plan.clone(), select_exprs.clone())?;
@@ -3191,21 +3197,35 @@ mod tests {
 
     #[test]
     fn select_repeated_column() {
-        let sql = "SELECT age, age FROM person";
-        let err = logical_plan(sql).expect_err("query should have failed");
-        assert_eq!(
-            r##"Plan("Projections require unique expression names but the expression \"#person.age\" at position 0 and \"#person.age\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
-            format!("{:?}", err)
+        // let sql = "SELECT age, age FROM person";
+        // let err = logical_plan(sql).expect_err("query should have failed");
+        // assert_eq!(
+        //     r##"Plan("Projections require unique expression names but the expression \"#person.age\" at position 0 and \"#person.age\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
+        //     format!("{:?}", err)
+        // );
+
+        // NOTE: this is supported with cubesql patches
+        quick_test(
+            "SELECT age, age FROM person",
+            "Projection: #person.age, #person.age AS age__1\
+            \n  TableScan: person projection=None",
         );
     }
 
     #[test]
     fn select_wildcard_with_repeated_column() {
-        let sql = "SELECT *, age FROM person";
-        let err = logical_plan(sql).expect_err("query should have failed");
-        assert_eq!(
-            r##"Plan("Projections require unique expression names but the expression \"#person.age\" at position 3 and \"#person.age\" at position 8 have the same name. Consider aliasing (\"AS\") one of them.")"##,
-            format!("{:?}", err)
+        // let sql = "SELECT *, age FROM person";
+        // let err = logical_plan(sql).expect_err("query should have failed");
+        // assert_eq!(
+        //     r##"Plan("Projections require unique expression names but the expression \"#person.age\" at position 3 and \"#person.age\" at position 8 have the same name. Consider aliasing (\"AS\") one of them.")"##,
+        //     format!("{:?}", err)
+        // );
+
+        // NOTE: this is supported with cubesql patches
+        quick_test(
+            "SELECT *, age FROM person",
+            "Projection: #person.id, #person.first_name, #person.last_name, #person.age, #person.state, #person.salary, #person.birth_date, #person.😀, #person.age AS age__1\
+            \n  TableScan: person projection=None",
         );
     }
 
@@ -3779,11 +3799,19 @@ mod tests {
 
     #[test]
     fn select_simple_aggregate_repeated_aggregate() {
-        let sql = "SELECT MIN(age), MIN(age) FROM person";
-        let err = logical_plan(sql).expect_err("query should have failed");
-        assert_eq!(
-            r##"Plan("Projections require unique expression names but the expression \"MIN(#person.age)\" at position 0 and \"MIN(#person.age)\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
-            format!("{:?}", err)
+        // let sql = "SELECT MIN(age), MIN(age) FROM person";
+        // let err = logical_plan(sql).expect_err("query should have failed");
+        // assert_eq!(
+        //     r##"Plan("Projections require unique expression names but the expression \"MIN(#person.age)\" at position 0 and \"MIN(#person.age)\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
+        //     format!("{:?}", err)
+        // );
+
+        // NOTE: this is supported with cubesql patches
+        quick_test(
+            "SELECT MIN(age), MIN(age) FROM person",
+            "Projection: #MIN(person.age), #MIN(person.age) AS MIN(person.age)__1\
+             \n  Aggregate: groupBy=[[]], aggr=[[MIN(#person.age)]]\
+             \n    TableScan: person projection=None",
         );
     }
 
@@ -3809,11 +3837,19 @@ mod tests {
 
     #[test]
     fn select_simple_aggregate_repeated_aggregate_with_repeated_aliases() {
-        let sql = "SELECT MIN(age) AS a, MIN(age) AS a FROM person";
-        let err = logical_plan(sql).expect_err("query should have failed");
-        assert_eq!(
-            r##"Plan("Projections require unique expression names but the expression \"MIN(#person.age) AS a\" at position 0 and \"MIN(#person.age) AS a\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
-            format!("{:?}", err)
+        // let sql = "SELECT MIN(age) AS a, MIN(age) AS a FROM person";
+        // let err = logical_plan(sql).expect_err("query should have failed");
+        // assert_eq!(
+        //     r##"Plan("Projections require unique expression names but the expression \"MIN(#person.age) AS a\" at position 0 and \"MIN(#person.age) AS a\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
+        //     format!("{:?}", err)
+        // );
+
+        // NOTE: this is supported with cubesql patches
+        quick_test(
+            "SELECT MIN(age) AS a, MIN(age) AS a FROM person",
+            "Projection: #MIN(person.age) AS a, #MIN(person.age) AS a__1\
+             \n  Aggregate: groupBy=[[]], aggr=[[MIN(#person.age)]]\
+             \n    TableScan: person projection=None",
         );
     }
 
@@ -3839,11 +3875,19 @@ mod tests {
 
     #[test]
     fn select_simple_aggregate_with_groupby_with_aliases_repeated() {
-        let sql = "SELECT state AS a, MIN(age) AS a FROM person GROUP BY state";
-        let err = logical_plan(sql).expect_err("query should have failed");
-        assert_eq!(
-            r##"Plan("Projections require unique expression names but the expression \"#person.state AS a\" at position 0 and \"MIN(#person.age) AS a\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
-            format!("{:?}", err)
+        // let sql = "SELECT state AS a, MIN(age) AS a FROM person GROUP BY state";
+        // let err = logical_plan(sql).expect_err("query should have failed");
+        // assert_eq!(
+        //     r##"Plan("Projections require unique expression names but the expression \"#person.state AS a\" at position 0 and \"MIN(#person.age) AS a\" at position 1 have the same name. Consider aliasing (\"AS\") one of them.")"##,
+        //     format!("{:?}", err)
+        // );
+
+        // NOTE: this is supported with cubesql patches
+        quick_test(
+            "SELECT state AS a, MIN(age) AS a FROM person GROUP BY state",
+            "Projection: #person.state AS a, #MIN(person.age) AS a__1\
+             \n  Aggregate: groupBy=[[#person.state]], aggr=[[MIN(#person.age)]]\
+             \n    TableScan: person projection=None",
         );
     }
 
@@ -4008,12 +4052,20 @@ mod tests {
 
     #[test]
     fn select_simple_aggregate_with_groupby_aggregate_repeated() {
-        let sql = "SELECT state, MIN(age), MIN(age) FROM person GROUP BY state";
-        let err = logical_plan(sql).expect_err("query should have failed");
-        assert_eq!(
-            r##"Plan("Projections require unique expression names but the expression \"MIN(#person.age)\" at position 1 and \"MIN(#person.age)\" at position 2 have the same name. Consider aliasing (\"AS\") one of them.")"##,
-            format!("{:?}", err)
-        );
+        // let sql = "SELECT state, MIN(age), MIN(age) FROM person GROUP BY state";
+        // let err = logical_plan(sql).expect_err("query should have failed");
+        // assert_eq!(
+        //     r##"Plan("Projections require unique expression names but the expression \"MIN(#person.age)\" at position 1 and \"MIN(#person.age)\" at position 2 have the same name. Consider aliasing (\"AS\") one of them.")"##,
+        //     format!("{:?}", err)
+        // );
+
+        // NOTE: this is supported with cubesql patches
+        quick_test(
+            "SELECT state, MIN(age), MIN(age) FROM person GROUP BY state",
+            "Projection: #person.state, #MIN(person.age), #MIN(person.age) AS MIN(person.age)__1\
+             \n  Aggregate: groupBy=[[#person.state]], aggr=[[MIN(#person.age)]]\
+             \n    TableScan: person projection=None",
+        )
     }
 
     #[test]
