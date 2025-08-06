@@ -150,7 +150,6 @@ mod tests {
     use super::*;
     use arrow::array::{
         BinaryArray, BooleanArray, Float32Array, Float64Array, Int32Array,
-        TimestampNanosecondArray,
     };
     use arrow::record_batch::RecordBatch;
     use futures::StreamExt;
