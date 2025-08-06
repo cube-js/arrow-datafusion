@@ -31,9 +31,9 @@ jobs:
         python-version: ["3.6", "3.7", "3.8", "3.9"]
         os: [macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -59,7 +59,7 @@ jobs:
         run: find ./python/target/wheels/
 
       - name: Archive wheels
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: dist
           path: python/target/wheels/*
@@ -68,11 +68,11 @@ jobs:
     name: Manylinux
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Build wheels
         run: docker run --rm -v $(pwd):/io konstin2/maturin build --release --manylinux
       - name: Archive wheels
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: dist
           path: python/target/wheels/*
@@ -82,7 +82,7 @@ jobs:
     needs: [build-manylinux, build-python-mac-win]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:

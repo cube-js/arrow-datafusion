@@ -38,16 +38,16 @@ jobs:
         # "1" means line tables only, which is useful for panic tracebacks.
         RUSTFLAGS: "-C debuginfo=1"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Cache Cargo
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           # these represent dependencies downloaded by cargo
           # and thus do not depend on the OS, arch nor rust version.
           path: /github/home/.cargo
           key: cargo-cache-
       - name: Cache Rust dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           # these represent compiled steps of both dependencies and arrow
           # and thus are specific for a particular OS, arch and rust version.
@@ -81,17 +81,17 @@ jobs:
         # "1" means line tables only, which is useful for panic tracebacks.
         RUSTFLAGS: "-C debuginfo=1"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - name: Cache Cargo
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /github/home/.cargo
           # this key equals the ones on `linux-build-lib` for re-use
           key: cargo-cache-
       - name: Cache Rust dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /github/home/target
           # this key equals the ones on `linux-build-lib` for re-use
@@ -145,10 +145,10 @@ jobs:
 #          --health-timeout 5s
 #          --health-retries 5
 #    steps:
-#      - uses: actions/checkout@v2
+#      - uses: actions/checkout@v4
 #        with:
 #          submodules: true
-#      - uses: actions/setup-python@v2
+#      - uses: actions/setup-python@v5
 #        with:
 #          python-version: "3.8"
 #      - name: Install Python dependencies
@@ -201,7 +201,7 @@ jobs:
         os: [macos-latest]
         rust: [nightly-2024-01-29]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: true
       # TODO: this won't cache anything, which is expensive. Setup this action
@@ -227,7 +227,7 @@ jobs:
     container:
       image: amd64/rust
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Setup toolchain
         run: |
           rustup toolchain install nightly-2024-01-29
@@ -251,17 +251,17 @@ jobs:
 #        # "1" means line tables only, which is useful for panic tracebacks.
 #        RUSTFLAGS: "-C debuginfo=1"
 #    steps:
-#      - uses: actions/checkout@v2
+#      - uses: actions/checkout@v4
 #        with:
 #          submodules: true
 #      - name: Cache Cargo
-#        uses: actions/cache@v2
+#        uses: actions/cache@v4
 #        with:
 #          path: /github/home/.cargo
 #          # this key equals the ones on `linux-build-lib` for re-use
 #          key: cargo-cache-
 #      - name: Cache Rust dependencies
-#        uses: actions/cache@v2
+#        uses: actions/cache@v4
 #        with:
 #          path: /github/home/target
 #          # this key equals the ones on `linux-build-lib` for re-use
@@ -286,10 +286,10 @@ jobs:
 #        arch: [amd64]
 #        rust: [nightly-2021-07-04]
 #    steps:
-#      - uses: actions/checkout@v2
+#      - uses: actions/checkout@v4
 #        with:
 #          submodules: true
-#      - uses: actions/cache@v2
+#      - uses: actions/cache@v4
 #        with:
 #          path: |
 #            ~/.cargo/registry
@@ -322,17 +322,17 @@ jobs:
   #       arch: [amd64]
   #       rust: [nightly-2021-07-04]
   #   steps:
-  #     - uses: actions/checkout@v2
+  #     - uses: actions/checkout@v4
   #       with:
   #         submodules: true
   #     - name: Cache Cargo
-  #       uses: actions/cache@v2
+  #       uses: actions/cache@v4
   #       with:
   #         path: /home/runner/.cargo
   #         # this key is not equal because the user is different than on a container (runner vs github)
   #         key: cargo-coverage-cache-
   #     - name: Cache Rust dependencies
-  #       uses: actions/cache@v2
+  #       uses: actions/cache@v4
   #       with:
   #         path: /home/runner/target
   #         # this key is not equal because coverage uses different compilation flags.
