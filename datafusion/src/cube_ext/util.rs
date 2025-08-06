@@ -255,7 +255,7 @@ macro_rules! cube_match_scalar {
             ScalarValue::TimestampSecond(v) => ($matcher!($($arg ,)* v, TimestampSecondBuilder)),
             ScalarValue::IntervalYearMonth(v) => ($matcher!($($arg ,)* v, IntervalYearMonthBuilder)),
             ScalarValue::IntervalDayTime(v) => ($matcher!($($arg ,)* v, IntervalDayTimeBuilder)),
-            ScalarValue::List(v, box dt) => ($matcher!($($arg ,)* v, dt, ListBuilder)),
+            ScalarValue::List(v, dt) => ($matcher!($($arg ,)* v, &**dt, ListBuilder)),
             ScalarValue::Binary(v) => ($matcher!($($arg ,)* v, BinaryBuilder)),
             ScalarValue::LargeBinary(v) => ($matcher!($($arg ,)* v, LargeBinaryBuilder)),
         }

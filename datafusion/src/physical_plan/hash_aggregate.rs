@@ -1371,10 +1371,10 @@ pub(crate) fn append_value(b: &mut dyn ArrayBuilder, v: &ScalarValue) -> Result<
                 .expect("invalid list builder");
             let vs = match $list {
                 None => return Ok(b.append(false)?),
-                Some(box vs) => vs,
+                Some(vs) => vs,
             };
             let values_builder = b.values();
-            for v in vs {
+            for v in &**vs {
                 append_value(values_builder, v)?;
             }
             Ok(b.append(true)?)
