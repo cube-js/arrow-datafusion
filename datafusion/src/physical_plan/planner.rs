@@ -345,7 +345,7 @@ impl DefaultPhysicalPlanner {
         extension_planners.insert(1, Arc::new(CrossJoinPlanner {}));
         extension_planners.insert(2, Arc::new(CrossJoinAggPlanner {}));
         extension_planners.insert(3, Arc::new(crate::cube_ext::rolling::Planner {}));
-        Self { extension_planners }
+        Self { should_evaluate_constants: true, extension_planners }
     }
 
     /// Create a physical plan from a logical plan
