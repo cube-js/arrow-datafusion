@@ -249,12 +249,14 @@ pub trait ExtensionPlanner {
 /// Default single node physical query planner that converts a
 /// `LogicalPlan` to an `ExecutionPlan` suitable for execution.
 pub struct DefaultPhysicalPlanner {
+    should_evaluate_constants: bool,
     extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
 }
 
 impl Default for DefaultPhysicalPlanner {
     fn default() -> Self {
         Self {
+            should_evaluate_constants: true,
             extension_planners: vec![
                 Arc::new(LogicalAliasPlanner {}),
                 Arc::new(CrossJoinPlanner {}),
@@ -262,6 +264,15 @@ impl Default for DefaultPhysicalPlanner {
                 Arc::new(crate::cube_ext::rolling::Planner {}),
             ],
         }
+    }
+}
+
+impl DefaultPhysicalPlanner {
+    pub fn disable_constant_evaluation(self) -> Self {
+        let mut mv = self;
+        mv.should_evaluate_constants = false;
+
+        mv
     }
 }
 
@@ -334,7 +345,7 @@ impl DefaultPhysicalPlanner {
         extension_planners.insert(1, Arc::new(CrossJoinPlanner {}));
         extension_planners.insert(2, Arc::new(CrossJoinAggPlanner {}));
         extension_planners.insert(3, Arc::new(crate::cube_ext::rolling::Planner {}));
-        Self { extension_planners }
+        Self { should_evaluate_constants: true, extension_planners }
     }
 
     /// Create a physical plan from a logical plan
@@ -1360,9 +1371,10 @@ impl DefaultPhysicalPlanner {
         res_expr: Arc<dyn PhysicalExpr>,
         inputs: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Result<Arc<dyn PhysicalExpr>> {
-        if inputs
-            .iter()
-            .all(|i| i.as_any().downcast_ref::<Literal>().is_some())
+        if self.should_evaluate_constants
+            && inputs
+                .iter()
+                .all(|i| i.as_any().downcast_ref::<Literal>().is_some())
         {
             Ok(evaluate_const(res_expr)?)
         } else {
