@@ -1371,9 +1371,10 @@ impl DefaultPhysicalPlanner {
         res_expr: Arc<dyn PhysicalExpr>,
         inputs: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Result<Arc<dyn PhysicalExpr>> {
-        if self.should_evaluate_constants && inputs
-            .iter()
-            .all(|i| i.as_any().downcast_ref::<Literal>().is_some())
+        if self.should_evaluate_constants
+            && inputs
+                .iter()
+                .all(|i| i.as_any().downcast_ref::<Literal>().is_some())
         {
             Ok(evaluate_const(res_expr)?)
         } else {
