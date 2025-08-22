@@ -22,8 +22,8 @@ members = [
     "datafusion/expr",
     "datafusion/jit",
     "datafusion/physical-expr",
-    "datafusion/proto",
-    "datafusion-examples",
+#    "datafusion/proto",
+#    "datafusion-examples",
     "benchmarks",
     "data-access",
 ]
