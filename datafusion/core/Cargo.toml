@@ -53,7 +53,7 @@ row = []
 simd = ["arrow/simd"]
 unicode_expressions = ["datafusion-physical-expr/regex_expressions"]
 # SQL API doesn't use parquet, while parquet is enabled by default in the original repository.
-parquet-all-compressions = ["parquet/snap", "parquet/brotli", "parquet/flate2", "parquet/lz4", "parquet/zstd"]
+parquet-all-compressions = ["datafusion-common/parquet-all-compressions", "parquet/snap", "parquet/brotli", "parquet/flate2", "parquet/lz4", "parquet/zstd"]
 
 [dependencies]
 ahash = { version = "0.7", default-features = false }
