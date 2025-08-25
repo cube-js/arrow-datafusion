@@ -52,6 +52,8 @@ regex_expressions = ["datafusion-physical-expr/regex_expressions"]
 row = []
 simd = ["arrow/simd"]
 unicode_expressions = ["datafusion-physical-expr/regex_expressions"]
+# SQL API doesn't use parquet, while parquet is enabled by default in the original repository.
+parquet-all-compressions = ["parquet/snap", "parquet/brotli", "parquet/flate2", "parquet/lz4", "parquet/zstd"]
 
 [dependencies]
 ahash = { version = "0.7", default-features = false }
@@ -73,7 +75,8 @@ num-traits = { version = "0.2", optional = true }
 num_cpus = "1.13.0"
 ordered-float = "2.10"
 parking_lot = "0.12"
-parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "a03d4eef5640e05dddf99fc2357ad6d58b5337cb", features = ["arrow"] }
+# All compression codes are disabled by default in our fork because it increases compilation time significantly.
+parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "a03d4eef5640e05dddf99fc2357ad6d58b5337cb", features = ["arrow", "base64"], default-features = false }
 paste = "^1.0"
 pin-project-lite= "^0.2.7"
 pyo3 = { version = "0.16", optional = true }
