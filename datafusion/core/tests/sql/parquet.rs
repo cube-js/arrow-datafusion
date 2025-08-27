@@ -48,6 +48,7 @@ async fn parquet_query() {
     assert_batches_eq!(expected, &actual);
 }
 
+#[ignore = "(cubesql) This test relies on parquet compression that we disabled"]
 #[tokio::test]
 async fn parquet_single_nan_schema() {
     let ctx = SessionContext::new();
