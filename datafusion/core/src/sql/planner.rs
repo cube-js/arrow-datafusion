@@ -1991,12 +1991,6 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                                     )));
                                 }
                             }
-                            if let Some(f) = self.context.outer_query_context_schema.iter().find_map(|s| s.field_with_qualified_name(&relation, &name).ok()) {
-                                return Ok(Expr::OuterColumn(f.data_type().clone(), Column {
-                                    relation: Some(relation),
-                                    name,
-                                }))
-                            }
 
                             match schema.field_with_qualified_name(&relation, &name) {
                                 Ok(_) => {
@@ -2022,6 +2016,17 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                                             expr: Box::new(Expr::Column(field.qualified_column())),
                                             key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(name)))),
                                         })
+                                    } else if let Some(f) = self
+                                        .context
+                                        .outer_query_context_schema
+                                        .iter()
+                                        .find_map(|s| s.field_with_qualified_name(&relation, &name).ok())
+                                    {
+                                        // Access to an outer column from a subquery
+                                        return Ok(Expr::OuterColumn(f.data_type().clone(), Column {
+                                            relation: Some(relation),
+                                            name,
+                                        }))
                                     } else {
                                         // This is a fix for Sort with relation. See filter_idents_test test for more information.
                                         Ok(Expr::Column(Column {
@@ -5376,13 +5381,13 @@ mod tests {
 
     #[test]
     fn subquery_any() {
-        let sql = "select person.id from person where person.id = any(select person.id from person)";
+        let sql = "select person.id from person where person.id = any(select person.id)";
         let expected = "Projection: #person.id\
                         \n  Filter: #person.id = ANY(#__subquery-0.person.id)\
                         \n    Subquery: types=[AnyAll]\
                         \n      TableScan: person projection=None\
                         \n      Projection: ^#person.id, alias=__subquery-0\
-                        \n        TableScan: person projection=None";
+                        \n        EmptyRelation";
         quick_test(sql, expected);
     }
 
@@ -5402,11 +5407,31 @@ mod tests {
     fn subquery_in() {
         let sql =
             "select person.id, person.id in (select person.id from person) from person";
-        let expected = "Projection: #person.id, #person.id IN (#__subquery-0.person.id)\
+        let expected = "Projection: #person.id, #person.id IN (#__subquery-0.id)\
                         \n  Subquery: types=[AnyAll]\
                         \n    TableScan: person projection=None\
-                        \n    Projection: ^#person.id, alias=__subquery-0\
+                        \n    Projection: #person.id, alias=__subquery-0\
                         \n      TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn subquery_compound_identifier_self_reference() {
+        let sql = "SELECT person.id \
+            FROM person \
+            WHERE person.id IN ( \
+                SELECT person.id \
+                FROM person \
+                WHERE person.id > 10 \
+            )";
+        let expected = "\
+              Projection: #person.id\
+            \n  Filter: #person.id IN (#__subquery-0.id)\
+            \n    Subquery: types=[AnyAll]\
+            \n      TableScan: person projection=None\
+            \n      Projection: #person.id, alias=__subquery-0\
+            \n        Filter: #person.id > Int64(10)\
+            \n          TableScan: person projection=None";
         quick_test(sql, expected);
     }
 
