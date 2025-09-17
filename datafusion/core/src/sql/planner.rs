@@ -4350,6 +4350,17 @@ mod tests {
     }
 
     #[test]
+    fn select_order_by_missing_aggr() {
+        let sql = "SELECT state FROM person GROUP BY state ORDER BY SUM(age)";
+        let expected = "Projection: #person.state\
+                        \n  Sort: #SUM(person.age) ASC NULLS LAST\
+                        \n    Projection: #person.state, #SUM(person.age)\
+                        \n      Aggregate: groupBy=[[#person.state]], aggr=[[SUM(#person.age)]]\
+                        \n        TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
     fn select_group_by() {
         let sql = "SELECT state FROM person GROUP BY state";
         let expected = "Projection: #person.state\

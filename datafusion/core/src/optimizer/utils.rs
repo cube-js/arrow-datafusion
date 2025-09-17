@@ -111,6 +111,32 @@ pub fn expr_to_columns(expr: &Expr, accum: &mut HashSet<Column>) -> Result<()> {
     Ok(())
 }
 
+/// Recursively walk an expression tree, collecting the unique set of aggregate expressions
+/// referenced in the expression
+struct AggregateExprVisitor<'a> {
+    accum: &'a mut HashSet<Expr>,
+}
+
+impl ExpressionVisitor for AggregateExprVisitor<'_> {
+    fn pre_visit(self, expr: &Expr) -> Result<Recursion<Self>> {
+        match expr {
+            Expr::AggregateFunction { .. } | Expr::AggregateUDF { .. } => {
+                self.accum.insert(expr.clone());
+                return Ok(Recursion::Stop(self));
+            }
+            _ => {}
+        }
+        Ok(Recursion::Continue(self))
+    }
+}
+
+/// Recursively walk an expression tree, collecting the unique set of aggregate expressions
+/// referenced in the expression
+pub fn expr_to_aggr_exprs(expr: &Expr, accum: &mut HashSet<Expr>) -> Result<()> {
+    expr.accept(AggregateExprVisitor { accum })?;
+    Ok(())
+}
+
 /// Convenience rule for writing optimizers: recursively invoke
 /// optimize on plan's children and then return a node of the same
 /// type. Useful for optimizer rules which want to leave the type
