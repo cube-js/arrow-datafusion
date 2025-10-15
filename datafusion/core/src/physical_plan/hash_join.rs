@@ -298,6 +298,7 @@ impl ExecutionPlan for HashJoinExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
+        println!("HASH JOIN EXEC ENGAGED\n");
         // This is a hacky way to support type coercion for join expressions
         // Without this it would panic later, in build_join_indexes => equal_rows, when it would try to downcast both sides to same primitive type
         // TODO Remove this after rebasing on top of commit ac2e5d15 "Support type coercion for equijoin (#4666)". It was first released at DF 16.0
@@ -326,6 +327,7 @@ impl ExecutionPlan for HashJoinExec {
 
         // we only want to compute the build side once for PartitionMode::CollectLeft
         let left_data = {
+            println!("PARTITION MODE: {:#?}", self.mode);
             match self.mode {
                 PartitionMode::CollectLeft => {
                     let mut build_side = self.build_side.lock().await;
@@ -425,6 +427,7 @@ impl ExecutionPlan for HashJoinExec {
                         concat_batches(&self.left.schema(), &batches, num_rows)?;
 
                     let left_side = Arc::new((hashmap, single_batch));
+                    println!("LEFT SIDE HASH JOIN:\n{:#?}\n", left_side);
 
                     debug!(
                         "Built build-side {} of hash join containing {} rows in {} ms",
@@ -1086,7 +1089,12 @@ impl Stream for HashJoinStream {
                             JoinType::Inner | JoinType::Right => {}
                         }
                     }
-                    Some(result.map(|x| x.0))
+                    let result = Some(result.map(|x| x.0));
+                    println!(
+                        "HASH JOIN EXEC ISSUING BATCH 1:\n{:#?}\n",
+                        result.as_ref().unwrap()
+                    );
+                    result
                 }
                 other => {
                     let timer = self.join_metrics.join_time.timer();
@@ -1115,6 +1123,7 @@ impl Stream for HashJoinStream {
                             }
                             timer.done();
                             self.is_exhausted = true;
+                            println!("HASH JOIN EXEC ISSUING BATCH 2:\n{:#?}\n", result);
                             return Some(result);
                         }
                         JoinType::Left

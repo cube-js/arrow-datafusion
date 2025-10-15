@@ -39,7 +39,6 @@ use crate::physical_optimizer::optimizer::PhysicalOptimizerRule;
 use crate::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use crate::physical_plan::cross_join::CrossJoinExec;
 use crate::physical_plan::explain::ExplainExec;
-use crate::physical_plan::expressions;
 use crate::physical_plan::expressions::{
     CaseExpr, Column, GetIndexedFieldExpr, Literal, PhysicalSortExpr,
 };
@@ -54,6 +53,7 @@ use crate::physical_plan::subquery::SubqueryExec;
 use crate::physical_plan::udf;
 use crate::physical_plan::udtf;
 use crate::physical_plan::windows::WindowAggExec;
+use crate::physical_plan::{expressions, DisplayFormatType};
 use crate::physical_plan::{join_utils, Partitioning};
 use crate::physical_plan::{AggregateExpr, ExecutionPlan, PhysicalExpr, WindowExpr};
 use crate::scalar::ScalarValue;
@@ -74,6 +74,7 @@ use datafusion_physical_expr::expressions::{any, OuterColumn};
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::{debug, trace};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 fn create_function_physical_name(
@@ -434,7 +435,7 @@ impl PhysicalPlanner for DefaultPhysicalPlanner {
         logical_plan: &LogicalPlan,
         session_state: &SessionState,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        match self.handle_explain(logical_plan, session_state).await? {
+        let x = match self.handle_explain(logical_plan, session_state).await? {
             Some(plan) => Ok(plan),
             None => {
                 let plan = self
@@ -442,7 +443,37 @@ impl PhysicalPlanner for DefaultPhysicalPlanner {
                     .await?;
                 self.optimize_internal(plan, session_state, |_, _| {})
             }
+        }?;
+
+        struct X {
+            plan: Arc<dyn ExecutionPlan>,
+            level: usize,
         }
+
+        impl Debug for X {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                for _ in 0..self.level {
+                    write!(f, "  ")?;
+                }
+                self.plan.fmt_as(DisplayFormatType::Default, f)?;
+                writeln!(f)?;
+                for child in self.plan.children() {
+                    let a = X {
+                        plan: Arc::clone(&child),
+                        level: self.level + 1,
+                    };
+                    write!(f, "{:?}", a)?;
+                }
+                Ok(())
+            }
+        }
+
+        let a = X {
+            plan: Arc::clone(&x),
+            level: 0,
+        };
+        println!("PHYSICAL PLAN:\n{:?}\n", a);
+        Ok(x)
     }
 
     /// Create a physical expression from a logical expression
@@ -645,8 +676,10 @@ impl DefaultPhysicalPlanner {
                     aggr_expr,
                     ..
                 }) => {
+                    println!("\nAGGREGATE INITIAL PLAN");
                     // Initially need to perform the aggregate and then merge the partitions
                     let input_exec = self.create_initial_plan(input, session_state).await?;
+                    println!("INPUT EXEC: {:?}", input_exec);
                     let physical_input_schema = input_exec.schema();
                     let logical_input_schema = input.as_ref().schema();
 
@@ -664,6 +697,7 @@ impl DefaultPhysicalPlanner {
                             ))
                         })
                         .collect::<Result<Vec<_>>>()?;
+                    println!("GROUPS: {:?}", groups);
                     let aggregates = aggr_expr
                         .iter()
                         .map(|e| {
@@ -675,6 +709,7 @@ impl DefaultPhysicalPlanner {
                             )
                         })
                         .collect::<Result<Vec<_>>>()?;
+                    println!("AGGREGATES: {:?}", aggregates);
 
                     let initial_aggr = Arc::new(HashAggregateExec::try_new(
                         AggregateMode::Partial,
@@ -683,20 +718,27 @@ impl DefaultPhysicalPlanner {
                         input_exec,
                         physical_input_schema.clone(),
                     )?);
+                    println!("INITIAL AGGR: {:?}", initial_aggr);
 
                     // update group column indices based on partial aggregate plan evaluation
                     let final_group: Vec<Arc<dyn PhysicalExpr>> = initial_aggr.output_group_expr();
+                    println!("FINAL GROUP: {:?}", final_group);
 
                     // TODO: dictionary type not yet supported in Hash Repartition
                     let contains_dict = groups
                         .iter()
                         .flat_map(|x| x.0.data_type(physical_input_schema.as_ref()))
                         .any(|x| matches!(x, DataType::Dictionary(_, _)));
+                    println!("CONTAINS DICT: {:?}", contains_dict);
 
                     let can_repartition = !groups.is_empty()
                         && session_state.config.target_partitions > 1
                         && session_state.config.repartition_aggregations
                         && !contains_dict;
+                    println!("GROUPS IS EMPTY: {:?}", groups.is_empty());
+                    println!("TARGET PARTITIONS: {:?}", session_state.config.target_partitions);
+                    println!("REPARTITION AGGREGATIONS: {:?}", session_state.config.repartition_aggregations);
+                    println!("CAN REPARTITION: {:?}", can_repartition);
 
                     let (initial_aggr, next_partition_mode): (
                         Arc<dyn ExecutionPlan>,
@@ -717,6 +759,9 @@ impl DefaultPhysicalPlanner {
                         // first aggregation and the expressions corresponding to the respective aggregate
                         (initial_aggr, AggregateMode::Final)
                     };
+                    println!("INITIAL AGGR AFTER REPARTITION: {:?}", initial_aggr);
+                    println!("NEXT PARTITION MODE: {:?}", next_partition_mode);
+                    println!();
 
                     Ok(Arc::new(HashAggregateExec::try_new(
                         next_partition_mode,
