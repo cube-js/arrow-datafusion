@@ -57,7 +57,7 @@ parquet-all-compressions = ["datafusion-common/parquet-all-compressions", "parqu
 
 [dependencies]
 ahash = { version = "0.7", default-features = false }
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "a03d4eef5640e05dddf99fc2357ad6d58b5337cb", features = ["prettyprint"] }
+arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "8277f9a051c90482ff9557a91c5dc3926d9ba19e", features = ["prettyprint"] }
 async-trait = "0.1.41"
 avro-rs = { version = "0.13", features = ["snappy"], optional = true }
 chrono = { version = "0.4", default-features = false }
@@ -76,7 +76,7 @@ num_cpus = "1.13.0"
 ordered-float = "2.10"
 parking_lot = "0.12"
 # All compression codes are disabled by default in our fork because it increases compilation time significantly.
-parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "a03d4eef5640e05dddf99fc2357ad6d58b5337cb", features = ["arrow", "base64"], default-features = false }
+parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "8277f9a051c90482ff9557a91c5dc3926d9ba19e", features = ["arrow", "base64"], default-features = false }
 paste = "^1.0"
 pin-project-lite= "^0.2.7"
 pyo3 = { version = "0.16", optional = true }

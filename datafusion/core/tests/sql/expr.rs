@@ -1057,7 +1057,8 @@ async fn test_cast_expressions() -> Result<()> {
     test_expression!("CAST('0' AS INT)", "0");
     test_expression!("CAST(NULL AS INT)", "NULL");
     test_expression!("TRY_CAST('0' AS INT)", "0");
-    test_expression!("TRY_CAST('x' AS INT)", "NULL");
+    // NOTE(cubesql): throws an error for this cast as PostgreSQL does
+    //test_expression!("TRY_CAST('x' AS INT)", "NULL");
     Ok(())
 }
 

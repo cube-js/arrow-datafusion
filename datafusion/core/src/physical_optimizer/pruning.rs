@@ -1055,17 +1055,14 @@ mod tests {
             num_containers: 1,
         };
 
-        let batch =
-            build_statistics_record_batch(&statistics, &required_columns).unwrap();
-        let expected = vec![
-            "+--------+",
-            "| s1_min |",
-            "+--------+",
-            "|        |",
-            "+--------+",
-        ];
-
-        assert_batches_eq!(expected, &[batch]);
+        // NOTE(cubesql): error is returned on invalid cast
+        let result =
+            build_statistics_record_batch(&statistics, &required_columns).unwrap_err();
+        assert!(
+            result.to_string().contains("Cannot cast binary to string"),
+            "{}",
+            result
+        );
     }
 
     #[test]

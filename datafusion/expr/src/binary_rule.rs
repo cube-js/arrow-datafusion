@@ -151,9 +151,13 @@ pub fn coerce_types(
 fn bitwise_coercion(left_type: &DataType, right_type: &DataType) -> Option<DataType> {
     use arrow::datatypes::DataType::*;
 
-    if !is_numeric(left_type) || !is_numeric(right_type) {
-        return None;
+    // If one of the sides is numeric and the other is a string, coercion to number is allowed
+    match (is_numeric(left_type), is_numeric(right_type)) {
+        (true, true) => (),
+        (false, false) => return None,
+        _ => return string_with_any_coercion(left_type, right_type),
     }
+
     if left_type == right_type && !is_dictionary(left_type) {
         return Some(left_type.clone());
     }
@@ -242,9 +246,13 @@ fn comparison_binary_numeric_coercion(
     rhs_type: &DataType,
 ) -> Option<DataType> {
     use arrow::datatypes::DataType::*;
-    if !is_numeric(lhs_type) || !is_numeric(rhs_type) {
-        return None;
-    };
+
+    // If one of the sides is numeric and the other is a string, coercion to number is allowed
+    match (is_numeric(lhs_type), is_numeric(lhs_type)) {
+        (true, true) => (),
+        (false, false) => return None,
+        _ => return string_with_any_coercion(lhs_type, rhs_type),
+    }
 
     // same type => all good
     if lhs_type == rhs_type {
@@ -322,9 +330,12 @@ fn mathematics_numerical_coercion(
     use arrow::datatypes::DataType::*;
 
     // error on any non-numeric type
-    if !is_numeric(lhs_type) || !is_numeric(rhs_type) {
-        return None;
-    };
+    // If one of the sides is numeric and the other is a string, coercion to number is allowed
+    match (is_numeric(lhs_type), is_numeric(rhs_type)) {
+        (true, true) => (),
+        (false, false) => return None,
+        _ => return string_with_any_coercion(lhs_type, rhs_type),
+    }
 
     // exponentiation is always Float64
     if mathematics_op == &Operator::Exponentiate {
@@ -557,6 +568,7 @@ fn string_boolean_equality_coercion(
 fn like_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
     string_coercion(lhs_type, rhs_type)
         .or_else(|| dictionary_coercion(lhs_type, rhs_type))
+        .or_else(|| string_with_any_coercion(lhs_type, rhs_type))
 }
 
 /// Coercion rules for Temporal columns: the type that both lhs and rhs can be
@@ -668,6 +680,7 @@ fn eq_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
         .or_else(|| dictionary_coercion(lhs_type, rhs_type))
         .or_else(|| temporal_coercion(lhs_type, rhs_type))
         .or_else(|| null_coercion(lhs_type, rhs_type))
+        .or_else(|| string_with_any_coercion(lhs_type, rhs_type))
 }
 
 pub fn distinct_coercion(
@@ -803,6 +816,17 @@ fn interval_add_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<Dat
     }
 }
 
+/// coercion rules for expressions where string can be cast to other type
+fn string_with_any_coercion(
+    lhs_type: &DataType,
+    rhs_type: &DataType,
+) -> Option<DataType> {
+    match (lhs_type, rhs_type) {
+        (DataType::Utf8, t) | (t, DataType::Utf8) => Some(t.clone()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -815,10 +839,10 @@ mod tests {
 
     fn test_coercion_error() -> Result<()> {
         let result_type =
-            coerce_types(&DataType::Float32, &Operator::Plus, &DataType::Utf8);
+            coerce_types(&DataType::Float32, &Operator::Plus, &DataType::Date32);
 
         if let Err(DataFusionError::Plan(e)) = result_type {
-            assert_eq!(e, "'Float32 + Utf8' can't be evaluated because there isn't a common type to coerce the types to");
+            assert_eq!(e, "'Float32 + Date32' can't be evaluated because there isn't a common type to coerce the types to");
             Ok(())
         } else {
             Err(DataFusionError::Internal(
