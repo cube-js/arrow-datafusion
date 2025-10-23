@@ -1929,7 +1929,8 @@ mod tests {
             // u32 AND bool
             col("c2").and(bool_expr),
             // utf8 LIKE u32
-            col("c1").like(col("c2")),
+            // NOTE(cubesql): valid
+            //col("c1").like(col("c2")),
         ];
         for case in cases {
             let logical_plan = LogicalPlanBuilder::scan_csv(

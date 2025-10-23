@@ -526,13 +526,16 @@ mod tests {
 
     #[test]
     fn test_try_cast_utf8_i32() -> Result<()> {
+        // NOTE(cubesql): casting invalid Utf8 to Int32 throws an error like in PostgreSQL
         generic_test_cast!(
             StringArray,
             DataType::Utf8,
-            vec!["a", "2", "3", "b", "5"],
+            // vec!["a", "2", "3", "b", "5"],
+            vec!["2", "3", "5"],
             Int32Array,
             DataType::Int32,
-            vec![None, Some(2), Some(3), None, Some(5)]
+            // vec![None, Some(2), Some(3), None, Some(5)]
+            vec![Some(2), Some(3), Some(5)]
         );
         Ok(())
     }
