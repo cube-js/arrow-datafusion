@@ -923,7 +923,8 @@ impl DefaultPhysicalPlanner {
                         })
                         .collect::<Result<join_utils::JoinOn>>()?;
 
-                    if session_state.config.target_partitions > 1
+                    if (session_state.config.target_partitions > 1
+                        || physical_right.output_partitioning().partition_count() > 1)
                         && session_state.config.repartition_joins
                     {
                         let (left_expr, right_expr) = join_on
