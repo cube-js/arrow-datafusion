@@ -51,7 +51,7 @@ use datafusion_physical_expr::{
 use itertools::Itertools;
 use tracing_futures::Instrument;
 
-pub(crate) mod group_values;
+pub mod group_values;
 mod no_grouping;
 pub mod order;
 mod row_hash;
@@ -213,7 +213,7 @@ impl PhysicalGroupBy {
     }
 
     /// The number of expressions in the output schema.
-    fn num_output_exprs(&self) -> usize {
+    pub fn num_output_exprs(&self) -> usize {
         let mut num_exprs = self.expr.len();
         if !self.is_single() {
             num_exprs += 1
@@ -242,7 +242,7 @@ impl PhysicalGroupBy {
     }
 
     /// Returns the number expression as grouping keys.
-    fn num_group_exprs(&self) -> usize {
+    pub fn num_group_exprs(&self) -> usize {
         if self.is_single() {
             self.expr.len()
         } else {
@@ -285,7 +285,7 @@ impl PhysicalGroupBy {
     ///
     /// This might be different from the `group_fields` that might contain internal expressions that
     /// should not be part of the output schema.
-    fn output_fields(&self, input_schema: &Schema) -> Result<Vec<Field>> {
+    pub fn output_fields(&self, input_schema: &Schema) -> Result<Vec<Field>> {
         let mut fields = self.group_fields(input_schema)?;
         fields.truncate(self.num_output_exprs());
         Ok(fields)
@@ -339,9 +339,15 @@ enum StreamType {
 impl From<StreamType> for SendableRecordBatchStream {
     fn from(stream: StreamType) -> Self {
         match stream {
-            StreamType::AggregateStream(stream) => Box::pin(stream.instrument(tracing::trace_span!("AggregateStream"))),
-            StreamType::GroupedHash(stream) => Box::pin(stream.instrument(tracing::trace_span!("GroupedHashAggregateStream"))),
-            StreamType::GroupedPriorityQueue(stream) => Box::pin(stream.instrument(tracing::trace_span!("GroupedTopKAggregateStream"))),
+            StreamType::AggregateStream(stream) => {
+                Box::pin(stream.instrument(tracing::trace_span!("AggregateStream")))
+            }
+            StreamType::GroupedHash(stream) => Box::pin(
+                stream.instrument(tracing::trace_span!("GroupedHashAggregateStream")),
+            ),
+            StreamType::GroupedPriorityQueue(stream) => Box::pin(
+                stream.instrument(tracing::trace_span!("GroupedTopKAggregateStream")),
+            ),
         }
     }
 }
