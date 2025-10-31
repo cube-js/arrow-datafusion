@@ -28,7 +28,7 @@ use datafusion_common::Result;
 
 use datafusion_expr::EmitTo;
 
-pub(crate) mod multi_group_by;
+pub mod multi_group_by;
 
 mod row;
 mod single_group_by;
@@ -84,7 +84,7 @@ mod null_builder;
 /// Each distinct group in a hash aggregation is identified by a unique group id
 /// (usize) which is assigned by instances of this trait. Group ids are
 /// continuous without gaps, starting from 0.
-pub(crate) trait GroupValues: Send {
+pub trait GroupValues: Send {
     /// Calculates the group id for each input row of `cols`, assigning new
     /// group ids as necessary.
     ///

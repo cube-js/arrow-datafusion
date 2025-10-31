@@ -23,7 +23,7 @@ mod primitive;
 
 use std::mem::{self, size_of};
 
-use crate::aggregates::group_values::multi_group_by::{
+pub use crate::aggregates::group_values::multi_group_by::{
     bytes::ByteGroupValueBuilder, bytes_view::ByteViewGroupValueBuilder,
     primitive::PrimitiveGroupValueBuilder,
 };
