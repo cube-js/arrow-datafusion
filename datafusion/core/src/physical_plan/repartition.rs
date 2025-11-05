@@ -27,7 +27,10 @@ use crate::error::{DataFusionError, Result};
 use crate::physical_plan::hash_utils::create_hashes;
 use crate::physical_plan::{DisplayFormatType, ExecutionPlan, Partitioning, Statistics};
 use arrow::record_batch::RecordBatch;
-use arrow::{array::Array, error::Result as ArrowResult};
+use arrow::{
+    array::Array,
+    error::{ArrowError, Result as ArrowResult},
+};
 use arrow::{compute::take, datatypes::SchemaRef};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -369,9 +372,8 @@ impl RepartitionExec {
                             .columns()
                             .iter()
                             .map(|c| {
-                                take(c.as_ref(), &indices, None).map_err(|e| {
-                                    DataFusionError::Execution(e.to_string())
-                                })
+                                take(c.as_ref(), &indices, None)
+                                    .map_err(DataFusionError::ArrowError)
                             })
                             .collect::<Result<Vec<Arc<dyn Array>>>>()?;
                         let output_batch =
@@ -426,9 +428,33 @@ impl RepartitionExec {
             }
             // Error from running input task
             Ok(Err(e)) => {
+                // try to unwrap nested errors
+                let mut err = &e;
+                let mut message = None;
+                // limit the number of unwraps to avoid potential infinite/deep loops
+                for _ in 0..100 {
+                    if let DataFusionError::External(ext_err) = err {
+                        message = Some(ext_err.to_string());
+                        break;
+                    }
+                    let DataFusionError::ArrowError(arrow_err) = err else {
+                        message = Some(err.to_string());
+                        break;
+                    };
+                    let ArrowError::ExternalError(ext_err) = arrow_err else {
+                        message = Some(arrow_err.to_string());
+                        break;
+                    };
+                    let Some(df_err) = ext_err.downcast_ref::<DataFusionError>() else {
+                        message = Some(ext_err.to_string());
+                        break;
+                    };
+                    err = df_err;
+                }
+                let message = message.unwrap_or_else(|| err.to_string());
                 for (_, tx) in txs {
                     // wrap it because need to send error to all output partitions
-                    let err = DataFusionError::Execution(e.to_string());
+                    let err = DataFusionError::Execution(message.clone());
                     let err = Err(err.into());
                     tx.send(Some(err)).ok();
                 }
