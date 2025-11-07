@@ -24,7 +24,9 @@ async fn csv_query_error() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT sin(c1) FROM aggregate_test_100";
     let plan = ctx.create_logical_plan(sql);
-    assert!(plan.is_err());
+    // NOTE(cubesql): this coercion is supported
+    // assert!(plan.is_err());
+    assert!(plan.is_ok());
     Ok(())
 }
 
