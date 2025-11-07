@@ -50,11 +50,18 @@ pub fn data_types(
     }
     let valid_types = get_valid_types(&signature.type_signature, current_types)?;
 
-    if valid_types
-        .iter()
-        .any(|data_type| data_type == current_types)
-    {
-        return Ok(current_types.to_vec());
+    if let Some(types) = valid_types.iter().find(|data_types| {
+        if data_types.len() != current_types.len() {
+            return false;
+        }
+        data_types
+            .iter()
+            .zip(current_types)
+            .all(|(data_type, current_type)| {
+                data_type == current_type || matches!(current_type, DataType::Null)
+            })
+    }) {
+        return Ok(types.clone());
     }
 
     for valid_types in valid_types {
@@ -145,6 +152,10 @@ fn maybe_data_types(
 /// See the module level documentation for more detail on coercion.
 pub fn can_coerce_from(type_into: &DataType, type_from: &DataType) -> bool {
     use self::DataType::*;
+    // Strings can be converted to most types implicitly
+    if matches!(type_from, Utf8 | LargeUtf8) {
+        return true;
+    }
     // Null can convert to most of types
     match type_into {
         Int8 => matches!(type_from, Null | Int8),
