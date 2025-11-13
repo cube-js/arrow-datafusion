@@ -571,7 +571,9 @@ pub fn create_physical_fun(
         BuiltinScalarFunction::Log10 => Arc::new(math_expressions::log10),
         BuiltinScalarFunction::Log2 => Arc::new(math_expressions::log2),
         BuiltinScalarFunction::Random => Arc::new(math_expressions::random),
-        BuiltinScalarFunction::Round => Arc::new(math_expressions::round),
+        BuiltinScalarFunction::Round => {
+            Arc::new(|args| make_scalar_function(math_expressions::round)(args))
+        }
         BuiltinScalarFunction::Signum => Arc::new(math_expressions::signum),
         BuiltinScalarFunction::Sin => Arc::new(math_expressions::sin),
         BuiltinScalarFunction::Sqrt => Arc::new(math_expressions::sqrt),
@@ -1278,6 +1280,11 @@ fn signature(fun: &BuiltinScalarFunction) -> Signature {
             Signature::Exact(vec![DataType::LargeUtf8, DataType::Utf8]),
             Signature::Exact(vec![DataType::Utf8, DataType::Utf8, DataType::Utf8]),
             Signature::Exact(vec![DataType::LargeUtf8, DataType::Utf8, DataType::Utf8]),
+        ]),
+        BuiltinScalarFunction::Round => Signature::OneOf(vec![
+            Signature::Uniform(1, vec![DataType::Float64, DataType::Float32]),
+            Signature::Exact(vec![DataType::Float64, DataType::Int64]),
+            Signature::Exact(vec![DataType::Float32, DataType::Int64]),
         ]),
         BuiltinScalarFunction::Random => Signature::Exact(vec![]),
         // math expressions expect 1 argument of type f64 or f32

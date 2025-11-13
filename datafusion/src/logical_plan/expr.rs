@@ -1472,7 +1472,13 @@ unary_scalar_expr!(Atan, atan);
 unary_scalar_expr!(Floor, floor);
 unary_scalar_expr!(Ceil, ceil);
 unary_scalar_expr!(Now, now);
-unary_scalar_expr!(Round, round);
+/// Returns the nearest integer value to the expression. Digits defaults to 0 if not provided.
+pub fn round(args: Vec<Expr>) -> Expr {
+    Expr::ScalarFunction {
+        fun: functions::BuiltinScalarFunction::Round,
+        args,
+    }
+}
 unary_scalar_expr!(Trunc, trunc);
 unary_scalar_expr!(Abs, abs);
 unary_scalar_expr!(Signum, signum);
@@ -2050,6 +2056,18 @@ mod tests {
         }};
     }
 
+    macro_rules! test_nary_scalar_expr {
+        ($ENUM:ident, $FUNC:ident) => {{
+            if let Expr::ScalarFunction { fun, args } = $FUNC(col("tableA.a")) {
+                let name = functions::BuiltinScalarFunction::$ENUM;
+                assert_eq!(name, fun);
+                assert_eq!(2, args.len());
+            } else {
+                assert!(false, "unexpected");
+            }
+        }};
+    }
+
     #[test]
     fn scalar_function_definitions() {
         test_unary_scalar_expr!(Sqrt, sqrt);
@@ -2062,7 +2080,6 @@ mod tests {
         test_unary_scalar_expr!(Floor, floor);
         test_unary_scalar_expr!(Ceil, ceil);
         test_unary_scalar_expr!(Now, now);
-        test_unary_scalar_expr!(Round, round);
         test_unary_scalar_expr!(Trunc, trunc);
         test_unary_scalar_expr!(Abs, abs);
         test_unary_scalar_expr!(Signum, signum);
@@ -2103,5 +2120,26 @@ mod tests {
         test_unary_scalar_expr!(Translate, translate);
         test_unary_scalar_expr!(Trim, trim);
         test_unary_scalar_expr!(Upper, upper);
+    }
+
+    #[test]
+    fn test_round_definition() {
+        // test round with 1 argument
+        if let Expr::ScalarFunction { fun, args } = round(vec![col("tableA.a")]) {
+            let name = functions::BuiltinScalarFunction::Round;
+            assert_eq!(name, fun);
+            assert_eq!(1, args.len());
+        } else {
+            assert!(false, "unexpected");
+        }
+
+        // test round with 2 arguments
+        if let Expr::ScalarFunction { fun, args } = round(vec![col("tableA.a"), lit(2)]) {
+            let name = functions::BuiltinScalarFunction::Round;
+            assert_eq!(name, fun);
+            assert_eq!(2, args.len());
+        } else {
+            assert!(false, "unexpected");
+        }
     }
 }
