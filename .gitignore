@@ -91,3 +91,5 @@ rusty-tags.vi
 
 .vscode
 venv/*
+.claude
+CLAUDE.md
