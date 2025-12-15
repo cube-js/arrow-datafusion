@@ -337,12 +337,17 @@ where
                     .collect::<Result<Vec<_>>>()?,
                 window_frame: *window_frame,
             }),
-            Expr::AggregateUDF { fun, args } => Ok(Expr::AggregateUDF {
+            Expr::AggregateUDF {
+                fun,
+                args,
+                distinct,
+            } => Ok(Expr::AggregateUDF {
                 fun: fun.clone(),
                 args: args
                     .iter()
                     .map(|e| clone_with_replacement(e, replacement_fn))
                     .collect::<Result<Vec<Expr>>>()?,
+                distinct: *distinct,
             }),
             Expr::Alias(nested_expr, alias_name) => Ok(Expr::Alias(
                 Box::new(clone_with_replacement(nested_expr, replacement_fn)?),

@@ -19,7 +19,10 @@ use super::*;
 use arrow::compute::add;
 use datafusion::{
     logical_plan::{create_udaf, FunctionRegistry, LogicalPlanBuilder},
-    physical_plan::{expressions::AvgAccumulator, functions::make_scalar_function},
+    physical_plan::{
+        expressions::{AvgAccumulator, MaxAccumulator},
+        functions::make_scalar_function,
+    },
 };
 
 /// test that casting happens on udfs.
@@ -144,15 +147,15 @@ async fn scalar_udf() -> Result<()> {
 /// tests the creation, registration and usage of a UDAF
 #[tokio::test]
 async fn simple_udaf() -> Result<()> {
-    let schema = Schema::new(vec![Field::new("a", DataType::Int32, false)]);
+    let schema = Schema::new(vec![Field::new("a", DataType::Float64, false)]);
 
     let batch1 = RecordBatch::try_new(
         Arc::new(schema.clone()),
-        vec![Arc::new(Int32Array::from_slice([1, 2, 3]))],
+        vec![Arc::new(Float64Array::from_slice([5.0, 10.0, 15.0]))],
     )?;
     let batch2 = RecordBatch::try_new(
         Arc::new(schema.clone()),
-        vec![Arc::new(Int32Array::from_slice([4, 5]))],
+        vec![Arc::new(Float64Array::from_slice([10.0, 15.0]))],
     )?;
 
     let mut ctx = SessionContext::new();
@@ -166,8 +169,22 @@ async fn simple_udaf() -> Result<()> {
         DataType::Float64,
         Arc::new(DataType::Float64),
         Volatility::Immutable,
-        Arc::new(|| Ok(Box::new(AvgAccumulator::try_new(&DataType::Float64)?))),
-        Arc::new(vec![DataType::UInt64, DataType::Float64]),
+        Arc::new(|distinct| {
+            if distinct {
+                // Use MAX function when DISTINCT is specified as an example
+                Ok(Box::new(MaxAccumulator::try_new(&DataType::Float64)?))
+            } else {
+                Ok(Box::new(AvgAccumulator::try_new(&DataType::Float64)?))
+            }
+        }),
+        Arc::new(|data_type, distinct| {
+            if distinct {
+                // When DISTINCT is specified, use state type for MAX function
+                Ok(Arc::new(vec![data_type.clone()]))
+            } else {
+                Ok(Arc::new(vec![DataType::UInt64, data_type.clone()]))
+            }
+        }),
     );
 
     ctx.register_udaf(my_avg);
@@ -178,8 +195,20 @@ async fn simple_udaf() -> Result<()> {
         "+-------------+",
         "| my_avg(t.a) |",
         "+-------------+",
-        "| 3           |",
+        "| 11          |",
         "+-------------+",
+    ];
+    assert_batches_eq!(expected, &result);
+
+    // also test DISTINCT. in this case it makes MY_AVG act like MAX function
+    let result = plan_and_collect(&ctx, "SELECT MY_AVG(DISTINCT a) FROM t").await?;
+
+    let expected = vec![
+        "+----------------------+",
+        "| my_avg(DISTINCT t.a) |",
+        "+----------------------+",
+        "| 15                   |",
+        "+----------------------+",
     ];
     assert_batches_eq!(expected, &result);
 

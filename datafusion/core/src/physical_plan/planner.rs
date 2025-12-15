@@ -217,12 +217,17 @@ fn create_physical_name(e: &Expr, is_first_expr: bool) -> Result<String> {
             args,
             within_group.as_ref().map(|exprs| exprs.as_slice()),
         ),
-        Expr::AggregateUDF { fun, args } => {
+        Expr::AggregateUDF {
+            fun,
+            args,
+            distinct,
+        } => {
             let mut names = Vec::with_capacity(args.len());
             for e in args {
                 names.push(create_physical_name(e, false)?);
             }
-            Ok(format!("{}({})", fun.name, names.join(",")))
+            let distinct_str = if *distinct { "DISTINCT " } else { "" };
+            Ok(format!("{}({}{})", fun.name, distinct_str, names.join(",")))
         }
         Expr::GroupingSet(grouping_set) => match grouping_set {
             GroupingSet::Rollup(exprs) => Ok(format!(
@@ -1639,7 +1644,12 @@ pub fn create_aggregate_expr_with_name(
                 within_group,
             )
         }
-        Expr::AggregateUDF { fun, args, .. } => {
+        Expr::AggregateUDF {
+            fun,
+            args,
+            distinct,
+            ..
+        } => {
             let args = args
                 .iter()
                 .map(|e| {
@@ -1652,7 +1662,13 @@ pub fn create_aggregate_expr_with_name(
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            udaf::create_aggregate_expr(fun, &args, physical_input_schema, name)
+            udaf::create_aggregate_expr(
+                fun,
+                &args,
+                *distinct,
+                physical_input_schema,
+                name,
+            )
         }
         other => Err(DataFusionError::Internal(format!(
             "Invalid aggregate expression '{:?}'",

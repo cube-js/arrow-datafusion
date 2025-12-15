@@ -501,9 +501,10 @@ impl ExprIdentifierVisitor<'_> {
                 desc.push_str(&fun.to_string());
                 desc.push_str(&distinct.to_string());
             }
-            Expr::AggregateUDF { fun, .. } => {
+            Expr::AggregateUDF { fun, distinct, .. } => {
                 desc.push_str("AggregateUDF-");
                 desc.push_str(&fun.name);
+                desc.push_str(&distinct.to_string());
             }
             Expr::InList { negated, .. } => {
                 desc.push_str("InList-");

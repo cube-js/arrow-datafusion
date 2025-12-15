@@ -568,9 +568,10 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
                 within_group,
             })
         }
-        Expr::AggregateUDF { fun, .. } => Ok(Expr::AggregateUDF {
+        Expr::AggregateUDF { fun, distinct, .. } => Ok(Expr::AggregateUDF {
             fun: fun.clone(),
             args: expressions.to_vec(),
+            distinct: *distinct,
         }),
         Expr::GroupingSet(grouping_set) => match grouping_set {
             GroupingSet::Rollup(_exprs) => {

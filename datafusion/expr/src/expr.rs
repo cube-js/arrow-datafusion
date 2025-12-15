@@ -245,6 +245,8 @@ pub enum Expr {
         fun: Arc<AggregateUDF>,
         /// List of expressions to feed to the functions as arguments
         args: Vec<Expr>,
+        /// Whether this is a DISTINCT aggregation or not
+        distinct: bool,
     },
     /// Returns whether the list contains the expr value.
     InList {
@@ -635,9 +637,12 @@ impl fmt::Debug for Expr {
                 }
                 Ok(())
             }
-            Expr::AggregateUDF { fun, ref args, .. } => {
-                fmt_function(f, &fun.name, false, args, false)
-            }
+            Expr::AggregateUDF {
+                fun,
+                ref args,
+                distinct,
+                ..
+            } => fmt_function(f, &fun.name, *distinct, args, false),
             Expr::Between {
                 expr,
                 negated,
@@ -998,12 +1003,17 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             }
             Ok(parts.join(" "))
         }
-        Expr::AggregateUDF { fun, args } => {
+        Expr::AggregateUDF {
+            fun,
+            args,
+            distinct,
+        } => {
             let mut names = Vec::with_capacity(args.len());
             for e in args {
                 names.push(create_name(e, input_schema)?);
             }
-            Ok(format!("{}({})", fun.name, names.join(",")))
+            let distinct_str = if *distinct { "DISTINCT " } else { "" };
+            Ok(format!("{}({}{})", fun.name, distinct_str, names.join(",")))
         }
         Expr::GroupingSet(grouping_set) => match grouping_set {
             GroupingSet::Rollup(exprs) => Ok(format!(

@@ -237,10 +237,9 @@ pub fn create_udaf(
     return_type: Arc<DataType>,
     volatility: Volatility,
     accumulator: AccumulatorFunctionImplementation,
-    state_type: Arc<Vec<DataType>>,
+    state_type: StateTypeFunction,
 ) -> AggregateUDF {
     let return_type: ReturnTypeFunction = Arc::new(move |_| Ok(return_type.clone()));
-    let state_type: StateTypeFunction = Arc::new(move |_| Ok(state_type.clone()));
     AggregateUDF::new(
         name,
         &Signature::exact(vec![input_type], volatility),
