@@ -2409,7 +2409,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     None => match self.schema_provider.get_aggregate_meta(&name) {
                         Some(fm) => {
                             let args = self.function_args_to_expr(function.args, schema)?;
-                            Ok(Expr::AggregateUDF { fun: fm, args })
+                            Ok(Expr::AggregateUDF { fun: fm, args, distinct: function.distinct })
                         }
                         None => match self.schema_provider.get_table_function_meta(&name) {
                             Some(fm) => {

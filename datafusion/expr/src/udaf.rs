@@ -85,10 +85,11 @@ impl AggregateUDF {
 
     /// creates a logical expression with a call of the UDAF
     /// This utility allows using the UDAF without requiring access to the registry.
-    pub fn call(&self, args: Vec<Expr>) -> Expr {
+    pub fn call(&self, args: Vec<Expr>, distinct: bool) -> Expr {
         Expr::AggregateUDF {
             fun: Arc::new(self.clone()),
             args,
+            distinct,
         }
     }
 }

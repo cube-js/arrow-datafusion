@@ -1269,6 +1269,7 @@ pub fn parse_expr(
                     .iter()
                     .map(|expr| parse_expr(expr, registry))
                     .collect::<Result<Vec<_>, Error>>()?,
+                distinct: false, // TODO
             })
         }
     }

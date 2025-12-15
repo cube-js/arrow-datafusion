@@ -50,14 +50,15 @@ pub type TableFunctionImplementation =
 pub type ReturnTypeFunction =
     Arc<dyn Fn(&[DataType]) -> Result<Arc<DataType>> + Send + Sync>;
 
-/// the implementation of an aggregate function
+/// the implementation of an aggregate function.
+/// the bool argument is the distinct clause
 pub type AccumulatorFunctionImplementation =
-    Arc<dyn Fn() -> Result<Box<dyn Accumulator>> + Send + Sync>;
+    Arc<dyn Fn(bool) -> Result<Box<dyn Accumulator>> + Send + Sync>;
 
 /// This signature corresponds to which types an aggregator serializes
-/// its state, given its return datatype.
+/// its state, given its return datatype and distinct clause.
 pub type StateTypeFunction =
-    Arc<dyn Fn(&DataType) -> Result<Arc<Vec<DataType>>> + Send + Sync>;
+    Arc<dyn Fn(&DataType, bool) -> Result<Arc<Vec<DataType>>> + Send + Sync>;
 
 macro_rules! make_utf8_to_return_type {
     ($FUNC:ident, $largeUtf8Type:expr, $utf8Type:expr) => {

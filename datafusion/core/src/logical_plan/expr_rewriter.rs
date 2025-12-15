@@ -281,9 +281,14 @@ impl ExprRewritable for Expr {
                     ))
                 }
             },
-            Expr::AggregateUDF { args, fun } => Expr::AggregateUDF {
-                args: rewrite_vec(args, rewriter)?,
+            Expr::AggregateUDF {
+                args,
                 fun,
+                distinct,
+            } => Expr::AggregateUDF {
+                fun,
+                args: rewrite_vec(args, rewriter)?,
+                distinct,
             },
             Expr::InList {
                 expr,

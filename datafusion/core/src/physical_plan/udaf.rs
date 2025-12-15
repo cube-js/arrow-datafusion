@@ -40,6 +40,7 @@ use std::sync::Arc;
 pub fn create_aggregate_expr(
     fun: &AggregateUDF,
     input_phy_exprs: &[Arc<dyn PhysicalExpr>],
+    distinct: bool,
     input_schema: &Schema,
     name: impl Into<String>,
 ) -> Result<Arc<dyn AggregateExpr>> {
@@ -54,6 +55,7 @@ pub fn create_aggregate_expr(
     Ok(Arc::new(AggregateFunctionExpr {
         fun: fun.clone(),
         args: coerced_phy_exprs.clone(),
+        distinct,
         data_type: (fun.return_type)(&coerced_exprs_types)?.as_ref().clone(),
         name: name.into(),
     }))
@@ -64,6 +66,7 @@ pub fn create_aggregate_expr(
 pub struct AggregateFunctionExpr {
     fun: AggregateUDF,
     args: Vec<Arc<dyn PhysicalExpr>>,
+    distinct: bool,
     data_type: DataType,
     name: String,
 }
@@ -79,7 +82,7 @@ impl AggregateExpr for AggregateFunctionExpr {
     }
 
     fn state_fields(&self) -> Result<Vec<Field>> {
-        let fields = (self.fun.state_type)(&self.data_type)?
+        let fields = (self.fun.state_type)(&self.data_type, self.distinct)?
             .iter()
             .enumerate()
             .map(|(i, data_type)| {
@@ -99,7 +102,7 @@ impl AggregateExpr for AggregateFunctionExpr {
     }
 
     fn create_accumulator(&self) -> Result<Box<dyn Accumulator>> {
-        (self.fun.accumulator)()
+        (self.fun.accumulator)(self.distinct)
     }
 
     fn name(&self) -> &str {
