@@ -585,10 +585,13 @@ impl LogicalPlanBuilder {
 
                 expr.extend(missing_exprs);
 
-                let new_schema = DFSchema::new_with_metadata(
+                let mut new_schema = DFSchema::new_with_metadata(
                     exprlist_to_fields(&expr, &input)?,
                     input_schema.metadata().clone(),
                 )?;
+                if let Some(alias) = alias.as_deref() {
+                    new_schema = new_schema.replace_qualifier(alias);
+                }
 
                 Ok(LogicalPlan::Projection(Projection {
                     expr,
@@ -671,10 +674,13 @@ impl LogicalPlanBuilder {
 
                 expr.extend(missing_exprs);
 
-                let new_schema = DFSchema::new_with_metadata(
+                let mut new_schema = DFSchema::new_with_metadata(
                     exprlist_to_fields(&expr, &input)?,
                     input_schema.metadata().clone(),
                 )?;
+                if let Some(alias) = alias.as_deref() {
+                    new_schema = new_schema.replace_qualifier(alias);
+                }
 
                 Ok(LogicalPlan::Projection(Projection {
                     expr,
