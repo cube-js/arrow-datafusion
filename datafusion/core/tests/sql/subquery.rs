@@ -296,3 +296,23 @@ async fn subquery_not_in_cte() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn subquery_topn() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_aggregate_simple_csv(&ctx).await?;
+
+    let sql = "SELECT c3, ROUND(SUM(c1), 5) AS sum FROM aggregate_simple WHERE c3 IN (SELECT c3 FROM aggregate_simple GROUP BY c3 ORDER BY SUM(c1) DESC LIMIT 1) GROUP BY c3";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = vec![
+        "+------+---------+",
+        "| c3   | sum     |",
+        "+------+---------+",
+        "| true | 0.00035 |",
+        "+------+---------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
