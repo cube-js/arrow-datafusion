@@ -847,18 +847,15 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             pattern,
             escape_char,
         }) => {
-            let s = format!(
-                "{} {} {} {}",
-                expr,
-                if *negated { "NOT LIKE" } else { "LIKE" },
-                pattern,
-                if let Some(char) = escape_char {
-                    format!("CHAR '{}'", char)
-                } else {
-                    "".to_string()
-                }
-            );
-            Ok(s)
+            let left = create_name(expr, input_schema)?;
+            let not = if *negated { "NOT " } else { "" };
+            let right = create_name(pattern, input_schema)?;
+            let char = if let Some(char) = escape_char {
+                format!(" CHAR '{}'", char)
+            } else {
+                "".to_string()
+            };
+            Ok(format!("{} {}LIKE {}{}", left, not, right, char))
         }
         Expr::ILike(Like {
             negated,
@@ -866,18 +863,15 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             pattern,
             escape_char,
         }) => {
-            let s = format!(
-                "{} {} {} {}",
-                expr,
-                if *negated { "NOT ILIKE" } else { "ILIKE" },
-                pattern,
-                if let Some(char) = escape_char {
-                    format!("CHAR '{}'", char)
-                } else {
-                    "".to_string()
-                }
-            );
-            Ok(s)
+            let left = create_name(expr, input_schema)?;
+            let not = if *negated { "NOT " } else { "" };
+            let right = create_name(pattern, input_schema)?;
+            let char = if let Some(char) = escape_char {
+                format!(" CHAR '{}'", char)
+            } else {
+                "".to_string()
+            };
+            Ok(format!("{} {}ILIKE {}{}", left, not, right, char))
         }
         Expr::SimilarTo(Like {
             negated,
@@ -885,22 +879,15 @@ fn create_name(e: &Expr, input_schema: &DFSchema) -> Result<String> {
             pattern,
             escape_char,
         }) => {
-            let s = format!(
-                "{} {} {} {}",
-                expr,
-                if *negated {
-                    "NOT SIMILAR TO"
-                } else {
-                    "SIMILAR TO"
-                },
-                pattern,
-                if let Some(char) = escape_char {
-                    format!("CHAR '{}'", char)
-                } else {
-                    "".to_string()
-                }
-            );
-            Ok(s)
+            let left = create_name(expr, input_schema)?;
+            let not = if *negated { "NOT " } else { "" };
+            let right = create_name(pattern, input_schema)?;
+            let char = if let Some(char) = escape_char {
+                format!(" CHAR '{}'", char)
+            } else {
+                "".to_string()
+            };
+            Ok(format!("{} {}SIMILAR TO {}{}", left, not, right, char))
         }
         Expr::Case {
             expr,
