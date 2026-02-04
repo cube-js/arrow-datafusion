@@ -82,7 +82,7 @@ pin-project-lite= "^0.2.7"
 pyo3 = { version = "0.16", optional = true }
 rand = "0.8"
 smallvec = { version = "1.6", features = ["union"] }
-sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "16f051486de78a23a0ff252155dd59fc2d35497d" }
+sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "1423a0c16ebba665bdbfdd0e2b8d36f417baa514" }
 tempfile = "3"
 tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync", "fs", "parking_lot"] }
 tokio-stream = "0.1"
