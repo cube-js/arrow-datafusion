@@ -1990,7 +1990,7 @@ dependencies = [
 [[package]]
 name = "sqlparser"
 version = "0.16.0"
-source = "git+https://github.com/cube-js/sqlparser-rs.git?rev=16f051486de78a23a0ff252155dd59fc2d35497d#16f051486de78a23a0ff252155dd59fc2d35497d"
+source = "git+https://github.com/cube-js/sqlparser-rs.git?rev=1423a0c16ebba665bdbfdd0e2b8d36f417baa514#1423a0c16ebba665bdbfdd0e2b8d36f417baa514"
 dependencies = [
  "log",
 ]
