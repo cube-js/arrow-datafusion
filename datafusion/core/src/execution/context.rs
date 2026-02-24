@@ -65,7 +65,6 @@ use crate::logical_plan::{
     CreateMemoryTable, DropTable, FunctionRegistry, LogicalPlan, LogicalPlanBuilder,
     UNNAMED_TABLE,
 };
-use crate::optimizer::common_subexpr_eliminate::CommonSubexprEliminate;
 use crate::optimizer::filter_push_down::FilterPushDown;
 use crate::optimizer::limit_push_down::LimitPushDown;
 use crate::optimizer::optimizer::{OptimizerConfig, OptimizerRule};
@@ -1149,7 +1148,9 @@ impl SessionState {
                 // of applying other optimizations
                 Arc::new(SimplifyExpressions::new()),
                 Arc::new(EliminateFilter::new()),
-                Arc::new(CommonSubexprEliminate::new()),
+                // NOTE(cubesql): disabled as it causes issues with some queries
+                // with complex filters and subqueries
+                //Arc::new(CommonSubexprEliminate::new()),
                 Arc::new(EliminateLimit::new()),
                 Arc::new(ProjectionDropOut::new()),
                 Arc::new(ProjectionPushDown::new()),
