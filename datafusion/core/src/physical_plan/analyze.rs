@@ -123,16 +123,19 @@ impl ExecutionPlan for AnalyzeExec {
             )));
         }
 
-        let (tx, rx) = tokio::sync::mpsc::channel(input_partitions);
+        let mut builder =
+            RecordBatchReceiverStream::builder(self.schema(), input_partitions);
+        let tx = builder.tx();
 
         let captured_input = self.input.clone();
         let mut input_stream = captured_input.execute(0, context).await?;
         let captured_schema = self.schema.clone();
         let verbose = self.verbose;
 
-        // Task reads batches the input and when complete produce a
-        // RecordBatch with a report that is written to `tx` when done
-        let join_handle = tokio::task::spawn(async move {
+        // Task reads batches from the input and when complete produces
+        // a RecordBatch with a report that is written to `tx` when
+        // done. Panics from this task are propagated via the builder.
+        builder.spawn(async move {
             let start = Instant::now();
             let mut total_rows = 0;
 
@@ -201,11 +204,7 @@ impl ExecutionPlan for AnalyzeExec {
             tx.send(maybe_batch).await.ok();
         });
 
-        Ok(RecordBatchReceiverStream::create(
-            &self.schema,
-            rx,
-            join_handle,
-        ))
+        Ok(builder.build())
     }
 
     fn fmt_as(
