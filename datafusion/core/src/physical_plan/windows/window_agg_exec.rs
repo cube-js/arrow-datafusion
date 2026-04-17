@@ -19,11 +19,11 @@
 
 use crate::error::Result;
 use crate::execution::context::TaskContext;
-use crate::physical_plan::common::AbortOnDropSingle;
 use crate::physical_plan::expressions::PhysicalSortExpr;
 use crate::physical_plan::metrics::{
     BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet,
 };
+use crate::physical_plan::stream::RecordBatchReceiverStream;
 use crate::physical_plan::{
     common, ColumnStatistics, DisplayFormatType, Distribution, ExecutionPlan,
     Partitioning, RecordBatchStream, SendableRecordBatchStream, Statistics, WindowExpr,
@@ -31,13 +31,11 @@ use crate::physical_plan::{
 use arrow::{
     array::ArrayRef,
     datatypes::{Schema, SchemaRef},
-    error::{ArrowError, Result as ArrowResult},
+    error::Result as ArrowResult,
     record_batch::RecordBatch,
 };
 use async_trait::async_trait;
-use futures::stream::Stream;
-use futures::FutureExt;
-use pin_project_lite::pin_project;
+use futures::stream::{Stream, StreamExt};
 use std::any::Any;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -232,16 +230,11 @@ fn compute_window_aggregates(
         .collect()
 }
 
-pin_project! {
-    /// stream for window aggregation plan
-    pub struct WindowAggStream {
-        schema: SchemaRef,
-        drop_helper: AbortOnDropSingle<()>,
-        #[pin]
-        output: futures::channel::oneshot::Receiver<ArrowResult<RecordBatch>>,
-        finished: bool,
-        baseline_metrics: BaselineMetrics,
-    }
+/// stream for window aggregation plan
+pub struct WindowAggStream {
+    schema: SchemaRef,
+    stream: SendableRecordBatchStream,
+    baseline_metrics: BaselineMetrics,
 }
 
 impl WindowAggStream {
@@ -252,24 +245,30 @@ impl WindowAggStream {
         input: SendableRecordBatchStream,
         baseline_metrics: BaselineMetrics,
     ) -> Self {
-        let (tx, rx) = futures::channel::oneshot::channel();
+        // Use the panic-propagating builder so that a panic in the
+        // compute task is re-raised on the consumer side rather than
+        // being reported as a closed channel.
+        let mut builder = RecordBatchReceiverStream::builder(schema.clone(), 1);
+        let tx = builder.tx();
+
         let schema_clone = schema.clone();
         let elapsed_compute = baseline_metrics.elapsed_compute().clone();
-        let join_handle = tokio::spawn(async move {
-            let schema = schema_clone.clone();
-            let result =
-                WindowAggStream::process(input, window_expr, schema, elapsed_compute)
-                    .await;
+        builder.spawn(async move {
+            let result = WindowAggStream::process(
+                input,
+                window_expr,
+                schema_clone,
+                elapsed_compute,
+            )
+            .await;
 
             // failing here is OK, the receiver is gone and does not care about the result
-            tx.send(result).ok();
+            tx.send(result).await.ok();
         });
 
         Self {
             schema,
-            drop_helper: AbortOnDropSingle::new(join_handle),
-            output: rx,
-            finished: false,
+            stream: builder.build(),
             baseline_metrics,
         }
     }
@@ -308,36 +307,8 @@ impl Stream for WindowAggStream {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        let poll = self.poll_next_inner(cx);
+        let poll = self.stream.poll_next_unpin(cx);
         self.baseline_metrics.record_poll(poll)
-    }
-}
-
-impl WindowAggStream {
-    #[inline]
-    fn poll_next_inner(
-        self: &mut Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<ArrowResult<RecordBatch>>> {
-        if self.finished {
-            return Poll::Ready(None);
-        }
-
-        // is the output ready?
-        let output_poll = self.output.poll_unpin(cx);
-
-        match output_poll {
-            Poll::Ready(result) => {
-                self.finished = true;
-                // check for error in receiving channel and unwrap actual result
-                let result = match result {
-                    Err(e) => Some(Err(ArrowError::ExternalError(Box::new(e)))), // error receiving
-                    Ok(result) => Some(result),
-                };
-                Poll::Ready(result)
-            }
-            Poll::Pending => Poll::Pending,
-        }
     }
 }
 

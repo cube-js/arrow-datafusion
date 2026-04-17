@@ -23,20 +23,17 @@
 
 use std::{any::Any, sync::Arc};
 
-use arrow::{
-    datatypes::{Field, Schema, SchemaRef},
-    record_batch::RecordBatch,
-};
-use futures::StreamExt;
+use arrow::datatypes::{Field, Schema, SchemaRef};
 use itertools::Itertools;
 
 use super::{
     expressions::PhysicalSortExpr,
     metrics::{ExecutionPlanMetricsSet, MetricsSet},
-    ColumnStatistics, DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream,
+    ColumnStatistics, DisplayFormatType, ExecutionPlan, Partitioning,
     SendableRecordBatchStream, Statistics,
 };
 use crate::execution::context::TaskContext;
+use crate::physical_plan::stream::ObservedStream;
 use crate::{
     error::Result,
     physical_plan::{expressions, metrics::BaselineMetrics},
@@ -188,40 +185,6 @@ impl ExecutionPlan for UnionExec {
 
     fn benefits_from_input_partitioning(&self) -> bool {
         false
-    }
-}
-
-/// Stream wrapper that records `BaselineMetrics` for a particular
-/// partition
-struct ObservedStream {
-    inner: SendableRecordBatchStream,
-    baseline_metrics: BaselineMetrics,
-}
-
-impl ObservedStream {
-    fn new(inner: SendableRecordBatchStream, baseline_metrics: BaselineMetrics) -> Self {
-        Self {
-            inner,
-            baseline_metrics,
-        }
-    }
-}
-
-impl RecordBatchStream for ObservedStream {
-    fn schema(&self) -> arrow::datatypes::SchemaRef {
-        self.inner.schema()
-    }
-}
-
-impl futures::Stream for ObservedStream {
-    type Item = arrow::error::Result<RecordBatch>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let poll = self.inner.poll_next_unpin(cx);
-        self.baseline_metrics.record_poll(poll)
     }
 }
 

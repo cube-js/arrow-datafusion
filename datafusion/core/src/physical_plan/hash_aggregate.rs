@@ -23,13 +23,11 @@ use std::task::{Context, Poll};
 use std::vec;
 
 use ahash::RandomState;
-use futures::{
-    stream::{Stream, StreamExt},
-    Future,
-};
+use futures::stream::{Stream, StreamExt};
 
 use crate::error::Result;
 use crate::physical_plan::hash_utils::create_hashes;
+use crate::physical_plan::stream::RecordBatchReceiverStream;
 use crate::physical_plan::{
     Accumulator, AggregateExpr, DisplayFormatType, Distribution, ExecutionPlan,
     Partitioning, PhysicalExpr,
@@ -39,19 +37,17 @@ use crate::scalar::ScalarValue;
 use arrow::{array::ArrayRef, compute, compute::cast};
 use arrow::{
     array::{Array, UInt32Builder},
-    error::{ArrowError, Result as ArrowResult},
+    error::Result as ArrowResult,
 };
 use arrow::{
     datatypes::{Field, Schema, SchemaRef},
     record_batch::RecordBatch,
 };
 use hashbrown::raw::RawTable;
-use pin_project_lite::pin_project;
 
 use crate::execution::context::TaskContext;
 use async_trait::async_trait;
 
-use super::common::AbortOnDropSingle;
 use super::expressions::PhysicalSortExpr;
 use super::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet, RecordOutput,
@@ -356,14 +352,9 @@ Example: average
 * Once all N record batches arrive, `merge` is performed, which builds a RecordBatch with N rows and 2 columns.
 * Finally, `get_value` returns an array with one entry computed from the state
 */
-pin_project! {
-    struct GroupedHashAggregateStream {
-        schema: SchemaRef,
-        #[pin]
-        output: futures::channel::oneshot::Receiver<ArrowResult<RecordBatch>>,
-        finished: bool,
-        drop_helper: AbortOnDropSingle<()>,
-    }
+struct GroupedHashAggregateStream {
+    schema: SchemaRef,
+    stream: SendableRecordBatchStream,
 }
 
 fn group_aggregate_batch(
@@ -570,12 +561,16 @@ impl GroupedHashAggregateStream {
         input: SendableRecordBatchStream,
         baseline_metrics: BaselineMetrics,
     ) -> Self {
-        let (tx, rx) = futures::channel::oneshot::channel();
+        // Use the panic-propagating builder so that panics in the
+        // compute task are re-raised on the consumer side instead of
+        // being reported as a closed channel.
+        let mut builder = RecordBatchReceiverStream::builder(schema.clone(), 1);
+        let tx = builder.tx();
 
         let schema_clone = schema.clone();
         let elapsed_compute = baseline_metrics.elapsed_compute().clone();
 
-        let join_handle = tokio::spawn(async move {
+        builder.spawn(async move {
             let result = compute_grouped_hash_aggregate(
                 mode,
                 schema_clone,
@@ -588,14 +583,12 @@ impl GroupedHashAggregateStream {
             .record_output(&baseline_metrics);
 
             // failing here is OK, the receiver is gone and does not care about the result
-            tx.send(result).ok();
+            tx.send(result).await.ok();
         });
 
         Self {
             schema,
-            output: rx,
-            finished: false,
-            drop_helper: AbortOnDropSingle::new(join_handle),
+            stream: builder.build(),
         }
     }
 }
@@ -647,31 +640,10 @@ impl Stream for GroupedHashAggregateStream {
     type Item = ArrowResult<RecordBatch>;
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        if self.finished {
-            return Poll::Ready(None);
-        }
-
-        // is the output ready?
-        let this = self.project();
-        let output_poll = this.output.poll(cx);
-
-        match output_poll {
-            Poll::Ready(result) => {
-                *this.finished = true;
-
-                // check for error in receiving channel and unwrap actual result
-                let result = match result {
-                    Err(e) => Err(ArrowError::ExternalError(Box::new(e))), // error receiving
-                    Ok(result) => result,
-                };
-
-                Poll::Ready(Some(result))
-            }
-            Poll::Pending => Poll::Pending,
-        }
+        self.stream.poll_next_unpin(cx)
     }
 }
 
@@ -748,15 +720,10 @@ fn aggregate_expressions(
     }
 }
 
-pin_project! {
-    /// stream struct for hash aggregation
-    pub struct HashAggregateStream {
-        schema: SchemaRef,
-        #[pin]
-        output: futures::channel::oneshot::Receiver<ArrowResult<RecordBatch>>,
-        finished: bool,
-        drop_helper: AbortOnDropSingle<()>,
-    }
+/// stream struct for hash aggregation
+pub struct HashAggregateStream {
+    schema: SchemaRef,
+    stream: SendableRecordBatchStream,
 }
 
 /// Special case aggregate with no groups
@@ -799,11 +766,15 @@ impl HashAggregateStream {
         input: SendableRecordBatchStream,
         baseline_metrics: BaselineMetrics,
     ) -> Self {
-        let (tx, rx) = futures::channel::oneshot::channel();
+        // Use the panic-propagating builder so that panics in the
+        // compute task are re-raised on the consumer side instead of
+        // being reported as a closed channel.
+        let mut builder = RecordBatchReceiverStream::builder(schema.clone(), 1);
+        let tx = builder.tx();
 
         let schema_clone = schema.clone();
         let elapsed_compute = baseline_metrics.elapsed_compute().clone();
-        let join_handle = tokio::spawn(async move {
+        builder.spawn(async move {
             let result = compute_hash_aggregate(
                 mode,
                 schema_clone,
@@ -815,14 +786,12 @@ impl HashAggregateStream {
             .record_output(&baseline_metrics);
 
             // failing here is OK, the receiver is gone and does not care about the result
-            tx.send(result).ok();
+            tx.send(result).await.ok();
         });
 
         Self {
             schema,
-            output: rx,
-            finished: false,
-            drop_helper: AbortOnDropSingle::new(join_handle),
+            stream: builder.build(),
         }
     }
 }
@@ -863,31 +832,10 @@ impl Stream for HashAggregateStream {
     type Item = ArrowResult<RecordBatch>;
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        if self.finished {
-            return Poll::Ready(None);
-        }
-
-        // is the output ready?
-        let this = self.project();
-        let output_poll = this.output.poll(cx);
-
-        match output_poll {
-            Poll::Ready(result) => {
-                *this.finished = true;
-
-                // check for error in receiving channel and unwrap actual result
-                let result = match result {
-                    Err(e) => Err(ArrowError::ExternalError(Box::new(e))), // error receiving
-                    Ok(result) => result,
-                };
-
-                Poll::Ready(Some(result))
-            }
-            Poll::Pending => Poll::Pending,
-        }
+        self.stream.poll_next_unpin(cx)
     }
 }
 
