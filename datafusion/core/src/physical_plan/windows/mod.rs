@@ -261,6 +261,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn window_function_empty_batch_no_partition_by() -> Result<()> {
+        // An empty input batch flowing into WindowAggExec with an
+        // unpartitioned aggregate window (e.g. COUNT(*) OVER ()) used to fail
+        // with `Internal("Value range cannot be empty")`.
+        use crate::physical_plan::memory::MemoryExec;
+
+        let session_ctx = SessionContext::new();
+        let task_ctx = session_ctx.task_ctx();
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int32, true)]));
+
+        let empty_batch = RecordBatch::new_empty(schema.clone());
+        let input = Arc::new(MemoryExec::try_new(
+            &[vec![empty_batch]],
+            schema.clone(),
+            None,
+        )?);
+
+        let window_exec = Arc::new(WindowAggExec::try_new(
+            vec![create_window_expr(
+                &WindowFunction::AggregateFunction(AggregateFunction::Count),
+                "count".to_owned(),
+                &[col("a", &schema)?],
+                &[],
+                &[],
+                Some(WindowFrame::default()),
+                schema.as_ref(),
+            )?],
+            input,
+            schema.clone(),
+        )?);
+
+        let result: Vec<RecordBatch> = collect(window_exec, task_ctx).await?;
+        let total_rows: usize = result.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_drop_cancel() -> Result<()> {
         let session_ctx = SessionContext::new();
         let task_ctx = session_ctx.task_ctx();

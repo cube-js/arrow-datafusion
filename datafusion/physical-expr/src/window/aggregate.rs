@@ -20,6 +20,7 @@
 use crate::window::partition_evaluator::find_ranges_in_range;
 use crate::{expressions::PhysicalSortExpr, PhysicalExpr};
 use crate::{window::WindowExpr, AggregateExpr};
+use arrow::array::new_empty_array;
 use arrow::compute::concat;
 use arrow::record_batch::RecordBatch;
 use arrow::{array::ArrayRef, datatypes::Field};
@@ -74,6 +75,11 @@ impl AggregateWindowExpr {
     /// results for peers) and concatenate the results.
     fn peer_based_evaluate(&self, batch: &RecordBatch) -> Result<ArrayRef> {
         let num_rows = batch.num_rows();
+        if num_rows == 0 {
+            // An empty batch with no PARTITION BY would otherwise produce a single
+            // empty peer range, which scan_peers rejects.
+            return Ok(new_empty_array(self.aggregate.field()?.data_type()));
+        }
         let partition_points =
             self.evaluate_partition_points(num_rows, &self.partition_columns(batch)?)?;
         let sort_partition_points =
