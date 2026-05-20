@@ -286,6 +286,73 @@ async fn to_timestamp() -> Result<()> {
 }
 
 #[tokio::test]
+async fn to_timestamp_offset_variants() -> Result<()> {
+    // Covers timezone offset variants that chrono's format specifiers
+    // don't accept directly: `+HH` (short) and `+HH:MM:SS` (extended).
+    let ctx = SessionContext::new();
+
+    let cases = vec![
+        // Each row: (sql_expr, expected_value)
+        (
+            "to_timestamp('2020-09-08T12:00:00+00')",
+            "2020-09-08 12:00:00",
+        ),
+        (
+            "to_timestamp('2020-09-08 12:00:00+00')",
+            "2020-09-08 12:00:00",
+        ),
+        (
+            "to_timestamp('2020-09-08T12:00:00+00:00:00')",
+            "2020-09-08 12:00:00",
+        ),
+        (
+            "to_timestamp('2020-09-08 12:00:00+00:00:00')",
+            "2020-09-08 12:00:00",
+        ),
+        (
+            "to_timestamp('2020-09-08 12:00:00-05')",
+            "2020-09-08 17:00:00",
+        ),
+        (
+            "to_timestamp('2020-09-08 12:00:00-05:30:00')",
+            "2020-09-08 17:30:00",
+        ),
+        (
+            "CAST('2020-09-08 12:00:00+00' AS TIMESTAMP)",
+            "2020-09-08 12:00:00",
+        ),
+        (
+            "CAST('2020-09-08 12:00:00+00:00:00' AS TIMESTAMP)",
+            "2020-09-08 12:00:00",
+        ),
+        (
+            "CAST('2020-09-08 12:00:00-05' AS TIMESTAMP)",
+            "2020-09-08 17:00:00",
+        ),
+        (
+            "CAST('2020-09-08 12:00:00-05:30:00' AS TIMESTAMP)",
+            "2020-09-08 17:30:00",
+        ),
+    ];
+
+    for (expr, expected_value) in cases {
+        let sql = format!("SELECT {} AS ts", expr);
+        let actual = execute_to_batches(&ctx, &sql).await;
+        let actual_str = arrow::util::pretty::pretty_format_batches(&actual)
+            .unwrap()
+            .to_string();
+        assert!(
+            actual_str.contains(expected_value),
+            "expected '{}' to contain '{}'; got:\n{}",
+            expr,
+            expected_value,
+            actual_str
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn to_timestamp_millis() -> Result<()> {
     let ctx = SessionContext::new();
     ctx.register_table(
