@@ -1744,37 +1744,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         schema: &DFSchema,
         _extended_schema: Option<&DFSchema>,
     ) -> Result<Box<Expr>> {
-        let operator = match op {
-            BinaryOperator::Gt => Ok(Operator::Gt),
-            BinaryOperator::GtEq => Ok(Operator::GtEq),
-            BinaryOperator::Lt => Ok(Operator::Lt),
-            BinaryOperator::LtEq => Ok(Operator::LtEq),
-            BinaryOperator::Eq => Ok(Operator::Eq),
-            BinaryOperator::NotEq => Ok(Operator::NotEq),
-            BinaryOperator::Plus => Ok(Operator::Plus),
-            BinaryOperator::Minus => Ok(Operator::Minus),
-            BinaryOperator::Multiply => Ok(Operator::Multiply),
-            BinaryOperator::Divide => Ok(Operator::Divide),
-            BinaryOperator::Modulo => Ok(Operator::Modulo),
-            BinaryOperator::And => Ok(Operator::And),
-            BinaryOperator::Or => Ok(Operator::Or),
-            BinaryOperator::PGRegexMatch => Ok(Operator::RegexMatch),
-            BinaryOperator::PGRegexIMatch => Ok(Operator::RegexIMatch),
-            BinaryOperator::PGRegexNotMatch => Ok(Operator::RegexNotMatch),
-            BinaryOperator::PGRegexNotIMatch => Ok(Operator::RegexNotIMatch),
-            BinaryOperator::BitwiseAnd => Ok(Operator::BitwiseAnd),
-            BinaryOperator::BitwiseOr => Ok(Operator::BitwiseOr),
-            BinaryOperator::PGBitwiseShiftRight => Ok(Operator::BitwiseShiftRight),
-            BinaryOperator::PGBitwiseShiftLeft => Ok(Operator::BitwiseShiftLeft),
-            BinaryOperator::StringConcat => Ok(Operator::StringConcat),
-            // TODO: PGExponentiation needs to be introduced, but DF doesn't pass dialect
-            // so using BitwiseXor is safe for now since it's not implemented anyway
-            BinaryOperator::BitwiseXor => Ok(Operator::Exponentiate),
-            _ => Err(DataFusionError::NotImplemented(format!(
-                "Unsupported SQL binary operator {:?}",
-                op
-            ))),
-        }?;
+        let operator = parse_sql_binary_operator(&op)?;
 
         Ok(Box::new(Expr::BinaryExpr {
             left: self.sql_expr_to_logical_expr(left, schema, None)?,
@@ -1912,7 +1882,76 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
     // Extended schema is used to look for columns down the plan
     // to avoid picking up columns from outer query context
+    /// Generate a logical expression from a SQL expression.
+    ///
+    /// Chains of binary operators (e.g. `a OR b OR c OR …`) are the most common source of deep
+    /// nesting in real queries. To avoid one stack frame per operator (which overflows on large
+    /// chains), the binary-operator spine is walked iteratively with an explicit stack here, in
+    /// postfix order, rather than recursively. Every non-binary node is delegated to
+    /// [`Self::sql_expr_to_logical_expr_internal`]; nested binary ops inside those nodes are
+    /// flattened the same way when their subtree is visited.
     fn sql_expr_to_logical_expr(
+        &self,
+        sql: SQLExpr,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        // Non-binary top-level expressions keep the original `extended_schema` behaviour.
+        if !matches!(sql, SQLExpr::BinaryOp { .. }) {
+            return self.sql_expr_to_logical_expr_internal(sql, schema, extended_schema);
+        }
+
+        // Iteratively flatten the binary-operator spine. Operands are planned with
+        // `extended_schema = None`, matching the historical `parse_sql_binary_op` behaviour
+        // (binary operands never see the extended schema).
+        let mut stack = vec![StackEntry::SQLExpr(Box::new(sql))];
+        let mut eval_stack: Vec<Box<Expr>> = vec![];
+
+        while let Some(entry) = stack.pop() {
+            match entry {
+                StackEntry::SQLExpr(sql_expr) => match *sql_expr {
+                    SQLExpr::BinaryOp { left, op, right } => {
+                        // Push in reverse so `left` is processed first and operands end up
+                        // on `eval_stack` as [.., left, right] before the operator combines them.
+                        stack.push(StackEntry::Operator(op));
+                        stack.push(StackEntry::SQLExpr(right));
+                        stack.push(StackEntry::SQLExpr(left));
+                    }
+                    other => {
+                        eval_stack.push(
+                            self.sql_expr_to_logical_expr_internal(other, schema, None)?,
+                        );
+                    }
+                },
+                StackEntry::Operator(op) => {
+                    let operator = parse_sql_binary_operator(&op)?;
+                    let right = eval_stack.pop().ok_or_else(|| {
+                        DataFusionError::Internal(
+                            "binary operator stack underflow (right)".to_string(),
+                        )
+                    })?;
+                    let left = eval_stack.pop().ok_or_else(|| {
+                        DataFusionError::Internal(
+                            "binary operator stack underflow (left)".to_string(),
+                        )
+                    })?;
+                    eval_stack.push(Box::new(Expr::BinaryExpr {
+                        left,
+                        op: operator,
+                        right,
+                    }));
+                }
+            }
+        }
+
+        eval_stack.pop().ok_or_else(|| {
+            DataFusionError::Internal(
+                "binary operator evaluation produced no result".to_string(),
+            )
+        })
+    }
+
+    fn sql_expr_to_logical_expr_internal(
         &self,
         sql: SQLExpr,
         schema: &DFSchema,
@@ -3482,6 +3521,53 @@ fn parse_sql_number(n: &str) -> Result<Expr> {
     match n.parse::<i64>() {
         Ok(n) => Ok(lit(n)),
         Err(_) => Ok(lit(n.parse::<f64>().unwrap())),
+    }
+}
+
+/// Work item for the iterative binary-operator evaluation in
+/// [`SqlToRel::sql_expr_to_logical_expr`]. A binary-operator spine is flattened onto a stack of
+/// these entries and evaluated in postfix order, so deeply chained operators (`a OR b OR c …`)
+/// don't consume one native call frame per operator.
+enum StackEntry {
+    SQLExpr(Box<SQLExpr>),
+    Operator(BinaryOperator),
+}
+
+/// Translate a sqlparser [`BinaryOperator`] into a DataFusion [`Operator`].
+///
+/// Shared by [`SqlToRel::parse_sql_binary_op`] and the iterative binary-operator
+/// evaluation in [`SqlToRel::sql_expr_to_logical_expr`] so both stay in sync.
+fn parse_sql_binary_operator(op: &BinaryOperator) -> Result<Operator> {
+    match op {
+        BinaryOperator::Gt => Ok(Operator::Gt),
+        BinaryOperator::GtEq => Ok(Operator::GtEq),
+        BinaryOperator::Lt => Ok(Operator::Lt),
+        BinaryOperator::LtEq => Ok(Operator::LtEq),
+        BinaryOperator::Eq => Ok(Operator::Eq),
+        BinaryOperator::NotEq => Ok(Operator::NotEq),
+        BinaryOperator::Plus => Ok(Operator::Plus),
+        BinaryOperator::Minus => Ok(Operator::Minus),
+        BinaryOperator::Multiply => Ok(Operator::Multiply),
+        BinaryOperator::Divide => Ok(Operator::Divide),
+        BinaryOperator::Modulo => Ok(Operator::Modulo),
+        BinaryOperator::And => Ok(Operator::And),
+        BinaryOperator::Or => Ok(Operator::Or),
+        BinaryOperator::PGRegexMatch => Ok(Operator::RegexMatch),
+        BinaryOperator::PGRegexIMatch => Ok(Operator::RegexIMatch),
+        BinaryOperator::PGRegexNotMatch => Ok(Operator::RegexNotMatch),
+        BinaryOperator::PGRegexNotIMatch => Ok(Operator::RegexNotIMatch),
+        BinaryOperator::BitwiseAnd => Ok(Operator::BitwiseAnd),
+        BinaryOperator::BitwiseOr => Ok(Operator::BitwiseOr),
+        BinaryOperator::PGBitwiseShiftRight => Ok(Operator::BitwiseShiftRight),
+        BinaryOperator::PGBitwiseShiftLeft => Ok(Operator::BitwiseShiftLeft),
+        BinaryOperator::StringConcat => Ok(Operator::StringConcat),
+        // TODO: PGExponentiation needs to be introduced, but DF doesn't pass dialect
+        // so using BitwiseXor is safe for now since it's not implemented anyway
+        BinaryOperator::BitwiseXor => Ok(Operator::Exponentiate),
+        _ => Err(DataFusionError::NotImplemented(format!(
+            "Unsupported SQL binary operator {:?}",
+            op
+        ))),
     }
 }
 
@@ -5560,6 +5646,43 @@ mod tests {
     fn quick_test(sql: &str, expected: &str) {
         let plan = logical_plan(sql).unwrap();
         assert_eq!(format!("{:?}", plan), expected);
+    }
+
+    /// A long chain of binary operators (`1 OR 1 OR 1 OR …`) must plan without overflowing the
+    /// stack. The AST is built directly (the recursive SQL parser would overflow on input this
+    /// deep before planning is even reached), and the binary-operator spine is walked iteratively
+    /// by `sql_expr_to_logical_expr`, so planning uses O(1) call depth regardless of chain length.
+    #[test]
+    fn deep_binary_op_chain_does_not_overflow_the_stack() {
+        use sqlparser::ast::Value;
+
+        // Deep enough that the previous one-frame-per-operator recursion would overflow a
+        // typical (2 MiB) thread stack many times over.
+        const DEPTH: usize = 50_000;
+        let lit_one =
+            || SQLExpr::Value(Value::Number("1".to_string(), false).with_empty_span());
+
+        // Build a left-deep chain iteratively (no recursion, so the build itself is safe).
+        let mut expr = lit_one();
+        for _ in 0..DEPTH {
+            expr = SQLExpr::BinaryOp {
+                left: Box::new(expr),
+                op: BinaryOperator::Or,
+                right: Box::new(lit_one()),
+            };
+        }
+
+        let planner = SqlToRel::new(&MockContextProvider {});
+        let schema = DFSchema::empty();
+        // The planner dismantles the input spine iteratively, so the input is not deep-dropped.
+        let planned = planner
+            .sql_expr_to_logical_expr(expr, &schema, None)
+            .expect("deep OR chain should plan");
+        assert!(matches!(planned.as_ref(), Expr::BinaryExpr { .. }));
+
+        // The produced `Expr` tree is just as deep; dropping it would recurse `DEPTH` times and
+        // overflow the stack. We're only testing the planner here, so leak it intentionally.
+        std::mem::forget(planned);
     }
 
     struct MockContextProvider {}
