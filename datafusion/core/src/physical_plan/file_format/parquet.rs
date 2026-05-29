@@ -555,7 +555,7 @@ pub async fn plan_to_parquet(
                 let handle: JoinHandle<Result<()>> = task::spawn(async move {
                     stream
                         .map(|batch| writer.write(&batch?))
-                        .try_collect()
+                        .try_collect::<()>()
                         .await
                         .map_err(DataFusionError::from)?;
                     writer.close().map_err(DataFusionError::from).map(|_| ())

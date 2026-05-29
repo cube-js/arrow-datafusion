@@ -1620,12 +1620,17 @@ pub fn create_aggregate_expr_with_name(
                 .unwrap_or(&vec![])
                 .iter()
                 .map(|wg| {
-                    let Expr::Sort { expr, asc, nulls_first } = wg else {
-                    return Err(DataFusionError::Internal(format!(
-                        "Non-Sort expression encountered in ORDER BY: {}",
-                        wg
-                    )));
-                };
+                    let Expr::Sort {
+                        expr,
+                        asc,
+                        nulls_first,
+                    } = wg
+                    else {
+                        return Err(DataFusionError::Internal(format!(
+                            "Non-Sort expression encountered in ORDER BY: {}",
+                            wg
+                        )));
+                    };
                     let expr = create_physical_expr(
                         expr,
                         logical_input_schema,

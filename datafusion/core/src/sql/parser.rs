@@ -23,7 +23,7 @@ use sqlparser::{
     ast::{ColumnDef, ColumnOptionDef, Statement as SQLStatement, TableConstraint},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
-    tokenizer::{Token, Tokenizer},
+    tokenizer::{Token, TokenWithSpan, Tokenizer},
 };
 use std::collections::VecDeque;
 use std::str::FromStr;
@@ -114,7 +114,7 @@ impl<'a> DFParser<'a> {
         let tokens = tokenizer.tokenize()?;
 
         Ok(DFParser {
-            parser: Parser::new(tokens, dialect),
+            parser: Parser::new(dialect).with_tokens(tokens),
         })
     }
 
@@ -153,13 +153,17 @@ impl<'a> DFParser<'a> {
     }
 
     /// Report unexpected token
-    fn expected<T>(&self, expected: &str, found: Token) -> Result<T, ParserError> {
+    fn expected<T>(
+        &self,
+        expected: &str,
+        found: TokenWithSpan,
+    ) -> Result<T, ParserError> {
         parser_err!(format!("Expected {}, found: {}", expected, found))
     }
 
     /// Parse a new expression
     pub fn parse_statement(&mut self) -> Result<Statement, ParserError> {
-        match self.parser.peek_token() {
+        match self.parser.peek_token().token {
             Token::Word(w) => {
                 match w.keyword {
                     Keyword::CREATE => {
@@ -203,7 +207,7 @@ impl<'a> DFParser<'a> {
         }
 
         loop {
-            if let Token::Word(_) = self.parser.peek_token() {
+            if let Token::Word(_) = self.parser.peek_token().token {
                 let identifier = self.parser.parse_identifier()?;
                 partitions.push(identifier.to_string());
             } else {
@@ -238,7 +242,7 @@ impl<'a> DFParser<'a> {
         loop {
             if let Some(constraint) = self.parser.parse_optional_table_constraint()? {
                 constraints.push(constraint);
-            } else if let Token::Word(_) = self.parser.peek_token() {
+            } else if let Token::Word(_) = self.parser.peek_token().token {
                 let column_def = self.parse_column_def()?;
                 columns.push(column_def);
             } else {
@@ -265,11 +269,6 @@ impl<'a> DFParser<'a> {
     fn parse_column_def(&mut self) -> Result<ColumnDef, ParserError> {
         let name = self.parser.parse_identifier()?;
         let data_type = self.parser.parse_data_type()?;
-        let collation = if self.parser.parse_keyword(Keyword::COLLATE) {
-            Some(self.parser.parse_object_name()?)
-        } else {
-            None
-        };
         let mut options = vec![];
         loop {
             if self.parser.parse_keyword(Keyword::CONSTRAINT) {
@@ -291,14 +290,13 @@ impl<'a> DFParser<'a> {
         Ok(ColumnDef {
             name,
             data_type,
-            collation,
             options,
         })
     }
 
     fn parse_create_external_table(&mut self) -> Result<Statement, ParserError> {
         self.parser.expect_keyword(Keyword::TABLE)?;
-        let table_name = self.parser.parse_object_name()?;
+        let table_name = self.parser.parse_object_name(false)?;
         let (columns, _) = self.parse_columns()?;
         self.parser
             .expect_keywords(&[Keyword::STORED, Keyword::AS])?;
@@ -330,9 +328,10 @@ impl<'a> DFParser<'a> {
 
     /// Parses the set of valid formats
     fn parse_file_format(&mut self) -> Result<FileType, ParserError> {
-        match self.parser.next_token() {
+        let token = self.parser.next_token();
+        match &token.token {
             Token::Word(w) => w.value.parse(),
-            unexpected => self.expected("one of PARQUET, NDJSON, or CSV", unexpected),
+            _ => self.expected("one of PARQUET, NDJSON, or CSV", token),
         }
     }
 
@@ -398,12 +397,8 @@ mod tests {
 
     fn make_column_def(name: impl Into<String>, data_type: DataType) -> ColumnDef {
         ColumnDef {
-            name: Ident {
-                value: name.into(),
-                quote_style: None,
-            },
+            name: Ident::new(name.into()),
             data_type,
-            collation: None,
             options: vec![],
         }
     }

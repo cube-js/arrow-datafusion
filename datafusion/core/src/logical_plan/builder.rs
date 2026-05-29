@@ -747,7 +747,9 @@ impl LogicalPlanBuilder {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let Some(first_input) = inputs.first() else {
-                    return Err(DataFusionError::Internal("Inputs in union are empty".to_string()));
+                    return Err(DataFusionError::Internal(
+                        "Inputs in union are empty".to_string(),
+                    ));
                 };
                 let schema = Arc::clone(first_input.schema());
                 Ok(LogicalPlan::Union(Union {
