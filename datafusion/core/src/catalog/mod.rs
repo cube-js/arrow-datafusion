@@ -138,19 +138,27 @@ impl<'a> TryFrom<&'a sqlparser::ast::ObjectName> for TableReference<'a> {
 
     fn try_from(value: &'a sqlparser::ast::ObjectName) -> Result<Self, Self::Error> {
         let idents = &value.0;
+        // sqlparser now models name parts as `ObjectNamePart`; only plain identifiers
+        // are supported as table references.
+        let part = move |i: usize| -> Result<&'a str, DataFusionError> {
+            idents[i]
+                .as_ident()
+                .map(|id| id.value.as_str())
+                .ok_or_else(|| {
+                    DataFusionError::Plan(format!("invalid table reference: {}", value))
+                })
+        };
 
         match idents.len() {
-            1 => Ok(Self::Bare {
-                table: &idents[0].value,
-            }),
+            1 => Ok(Self::Bare { table: part(0)? }),
             2 => Ok(Self::Partial {
-                schema: &idents[0].value,
-                table: &idents[1].value,
+                schema: part(0)?,
+                table: part(1)?,
             }),
             3 => Ok(Self::Full {
-                catalog: &idents[0].value,
-                schema: &idents[1].value,
-                table: &idents[2].value,
+                catalog: part(0)?,
+                schema: part(1)?,
+                table: part(2)?,
             }),
             _ => Err(DataFusionError::Plan(format!(
                 "invalid table reference: {}",

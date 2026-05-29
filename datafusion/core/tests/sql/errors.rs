@@ -61,12 +61,12 @@ async fn test_aggregation_with_bad_arguments() -> Result<()> {
     let sql = "SELECT COUNT(DISTINCT) FROM aggregate_test_100";
     let logical_plan = ctx.create_logical_plan(sql);
     let err = logical_plan.unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        DataFusionError::Plan(
-            "The function Count expects 1 arguments, but 0 were provided".to_string()
-        )
-        .to_string()
+    // sqlparser >= 0.62 rejects `COUNT(DISTINCT)` (no argument) at parse time.
+    assert!(
+        err.to_string()
+            .contains("Expected: an expression, found: )"),
+        "unexpected error: {}",
+        err
     );
     Ok(())
 }

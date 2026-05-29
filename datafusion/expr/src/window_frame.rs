@@ -60,10 +60,11 @@ impl TryFrom<ast::WindowFrame> for WindowFrame {
     type Error = DataFusionError;
 
     fn try_from(value: ast::WindowFrame) -> Result<Self> {
-        let start_bound = value.start_bound.into();
+        let start_bound = value.start_bound.try_into()?;
         let end_bound = value
             .end_bound
-            .map(WindowFrameBound::from)
+            .map(WindowFrameBound::try_from)
+            .transpose()?
             .unwrap_or(WindowFrameBound::CurrentRow);
 
         if let WindowFrameBound::Following(None) = start_bound {
@@ -151,13 +152,49 @@ pub enum WindowFrameBound {
     Following(Option<u64>),
 }
 
-impl From<ast::WindowFrameBound> for WindowFrameBound {
-    fn from(value: ast::WindowFrameBound) -> Self {
-        match value {
-            ast::WindowFrameBound::Preceding(v) => Self::Preceding(v),
-            ast::WindowFrameBound::Following(v) => Self::Following(v),
+impl TryFrom<ast::WindowFrameBound> for WindowFrameBound {
+    type Error = DataFusionError;
+
+    fn try_from(value: ast::WindowFrameBound) -> Result<Self> {
+        Ok(match value {
+            ast::WindowFrameBound::Preceding(v) => {
+                Self::Preceding(convert_frame_bound_to_u64(v)?)
+            }
+            ast::WindowFrameBound::Following(v) => {
+                Self::Following(convert_frame_bound_to_u64(v)?)
+            }
             ast::WindowFrameBound::CurrentRow => Self::CurrentRow,
+        })
+    }
+}
+
+/// Converts an optional window-frame bound expression (as parsed by sqlparser) into the
+/// `Option<u64>` boundary this implementation supports. Only non-negative integer literals
+/// are accepted; `None` represents an `UNBOUNDED` boundary.
+fn convert_frame_bound_to_u64(bound: Option<Box<ast::Expr>>) -> Result<Option<u64>> {
+    let expr = match bound {
+        Some(expr) => expr,
+        None => return Ok(None),
+    };
+    match *expr {
+        ast::Expr::Value(value) => {
+            let value: ast::Value = value.into();
+            match value {
+                ast::Value::Number(n, _) => n.parse::<u64>().map(Some).map_err(|e| {
+                    DataFusionError::Internal(format!(
+                        "Unable to parse window frame bound as u64: {}",
+                        e
+                    ))
+                }),
+                _ => Err(DataFusionError::NotImplemented(
+                    "Window frame bound must be a non-negative integer literal"
+                        .to_string(),
+                )),
+            }
         }
+        _ => Err(DataFusionError::NotImplemented(
+            "Window frame bound must be a non-negative integer literal".to_string(),
+        )),
     }
 }
 
@@ -259,6 +296,13 @@ impl From<ast::WindowFrameUnits> for WindowFrameUnits {
 mod tests {
     use super::*;
 
+    /// Builds a numeric-literal window-frame bound expression as sqlparser would produce it.
+    fn num_bound(n: u64) -> Option<Box<ast::Expr>> {
+        Some(Box::new(ast::Expr::Value(
+            ast::Value::Number(n.to_string(), false).into(),
+        )))
+    }
+
     #[test]
     fn test_window_frame_creation() -> Result<()> {
         let window_frame = ast::WindowFrame {
@@ -287,8 +331,8 @@ mod tests {
 
         let window_frame = ast::WindowFrame {
             units: ast::WindowFrameUnits::Range,
-            start_bound: ast::WindowFrameBound::Preceding(Some(1)),
-            end_bound: Some(ast::WindowFrameBound::Preceding(Some(2))),
+            start_bound: ast::WindowFrameBound::Preceding(num_bound(1)),
+            end_bound: Some(ast::WindowFrameBound::Preceding(num_bound(2))),
         };
         let result = WindowFrame::try_from(window_frame);
         assert_eq!(
@@ -298,8 +342,8 @@ mod tests {
 
         let window_frame = ast::WindowFrame {
             units: ast::WindowFrameUnits::Range,
-            start_bound: ast::WindowFrameBound::Preceding(Some(2)),
-            end_bound: Some(ast::WindowFrameBound::Preceding(Some(1))),
+            start_bound: ast::WindowFrameBound::Preceding(num_bound(2)),
+            end_bound: Some(ast::WindowFrameBound::Preceding(num_bound(1))),
         };
         let result = WindowFrame::try_from(window_frame);
         assert_eq!(
@@ -309,8 +353,8 @@ mod tests {
 
         let window_frame = ast::WindowFrame {
             units: ast::WindowFrameUnits::Rows,
-            start_bound: ast::WindowFrameBound::Preceding(Some(2)),
-            end_bound: Some(ast::WindowFrameBound::Preceding(Some(1))),
+            start_bound: ast::WindowFrameBound::Preceding(num_bound(2)),
+            end_bound: Some(ast::WindowFrameBound::Preceding(num_bound(1))),
         };
         let result = WindowFrame::try_from(window_frame);
         assert!(result.is_ok());
