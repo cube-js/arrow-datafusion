@@ -2525,6 +2525,17 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         .to_ascii_lowercase()
                 };
 
+                // `ARRAY(<subquery>)` parses as a function call since sqlparser 0.62 (it used to be
+                // `Expr::ArraySubquery`). Array-subqueries are not executed; preserve the historic
+                // behaviour of substituting an empty array literal.
+                if name == "array" && matches!(function.args, FunctionArguments::Subquery(_)) {
+                    log::warn!("ARRAY(<subquery>) is not supported yet. Replacing with scalar empty array.");
+                    return Ok(Expr::Literal(ScalarValue::List(
+                        Some(Box::new(vec![])),
+                        Box::new(DataType::Utf8),
+                    )));
+                }
+
                 let over = function.over;
                 let within_group = function.within_group;
                 let (arg_list, distinct, clauses) =
