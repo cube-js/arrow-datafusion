@@ -2373,173 +2373,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             }
 
             SQLExpr::Function(function) => {
-                let name = if function.name.0.len() > 1 {
-                    // DF doesn't handle compound identifiers
-                    // (e.g. "foo.bar") for function names yet
-                    function.name.to_string().to_ascii_lowercase()
-                } else {
-                    object_name_part_to_string(&function.name.0[0])
-                        .to_ascii_lowercase()
-                };
-
-                // `ARRAY(<subquery>)` parses as a function call since sqlparser 0.62 (it used to be
-                // `Expr::ArraySubquery`). Array-subqueries are not executed; preserve the historic
-                // behaviour of substituting an empty array literal.
-                if name == "array" && matches!(function.args, FunctionArguments::Subquery(_)) {
-                    log::warn!("ARRAY(<subquery>) is not supported yet. Replacing with scalar empty array.");
-                    return Ok(Box::new(Expr::Literal(ScalarValue::List(
-                        Some(Box::new(vec![])),
-                        Box::new(DataType::Utf8),
-                    ))));
-                }
-
-                let over = function.over;
-                let within_group = function.within_group;
-                let (arg_list, distinct, clauses) =
-                    function_arguments_into_args(function.args);
-
-                // DataFusion does not support an in-argument `LIMIT` clause such as
-                // `array_agg(expr LIMIT n)`. (An in-argument `ORDER BY` is ignored, as before.)
-                for clause in &clauses {
-                    if let FunctionArgumentClause::Limit(expr) = clause {
-                        return Err(DataFusionError::NotImplemented(format!(
-                            "LIMIT not supported in {}: {}",
-                            name.to_ascii_uppercase(),
-                            expr
-                        )));
-                    }
-                }
-
-                // first, check SQL reserved words
-                if name == "rollup" {
-                    let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
-                    return Ok(Box::new(Expr::GroupingSet(GroupingSet::Rollup(args))));
-                } else if name == "cube" {
-                    let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
-                    return Ok(Box::new(Expr::GroupingSet(GroupingSet::Cube(args))));
-                }
-
-                // next, scalar built-in
-                if let Ok(fun) = BuiltinScalarFunction::from_str(&name) {
-                    let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
-                    return Ok(Box::new(Expr::ScalarFunction { fun, args }));
-                };
-
-                // then, window function
-                if let Some(window) = over {
-                    let window = match window {
-                        WindowType::WindowSpec(spec) => spec,
-                        WindowType::NamedWindow(name) => {
-                            return Err(DataFusionError::NotImplemented(format!(
-                                "Named window reference {} is not supported",
-                                name
-                            )))
-                        }
-                    };
-                    let partition_by = window
-                        .partition_by
-                        .into_iter()
-                        .map(|e| self.sql_expr_to_logical_expr(e, schema, extended_schema).map(|b| *b))
-                        .collect::<Result<Vec<_>>>()?;
-                    let order_by = window
-                        .order_by
-                        .into_iter()
-                        .map(|e| self.order_by_to_sort_expr(e, schema, extended_schema, true))
-                        .collect::<Result<Vec<_>>>()?;
-                    let window_frame = window
-                        .window_frame
-                        .as_ref()
-                        .map(|window_frame| {
-                            let window_frame: WindowFrame = window_frame.clone().try_into()?;
-                            if WindowFrameUnits::Range == window_frame.units
-                                && order_by.len() != 1
-                            {
-                                Err(DataFusionError::Plan(format!(
-                                    "With window frame of type RANGE, the order by expression must be of length 1, got {}", order_by.len())))
-                            } else {
-                                Ok(window_frame)
-                            }
-                        })
-                        .transpose()?;
-                    let fun = WindowFunction::from_str(&name)?;
-                    match fun {
-                        WindowFunction::AggregateFunction(
-                            aggregate_fun,
-                        ) => {
-                            let (aggregate_fun, args) = self.aggregate_fn_to_expr(
-                                aggregate_fun,
-                                arg_list,
-                                schema,
-                                extended_schema,
-                            )?;
-
-                            return Ok(Box::new(Expr::WindowFunction {
-                                fun: WindowFunction::AggregateFunction(
-                                    aggregate_fun,
-                                ),
-                                args,
-                                partition_by,
-                                order_by,
-                                window_frame,
-                            }));
-                        }
-                        WindowFunction::BuiltInWindowFunction(
-                            window_fun,
-                        ) => {
-                            return Ok(Box::new(Expr::WindowFunction {
-                                fun: WindowFunction::BuiltInWindowFunction(
-                                    window_fun,
-                                ),
-                                args: self.function_args_to_expr(arg_list, schema, extended_schema)?,
-                                partition_by,
-                                order_by,
-                                window_frame,
-                            }));
-                        }
-                    }
-                }
-
-                // next, aggregate built-ins
-                if let Ok(fun) = aggregates::AggregateFunction::from_str(&name) {
-                    let (fun, args) = self.aggregate_fn_to_expr(fun, arg_list, schema, extended_schema)?;
-                    let agg = Expr::AggregateFunction {
-                        fun,
-                        distinct,
-                        args,
-                        within_group: None,
-                    };
-                    return self.apply_within_group(
-                        agg,
-                        within_group,
-                        schema,
-                        extended_schema,
-                    );
-                };
-
-                // finally, user-defined functions (UDF) and UDAF
-                match self.schema_provider.get_function_meta(&name) {
-                    Some(fm) => {
-                        let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
-
-                        Ok(Box::new(Expr::ScalarUDF { fun: fm, args }))
-                    }
-                    None => match self.schema_provider.get_aggregate_meta(&name) {
-                        Some(fm) => {
-                            let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
-                            Ok(Box::new(Expr::AggregateUDF { fun: fm, args, distinct }))
-                        }
-                        None => match self.schema_provider.get_table_function_meta(&name) {
-                            Some(fm) => {
-                                let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
-                                Ok(Box::new(Expr::TableUDF { fun: fm, args }))
-                            }
-                            _ => Err(DataFusionError::Plan(format!(
-                                "Invalid function '{}'",
-                                name
-                            ))),
-                        },
-                    },
-                }
+                self.sql_function_to_expr(function, schema, extended_schema)
             }
 
             SQLExpr::Nested(e) => self.sql_expr_to_logical_expr(*e, schema, extended_schema),
@@ -2743,6 +2577,188 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     var_names,
                 ))),
             }
+        }
+    }
+
+    /// Plan a function call: scalar/aggregate/window built-ins, `ROLLUP`/`CUBE`, and UDF/UDAF/UDTF.
+    ///
+    /// Extracted out of [`Self::sql_expr_to_logical_expr`] because it is the heaviest arm (many
+    /// locals: window spec, partition/order-by, frame, resolved function); keeping it out of the
+    /// deeply-recursive dispatcher shrinks the dispatcher's stack frame. `#[inline(never)]` keeps
+    /// the frames separate in optimized builds.
+    #[inline(never)]
+    fn sql_function_to_expr(
+        &self,
+        function: sqlparser::ast::Function,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        let name = if function.name.0.len() > 1 {
+            // DF doesn't handle compound identifiers
+            // (e.g. "foo.bar") for function names yet
+            function.name.to_string().to_ascii_lowercase()
+        } else {
+            object_name_part_to_string(&function.name.0[0])
+                .to_ascii_lowercase()
+        };
+
+        // `ARRAY(<subquery>)` parses as a function call since sqlparser 0.62 (it used to be
+        // `Expr::ArraySubquery`). Array-subqueries are not executed; preserve the historic
+        // behaviour of substituting an empty array literal.
+        if name == "array" && matches!(function.args, FunctionArguments::Subquery(_)) {
+            log::warn!("ARRAY(<subquery>) is not supported yet. Replacing with scalar empty array.");
+            return Ok(Box::new(Expr::Literal(ScalarValue::List(
+                Some(Box::new(vec![])),
+                Box::new(DataType::Utf8),
+            ))));
+        }
+
+        let over = function.over;
+        let within_group = function.within_group;
+        let (arg_list, distinct, clauses) =
+            function_arguments_into_args(function.args);
+
+        // DataFusion does not support an in-argument `LIMIT` clause such as
+        // `array_agg(expr LIMIT n)`. (An in-argument `ORDER BY` is ignored, as before.)
+        for clause in &clauses {
+            if let FunctionArgumentClause::Limit(expr) = clause {
+                return Err(DataFusionError::NotImplemented(format!(
+                    "LIMIT not supported in {}: {}",
+                    name.to_ascii_uppercase(),
+                    expr
+                )));
+            }
+        }
+
+        // first, check SQL reserved words
+        if name == "rollup" {
+            let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
+            return Ok(Box::new(Expr::GroupingSet(GroupingSet::Rollup(args))));
+        } else if name == "cube" {
+            let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
+            return Ok(Box::new(Expr::GroupingSet(GroupingSet::Cube(args))));
+        }
+
+        // next, scalar built-in
+        if let Ok(fun) = BuiltinScalarFunction::from_str(&name) {
+            let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
+            return Ok(Box::new(Expr::ScalarFunction { fun, args }));
+        };
+
+        // then, window function
+        if let Some(window) = over {
+            let window = match window {
+                WindowType::WindowSpec(spec) => spec,
+                WindowType::NamedWindow(name) => {
+                    return Err(DataFusionError::NotImplemented(format!(
+                        "Named window reference {} is not supported",
+                        name
+                    )))
+                }
+            };
+            let partition_by = window
+                .partition_by
+                .into_iter()
+                .map(|e| self.sql_expr_to_logical_expr(e, schema, extended_schema).map(|b| *b))
+                .collect::<Result<Vec<_>>>()?;
+            let order_by = window
+                .order_by
+                .into_iter()
+                .map(|e| self.order_by_to_sort_expr(e, schema, extended_schema, true))
+                .collect::<Result<Vec<_>>>()?;
+            let window_frame = window
+                .window_frame
+                .as_ref()
+                .map(|window_frame| {
+                    let window_frame: WindowFrame = window_frame.clone().try_into()?;
+                    if WindowFrameUnits::Range == window_frame.units
+                        && order_by.len() != 1
+                    {
+                        Err(DataFusionError::Plan(format!(
+                            "With window frame of type RANGE, the order by expression must be of length 1, got {}", order_by.len())))
+                    } else {
+                        Ok(window_frame)
+                    }
+                })
+                .transpose()?;
+            let fun = WindowFunction::from_str(&name)?;
+            match fun {
+                WindowFunction::AggregateFunction(
+                    aggregate_fun,
+                ) => {
+                    let (aggregate_fun, args) = self.aggregate_fn_to_expr(
+                        aggregate_fun,
+                        arg_list,
+                        schema,
+                        extended_schema,
+                    )?;
+
+                    return Ok(Box::new(Expr::WindowFunction {
+                        fun: WindowFunction::AggregateFunction(
+                            aggregate_fun,
+                        ),
+                        args,
+                        partition_by,
+                        order_by,
+                        window_frame,
+                    }));
+                }
+                WindowFunction::BuiltInWindowFunction(
+                    window_fun,
+                ) => {
+                    return Ok(Box::new(Expr::WindowFunction {
+                        fun: WindowFunction::BuiltInWindowFunction(
+                            window_fun,
+                        ),
+                        args: self.function_args_to_expr(arg_list, schema, extended_schema)?,
+                        partition_by,
+                        order_by,
+                        window_frame,
+                    }));
+                }
+            }
+        }
+
+        // next, aggregate built-ins
+        if let Ok(fun) = aggregates::AggregateFunction::from_str(&name) {
+            let (fun, args) = self.aggregate_fn_to_expr(fun, arg_list, schema, extended_schema)?;
+            let agg = Expr::AggregateFunction {
+                fun,
+                distinct,
+                args,
+                within_group: None,
+            };
+            return self.apply_within_group(
+                agg,
+                within_group,
+                schema,
+                extended_schema,
+            );
+        };
+
+        // finally, user-defined functions (UDF) and UDAF
+        match self.schema_provider.get_function_meta(&name) {
+            Some(fm) => {
+                let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
+
+                Ok(Box::new(Expr::ScalarUDF { fun: fm, args }))
+            }
+            None => match self.schema_provider.get_aggregate_meta(&name) {
+                Some(fm) => {
+                    let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
+                    Ok(Box::new(Expr::AggregateUDF { fun: fm, args, distinct }))
+                }
+                None => match self.schema_provider.get_table_function_meta(&name) {
+                    Some(fm) => {
+                        let args = self.function_args_to_expr(arg_list, schema, extended_schema)?;
+                        Ok(Box::new(Expr::TableUDF { fun: fm, args }))
+                    }
+                    _ => Err(DataFusionError::Plan(format!(
+                        "Invalid function '{}'",
+                        name
+                    ))),
+                },
+            },
         }
     }
 
