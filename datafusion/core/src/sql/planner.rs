@@ -1945,57 +1945,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 }
             },
 
-            SQLExpr::Interval(sqlparser::ast::Interval {
-                value,
-                leading_field,
-                leading_precision,
-                last_field,
-                fractional_seconds_precision,
-            }) => match *value {
-                SQLExpr::Value(ValueWithSpan { value: Value::Number(value, _), .. }) => {
-                    self.sql_interval_to_literal(
-                        value,
-                        leading_field,
-                        leading_precision,
-                        last_field,
-                        fractional_seconds_precision,
-                    ).map(Box::new)
-                }
-                SQLExpr::Value(ValueWithSpan { value: Value::SingleQuotedString(value), .. }) => {
-                    self.sql_interval_to_literal(
-                        value,
-                        leading_field,
-                        leading_precision,
-                        last_field,
-                        fractional_seconds_precision,
-                    ).map(Box::new)
-                }
-                expr => {
-                    let unit = leading_field
-                        .as_ref()
-                        .map(|dt| dt.to_string())
-                        .unwrap_or_else(|| "second".to_string());
-
-                    let fun = if let Some(leading_field) = leading_field {
-                        match leading_field {
-                            DateTimeField::Year => BuiltinScalarFunction::ToMonthInterval,
-                            DateTimeField::Month => BuiltinScalarFunction::ToMonthInterval,
-                            DateTimeField::Quarter => BuiltinScalarFunction::ToMonthInterval,
-                            _ => BuiltinScalarFunction::ToDayInterval,
-                        }
-                    } else {
-                        BuiltinScalarFunction::ToDayInterval
-                    };
-
-                    Ok(Box::new(Expr::ScalarFunction {
-                        fun,
-                        args: vec![
-                            *self.sql_expr_to_logical_expr(expr, schema, extended_schema)?,
-                            Expr::Literal(ScalarValue::Utf8(Some(unit.to_lowercase()))),
-                        ],
-                    }))
-                }
-            },
+            SQLExpr::Interval(interval) => {
+                self.sql_interval_to_expr(interval, schema, extended_schema)
+            }
 
             // @todo Support
             SQLExpr::Collate { expr, .. } => self.sql_expr_to_logical_expr(*expr, schema, extended_schema),
@@ -2076,41 +2028,13 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 conditions,
                 else_result,
                 ..
-            } => {
-                let expr = if let Some(e) = operand {
-                    Some(self.sql_expr_to_logical_expr(*e, schema, extended_schema)?)
-                } else {
-                    None
-                };
-                let when_then_expr = conditions
-                    .into_iter()
-                    .map(|CaseWhen { condition, result }| {
-                        Ok((
-                            self.sql_expr_to_logical_expr(
-                                condition,
-                                schema,
-                                extended_schema,
-                            )?,
-                            self.sql_expr_to_logical_expr(
-                                result,
-                                schema,
-                                extended_schema,
-                            )?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let else_expr = if let Some(e) = else_result {
-                    Some(self.sql_expr_to_logical_expr(*e, schema, extended_schema)?)
-                } else {
-                    None
-                };
-
-                Ok(Box::new(Expr::Case {
-                    expr,
-                    when_then_expr,
-                    else_expr,
-                }))
-            }
+            } => self.sql_case_to_expr(
+                operand,
+                conditions,
+                else_result,
+                schema,
+                extended_schema,
+            ),
 
             SQLExpr::Cast {
                 kind,
@@ -2300,43 +2224,13 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 substring_from,
                 substring_for,
                 ..
-            } => {
-                let args = match (substring_from, substring_for) {
-                    (Some(from_expr), Some(for_expr)) => {
-                        let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
-                        let from_logic =
-                            *self.sql_expr_to_logical_expr(*from_expr, schema, extended_schema)?;
-                        let for_logic =
-                            *self.sql_expr_to_logical_expr(*for_expr, schema, extended_schema)?;
-                        vec![arg, from_logic, for_logic]
-                    }
-                    (Some(from_expr), None) => {
-                        let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
-                        let from_logic =
-                            *self.sql_expr_to_logical_expr(*from_expr, schema, extended_schema)?;
-                        vec![arg, from_logic]
-                    }
-                    (None, Some(for_expr)) => {
-                        let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
-                        let from_logic = Expr::Literal(ScalarValue::Int64(Some(1)));
-                        let for_logic =
-                            *self.sql_expr_to_logical_expr(*for_expr, schema, extended_schema)?;
-                        vec![arg, from_logic, for_logic]
-                    }
-                    (None, None) => {
-                        return Err(DataFusionError::Plan(format!(
-                            "Substring without for/from is not valid {:?}",
-                            expr
-                        )));
-                    }
-                };
-
-
-                Ok(Box::new(Expr::ScalarFunction {
-                    fun: BuiltinScalarFunction::Substr,
-                    args,
-                }))
-            }
+            } => self.sql_substring_to_expr(
+                expr,
+                substring_from,
+                substring_for,
+                schema,
+                extended_schema,
+            ),
 
             #[cfg(not(feature = "unicode_expressions"))]
             SQLExpr::Substring {
@@ -2348,22 +2242,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             }
 
             SQLExpr::Trim { expr, trim_where, trim_what, .. } => {
-                let fun = match trim_where {
-                    Some(TrimWhereField::Leading) => BuiltinScalarFunction::Ltrim,
-                    Some(TrimWhereField::Trailing) => BuiltinScalarFunction::Rtrim,
-                    Some(TrimWhereField::Both) => BuiltinScalarFunction::Btrim,
-                    None => BuiltinScalarFunction::Trim,
-                };
-                let where_expr = trim_what;
-                let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
-                let args = match where_expr {
-                    Some(to_trim) => {
-                        let to_trim = *self.sql_expr_to_logical_expr(*to_trim, schema, extended_schema)?;
-                        vec![arg, to_trim]
-                    }
-                    None => vec![arg],
-                };
-                Ok(Box::new(Expr::ScalarFunction { fun, args }))
+                self.sql_trim_to_expr(expr, trim_where, trim_what, schema, extended_schema)
             }
             SQLExpr::Rollup(exprs) => {
                 self.sql_rollup_to_expr(exprs, schema, extended_schema)
@@ -2578,6 +2457,200 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 ))),
             }
         }
+    }
+
+    /// Plan an `INTERVAL` literal or expression.
+    ///
+    /// Extracted out of [`Self::sql_expr_to_logical_expr`] to keep the deeply-recursive
+    /// dispatcher's stack frame small. `#[inline(never)]` keeps the frames separate.
+    #[inline(never)]
+    fn sql_interval_to_expr(
+        &self,
+        interval: sqlparser::ast::Interval,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        let sqlparser::ast::Interval {
+            value,
+            leading_field,
+            leading_precision,
+            last_field,
+            fractional_seconds_precision,
+        } = interval;
+        match *value {
+            SQLExpr::Value(ValueWithSpan { value: Value::Number(value, _), .. }) => {
+                self.sql_interval_to_literal(
+                    value,
+                    leading_field,
+                    leading_precision,
+                    last_field,
+                    fractional_seconds_precision,
+                ).map(Box::new)
+            }
+            SQLExpr::Value(ValueWithSpan { value: Value::SingleQuotedString(value), .. }) => {
+                self.sql_interval_to_literal(
+                    value,
+                    leading_field,
+                    leading_precision,
+                    last_field,
+                    fractional_seconds_precision,
+                ).map(Box::new)
+            }
+            expr => {
+                let unit = leading_field
+                    .as_ref()
+                    .map(|dt| dt.to_string())
+                    .unwrap_or_else(|| "second".to_string());
+
+                let fun = if let Some(leading_field) = leading_field {
+                    match leading_field {
+                        DateTimeField::Year => BuiltinScalarFunction::ToMonthInterval,
+                        DateTimeField::Month => BuiltinScalarFunction::ToMonthInterval,
+                        DateTimeField::Quarter => BuiltinScalarFunction::ToMonthInterval,
+                        _ => BuiltinScalarFunction::ToDayInterval,
+                    }
+                } else {
+                    BuiltinScalarFunction::ToDayInterval
+                };
+
+                Ok(Box::new(Expr::ScalarFunction {
+                    fun,
+                    args: vec![
+                        *self.sql_expr_to_logical_expr(expr, schema, extended_schema)?,
+                        Expr::Literal(ScalarValue::Utf8(Some(unit.to_lowercase()))),
+                    ],
+                }))
+            }
+        }
+    }
+
+    /// Plan a `CASE` expression.
+    ///
+    /// Extracted out of [`Self::sql_expr_to_logical_expr`] to keep the dispatcher's stack frame
+    /// small on the deep recursion path. `#[inline(never)]` keeps the frames separate.
+    #[inline(never)]
+    fn sql_case_to_expr(
+        &self,
+        operand: Option<Box<SQLExpr>>,
+        conditions: Vec<CaseWhen>,
+        else_result: Option<Box<SQLExpr>>,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        let expr = if let Some(e) = operand {
+            Some(self.sql_expr_to_logical_expr(*e, schema, extended_schema)?)
+        } else {
+            None
+        };
+        let when_then_expr = conditions
+            .into_iter()
+            .map(|CaseWhen { condition, result }| {
+                Ok((
+                    self.sql_expr_to_logical_expr(
+                        condition,
+                        schema,
+                        extended_schema,
+                    )?,
+                    self.sql_expr_to_logical_expr(
+                        result,
+                        schema,
+                        extended_schema,
+                    )?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let else_expr = if let Some(e) = else_result {
+            Some(self.sql_expr_to_logical_expr(*e, schema, extended_schema)?)
+        } else {
+            None
+        };
+
+        Ok(Box::new(Expr::Case {
+            expr,
+            when_then_expr,
+            else_expr,
+        }))
+    }
+
+    /// Plan a `SUBSTRING(expr FROM .. FOR ..)` expression.
+    ///
+    /// Extracted out of [`Self::sql_expr_to_logical_expr`] to keep the dispatcher's stack frame
+    /// small on the deep recursion path. `#[inline(never)]` keeps the frames separate.
+    #[cfg(feature = "unicode_expressions")]
+    #[inline(never)]
+    fn sql_substring_to_expr(
+        &self,
+        expr: Box<SQLExpr>,
+        substring_from: Option<Box<SQLExpr>>,
+        substring_for: Option<Box<SQLExpr>>,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        let args = match (substring_from, substring_for) {
+            (Some(from_expr), Some(for_expr)) => {
+                let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
+                let from_logic =
+                    *self.sql_expr_to_logical_expr(*from_expr, schema, extended_schema)?;
+                let for_logic =
+                    *self.sql_expr_to_logical_expr(*for_expr, schema, extended_schema)?;
+                vec![arg, from_logic, for_logic]
+            }
+            (Some(from_expr), None) => {
+                let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
+                let from_logic =
+                    *self.sql_expr_to_logical_expr(*from_expr, schema, extended_schema)?;
+                vec![arg, from_logic]
+            }
+            (None, Some(for_expr)) => {
+                let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
+                let from_logic = Expr::Literal(ScalarValue::Int64(Some(1)));
+                let for_logic =
+                    *self.sql_expr_to_logical_expr(*for_expr, schema, extended_schema)?;
+                vec![arg, from_logic, for_logic]
+            }
+            (None, None) => {
+                return Err(DataFusionError::Plan(format!(
+                    "Substring without for/from is not valid {:?}",
+                    expr
+                )));
+            }
+        };
+
+        Ok(Box::new(Expr::ScalarFunction {
+            fun: BuiltinScalarFunction::Substr,
+            args,
+        }))
+    }
+
+    /// Plan a `TRIM([LEADING|TRAILING|BOTH] [chars] FROM expr)` expression.
+    ///
+    /// Extracted out of [`Self::sql_expr_to_logical_expr`] to keep the dispatcher's stack frame
+    /// small on the deep recursion path. `#[inline(never)]` keeps the frames separate.
+    #[inline(never)]
+    fn sql_trim_to_expr(
+        &self,
+        expr: Box<SQLExpr>,
+        trim_where: Option<TrimWhereField>,
+        trim_what: Option<Box<SQLExpr>>,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        let fun = match trim_where {
+            Some(TrimWhereField::Leading) => BuiltinScalarFunction::Ltrim,
+            Some(TrimWhereField::Trailing) => BuiltinScalarFunction::Rtrim,
+            Some(TrimWhereField::Both) => BuiltinScalarFunction::Btrim,
+            None => BuiltinScalarFunction::Trim,
+        };
+        let where_expr = trim_what;
+        let arg = *self.sql_expr_to_logical_expr(*expr, schema, extended_schema)?;
+        let args = match where_expr {
+            Some(to_trim) => {
+                let to_trim = *self.sql_expr_to_logical_expr(*to_trim, schema, extended_schema)?;
+                vec![arg, to_trim]
+            }
+            None => vec![arg],
+        };
+        Ok(Box::new(Expr::ScalarFunction { fun, args }))
     }
 
     /// Plan a function call: scalar/aggregate/window built-ins, `ROLLUP`/`CUBE`, and UDF/UDAF/UDTF.
