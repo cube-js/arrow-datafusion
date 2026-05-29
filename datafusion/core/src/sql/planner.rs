@@ -2059,158 +2059,16 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             }
 
             SQLExpr::CompoundFieldAccess { root, access_chain } => {
-                // A leading chain of identifier dot-accesses (e.g. `r.value`) is a
-                // (possibly qualified) column reference; collapse it into a single
-                // identifier before applying any remaining subscript/field accesses.
-                let mut chain = access_chain.into_iter().peekable();
-                let base_expr = match *root {
-                    SQLExpr::Identifier(id) => {
-                        let mut idents = vec![id];
-                        while let Some(AccessExpr::Dot(SQLExpr::Identifier(_))) =
-                            chain.peek()
-                        {
-                            if let Some(AccessExpr::Dot(SQLExpr::Identifier(field))) =
-                                chain.next()
-                            {
-                                idents.push(field);
-                            }
-                        }
-                        let base_sql = if idents.len() == 1 {
-                            SQLExpr::Identifier(idents.pop().unwrap())
-                        } else {
-                            SQLExpr::CompoundIdentifier(idents)
-                        };
-                        *self.sql_expr_to_logical_expr(base_sql, schema, extended_schema)?
-                    }
-                    other => {
-                        *self.sql_expr_to_logical_expr(other, schema, extended_schema)?
-                    }
-                };
-                let mut expr = base_expr;
-                for access in chain {
-                    expr = match access {
-                        AccessExpr::Subscript(Subscript::Index { index }) => {
-                            let key = self.sql_expr_to_logical_expr(
-                                index,
-                                schema,
-                                extended_schema,
-                            )?;
-                            Expr::GetIndexedField {
-                                expr: Box::new(expr),
-                                key,
-                            }
-                        }
-                        AccessExpr::Dot(SQLExpr::Identifier(field)) => {
-                            Expr::GetIndexedField {
-                                expr: Box::new(expr),
-                                key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(
-                                    field.value,
-                                )))),
-                            }
-                        }
-                        other => {
-                            return Err(DataFusionError::NotImplemented(format!(
-                                "Unsupported compound field access: {:?}",
-                                other
-                            )))
-                        }
-                    };
-                }
-                Ok(Box::new(expr))
+                self.sql_compound_field_access_to_expr(
+                    root,
+                    access_chain,
+                    schema,
+                    extended_schema,
+                )
             }
 
             SQLExpr::CompoundIdentifier(ids) => {
-                let mut var_names: Vec<_> = ids.into_iter().map(normalize_ident).collect();
-
-                if &var_names[0][0..1] == "@" {
-                    let ty = self
-                        .schema_provider
-                        .get_variable_type(&var_names)
-                        .ok_or_else(|| {
-                            DataFusionError::Execution(format!(
-                                "variable {:?} has no type information",
-                                var_names
-                            ))
-                        })?;
-                    Ok(Box::new(Expr::ScalarVariable(ty, var_names)))
-                } else {
-                    match (var_names.pop(), var_names.pop()) {
-                        (Some(name), Some(relation)) => {
-                            if let Some(schema) = var_names.pop() {
-                                if !var_names.is_empty() {
-                                    return Err(DataFusionError::NotImplemented(format!(
-                                        "Unsupported compound identifier '{:?}'",
-                                        var_names,
-                                    )));
-                                }
-                                let schema = schema.to_lowercase();
-                                if !["public", "pg_catalog"].contains(&schema.as_str()) {
-                                    return Err(DataFusionError::NotImplemented(format!(
-                                        "Unsupported compound identifier '{:?}'",
-                                        schema,
-                                    )));
-                                }
-                            }
-
-                            // Rules for finding the column:
-                            // - try the current schema first
-                            // - if available, try extended schema to allow adding
-                            //   missing columns and aggregate expressions down the plan
-                            // - try to get column from outer query context last
-                            // - finally use the column as-is
-                            for schema in [schema].iter().chain(extended_schema.iter()) {
-                                if schema.field_with_qualified_name(&relation, &name).is_ok() {
-                                    return Ok(Box::new(Expr::Column(Column {
-                                        relation: Some(relation),
-                                        name,
-                                    })));
-                                }
-
-                                let search_term = format!(".{}.{}", relation, name);
-                                if schema.fields().iter().any(|f| f.qualified_name().as_str().ends_with(&search_term)) {
-                                    // this could probably be improved but here we handle the case
-                                    // where the qualifier is only a partial qualifier such as when
-                                    // referencing "t1.foo" when the available field is "public.t1.foo"
-                                    return Ok(Box::new(Expr::Column(Column {
-                                        relation: Some(relation),
-                                        name,
-                                    })));
-                                }
-
-                                if let Some(field) = schema.fields().iter().find(|f| f.name().eq(&relation)) {
-                                    // Access to a field of a column which is a structure, example: SELECT my_struct.key
-                                    return Ok(Box::new(Expr::GetIndexedField {
-                                        expr: Box::new(Expr::Column(field.qualified_column())),
-                                        key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(name)))),
-                                    }));
-                                }
-                            }
-
-                            if let Some(f) = self
-                                .context
-                                .outer_query_context_schema
-                                .iter()
-                                .find_map(|s| s.field_with_qualified_name(&relation, &name).ok())
-                            {
-                                // Access to an outer column from a subquery
-                                return Ok(Box::new(Expr::OuterColumn(f.data_type().clone(), Column {
-                                    relation: Some(relation),
-                                    name,
-                                })))
-                            }
-
-                            // This is a fix for Sort with relation. See filter_idents_test test for more information.
-                            Ok(Box::new(Expr::Column(Column {
-                                relation: Some(relation),
-                                name,
-                            })))
-                        }
-                        _ => Err(DataFusionError::NotImplemented(format!(
-                            "Unsupported compound identifier '{:?}'",
-                            var_names,
-                        ))),
-                    }
-                }
+                self.sql_compound_identifier_to_expr(ids, schema, extended_schema)
             }
 
             SQLExpr::Case {
@@ -2708,6 +2566,183 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 "Unsupported ast node {:?} in sqltorel",
                 sql
             ))),
+        }
+    }
+
+    /// Plan a `CompoundFieldAccess` (e.g. `a.b`, `arr[i]`, `struct.field`).
+    ///
+    /// Extracted out of [`Self::sql_expr_to_logical_expr`] so its locals do not inflate the
+    /// stack frame of the deeply-recursive dispatcher. `#[inline(never)]` keeps the frames
+    /// separate in optimized builds.
+    #[inline(never)]
+    fn sql_compound_field_access_to_expr(
+        &self,
+        root: Box<SQLExpr>,
+        access_chain: Vec<AccessExpr>,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        // A leading chain of identifier dot-accesses (e.g. `r.value`) is a
+        // (possibly qualified) column reference; collapse it into a single
+        // identifier before applying any remaining subscript/field accesses.
+        let mut chain = access_chain.into_iter().peekable();
+        let base_expr = match *root {
+            SQLExpr::Identifier(id) => {
+                let mut idents = vec![id];
+                while let Some(AccessExpr::Dot(SQLExpr::Identifier(_))) =
+                    chain.peek()
+                {
+                    if let Some(AccessExpr::Dot(SQLExpr::Identifier(field))) =
+                        chain.next()
+                    {
+                        idents.push(field);
+                    }
+                }
+                let base_sql = if idents.len() == 1 {
+                    SQLExpr::Identifier(idents.pop().unwrap())
+                } else {
+                    SQLExpr::CompoundIdentifier(idents)
+                };
+                *self.sql_expr_to_logical_expr(base_sql, schema, extended_schema)?
+            }
+            other => {
+                *self.sql_expr_to_logical_expr(other, schema, extended_schema)?
+            }
+        };
+        let mut expr = base_expr;
+        for access in chain {
+            expr = match access {
+                AccessExpr::Subscript(Subscript::Index { index }) => {
+                    let key = self.sql_expr_to_logical_expr(
+                        index,
+                        schema,
+                        extended_schema,
+                    )?;
+                    Expr::GetIndexedField {
+                        expr: Box::new(expr),
+                        key,
+                    }
+                }
+                AccessExpr::Dot(SQLExpr::Identifier(field)) => {
+                    Expr::GetIndexedField {
+                        expr: Box::new(expr),
+                        key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(
+                            field.value,
+                        )))),
+                    }
+                }
+                other => {
+                    return Err(DataFusionError::NotImplemented(format!(
+                        "Unsupported compound field access: {:?}",
+                        other
+                    )))
+                }
+            };
+        }
+        Ok(Box::new(expr))
+    }
+
+    /// Plan a `CompoundIdentifier` (e.g. `t.col`, `schema.t.col`, `@@var`).
+    ///
+    /// Extracted out of [`Self::sql_expr_to_logical_expr`] to keep the dispatcher's stack frame
+    /// small on the deep recursion path. `#[inline(never)]` keeps the frames separate.
+    #[inline(never)]
+    fn sql_compound_identifier_to_expr(
+        &self,
+        ids: Vec<Ident>,
+        schema: &DFSchema,
+        extended_schema: Option<&DFSchema>,
+    ) -> Result<Box<Expr>> {
+        let mut var_names: Vec<_> = ids.into_iter().map(normalize_ident).collect();
+
+        if &var_names[0][0..1] == "@" {
+            let ty = self
+                .schema_provider
+                .get_variable_type(&var_names)
+                .ok_or_else(|| {
+                    DataFusionError::Execution(format!(
+                        "variable {:?} has no type information",
+                        var_names
+                    ))
+                })?;
+            Ok(Box::new(Expr::ScalarVariable(ty, var_names)))
+        } else {
+            match (var_names.pop(), var_names.pop()) {
+                (Some(name), Some(relation)) => {
+                    if let Some(schema) = var_names.pop() {
+                        if !var_names.is_empty() {
+                            return Err(DataFusionError::NotImplemented(format!(
+                                "Unsupported compound identifier '{:?}'",
+                                var_names,
+                            )));
+                        }
+                        let schema = schema.to_lowercase();
+                        if !["public", "pg_catalog"].contains(&schema.as_str()) {
+                            return Err(DataFusionError::NotImplemented(format!(
+                                "Unsupported compound identifier '{:?}'",
+                                schema,
+                            )));
+                        }
+                    }
+
+                    // Rules for finding the column:
+                    // - try the current schema first
+                    // - if available, try extended schema to allow adding
+                    //   missing columns and aggregate expressions down the plan
+                    // - try to get column from outer query context last
+                    // - finally use the column as-is
+                    for schema in [schema].iter().chain(extended_schema.iter()) {
+                        if schema.field_with_qualified_name(&relation, &name).is_ok() {
+                            return Ok(Box::new(Expr::Column(Column {
+                                relation: Some(relation),
+                                name,
+                            })));
+                        }
+
+                        let search_term = format!(".{}.{}", relation, name);
+                        if schema.fields().iter().any(|f| f.qualified_name().as_str().ends_with(&search_term)) {
+                            // this could probably be improved but here we handle the case
+                            // where the qualifier is only a partial qualifier such as when
+                            // referencing "t1.foo" when the available field is "public.t1.foo"
+                            return Ok(Box::new(Expr::Column(Column {
+                                relation: Some(relation),
+                                name,
+                            })));
+                        }
+
+                        if let Some(field) = schema.fields().iter().find(|f| f.name().eq(&relation)) {
+                            // Access to a field of a column which is a structure, example: SELECT my_struct.key
+                            return Ok(Box::new(Expr::GetIndexedField {
+                                expr: Box::new(Expr::Column(field.qualified_column())),
+                                key: Box::new(Expr::Literal(ScalarValue::Utf8(Some(name)))),
+                            }));
+                        }
+                    }
+
+                    if let Some(f) = self
+                        .context
+                        .outer_query_context_schema
+                        .iter()
+                        .find_map(|s| s.field_with_qualified_name(&relation, &name).ok())
+                    {
+                        // Access to an outer column from a subquery
+                        return Ok(Box::new(Expr::OuterColumn(f.data_type().clone(), Column {
+                            relation: Some(relation),
+                            name,
+                        })))
+                    }
+
+                    // This is a fix for Sort with relation. See filter_idents_test test for more information.
+                    Ok(Box::new(Expr::Column(Column {
+                        relation: Some(relation),
+                        name,
+                    })))
+                }
+                _ => Err(DataFusionError::NotImplemented(format!(
+                    "Unsupported compound identifier '{:?}'",
+                    var_names,
+                ))),
+            }
         }
     }
 
