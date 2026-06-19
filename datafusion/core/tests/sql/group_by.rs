@@ -97,7 +97,7 @@ async fn csv_query_group_by_boolean() -> Result<()> {
         "SELECT COUNT(*) as cnt, c3 FROM aggregate_simple GROUP BY c3 ORDER BY cnt DESC";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-----+-------+",
         "| cnt | c3    |",
         "+-----+-------+",
@@ -157,7 +157,7 @@ async fn csv_query_group_by_and_having() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1, MIN(c3) AS m FROM aggregate_test_100 GROUP BY c1 HAVING m < -100 AND MAX(c3) > 70";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----+------+",
         "| c1 | m    |",
         "+----+------+",
@@ -179,7 +179,7 @@ async fn csv_query_group_by_and_having_and_where() -> Result<()> {
                GROUP BY c1
                HAVING m < -100 AND MAX(c3) > 70";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----+------+",
         "| c1 | m    |",
         "+----+------+",
@@ -320,7 +320,7 @@ async fn query_group_on_null() -> Result<()> {
 
     // Note that the results also
     // include a row for NULL (c1=NULL, count = 1)
-    let expected = vec![
+    let expected = [
         "+-----------------+----+",
         "| COUNT(UInt8(1)) | c1 |",
         "+-----------------+----+",
@@ -379,7 +379,7 @@ async fn query_group_on_null_multi_col() -> Result<()> {
 
     // Note that the results also include values for null
     // include a row for NULL (c1=NULL, count = 1)
-    let expected = vec![
+    let expected = [
         "+-----------------+----+-----+",
         "| COUNT(UInt8(1)) | c1 | c2  |",
         "+-----------------+----+-----+",
@@ -431,7 +431,7 @@ async fn csv_group_by_date() -> Result<()> {
     ctx.register_table("dates", Arc::new(table))?;
     let sql = "SELECT SUM(cnt) FROM dates GROUP BY date";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------+",
         "| SUM(dates.cnt) |",
         "+----------------+",
@@ -481,7 +481,7 @@ async fn group_by_date_trunc() -> Result<()> {
         "SELECT date_trunc('week', t1) as week, SUM(c2) FROM test GROUP BY date_trunc('week', t1)",
     ).await?;
 
-    let expected = vec![
+    let expected = [
         "+---------------------+--------------+",
         "| week                | SUM(test.c2) |",
         "+---------------------+--------------+",
@@ -532,7 +532,7 @@ async fn group_by_largeutf8() {
                 .await
                 .expect("ran plan correctly");
 
-        let expected = vec![
+        let expected = [
             "+-----+--------------+",
             "| str | COUNT(t.val) |",
             "+-----+--------------+",
@@ -581,7 +581,7 @@ async fn group_by_dictionary() {
                 .await
                 .expect("ran plan correctly");
 
-        let expected = vec![
+        let expected = [
             "+------+--------------+",
             "| dict | COUNT(t.val) |",
             "+------+--------------+",
@@ -598,7 +598,7 @@ async fn group_by_dictionary() {
                 .await
                 .expect("ran plan correctly");
 
-        let expected = vec![
+        let expected = [
             "+-----+---------------+",
             "| val | COUNT(t.dict) |",
             "+-----+---------------+",
@@ -617,7 +617,7 @@ async fn group_by_dictionary() {
         .await
         .expect("ran plan correctly");
 
-        let expected = vec![
+        let expected = [
             "+-----+------------------------+",
             "| val | COUNT(DISTINCT t.dict) |",
             "+-----+------------------------+",

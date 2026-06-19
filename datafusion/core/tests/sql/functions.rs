@@ -42,7 +42,7 @@ async fn csv_query_cast() -> Result<()> {
     let sql = "SELECT CAST(c12 AS float) FROM aggregate_test_100 WHERE c12 > 0.376 AND c12 < 0.4";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-----------------------------------------+",
         "| CAST(aggregate_test_100.c12 AS Float32) |",
         "+-----------------------------------------+",
@@ -63,7 +63,7 @@ async fn csv_query_cast_literal() -> Result<()> {
         "SELECT c12, CAST(1 AS float) FROM aggregate_test_100 WHERE c12 > CAST(0 AS float) LIMIT 2";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+--------------------+---------------------------+",
         "| c12                | CAST(Int64(1) AS Float32) |",
         "+--------------------+---------------------------+",
@@ -97,7 +97,7 @@ async fn query_concat() -> Result<()> {
     ctx.register_table("test", Arc::new(table))?;
     let sql = "SELECT concat(c1, '-hi-', cast(c2 as varchar)) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------------------------------------------+",
         "| concat(test.c1,Utf8(\"-hi-\"),CAST(test.c2 AS Utf8)) |",
         "+----------------------------------------------------+",
@@ -164,7 +164,7 @@ async fn query_count_distinct() -> Result<()> {
     ctx.register_table("test", Arc::new(table))?;
     let sql = "SELECT COUNT(DISTINCT c1) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------+",
         "| COUNT(DISTINCT test.c1) |",
         "+-------------------------+",
@@ -180,7 +180,7 @@ async fn coalesce_static_empty_value() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT COALESCE('', 'test')";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------------------------------+",
         "| coalesce(Utf8(\"\"),Utf8(\"test\")) |",
         "+---------------------------------+",
@@ -196,7 +196,7 @@ async fn coalesce_static_value_with_null() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT COALESCE(NULL, 'test')";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------------------+",
         "| coalesce(NULL,Utf8(\"test\")) |",
         "+-----------------------------+",
@@ -312,7 +312,7 @@ async fn coalesce_sum_with_default_value() -> Result<()> {
     ctx.register_table("test", Arc::new(table))?;
     let sql = "SELECT SUM(COALESCE(c1, c2, 0)) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------------------------------+",
         "| SUM(coalesce(test.c1,test.c2,Int64(0))) |",
         "+-----------------------------------------+",
@@ -344,7 +344,7 @@ async fn coalesce_mul_with_default_value() -> Result<()> {
     ctx.register_table("test", Arc::new(table))?;
     let sql = "SELECT COALESCE(c1 * c2, 0) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------------------------------------------+",
         "| coalesce(test.c1 Multiply test.c2,Int64(0)) |",
         "+---------------------------------------------+",
@@ -364,7 +364,7 @@ async fn count_basic() -> Result<()> {
         execute_with_partition("SELECT COUNT(c1), COUNT(c2) FROM test", 1).await?;
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
+    let expected = [
         "+----------------+----------------+",
         "| COUNT(test.c1) | COUNT(test.c2) |",
         "+----------------+----------------+",
@@ -381,7 +381,7 @@ async fn count_partitioned() -> Result<()> {
         execute_with_partition("SELECT COUNT(c1), COUNT(c2) FROM test", 4).await?;
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
+    let expected = [
         "+----------------+----------------+",
         "| COUNT(test.c1) | COUNT(test.c2) |",
         "+----------------+----------------+",
@@ -397,7 +397,7 @@ async fn count_aggregated() -> Result<()> {
     let results =
         execute_with_partition("SELECT c1, COUNT(c2) FROM test GROUP BY c1", 4).await?;
 
-    let expected = vec![
+    let expected = [
         "+----+----------------+",
         "| c1 | COUNT(test.c2) |",
         "+----+----------------+",
@@ -540,7 +540,7 @@ async fn case_builtin_math_expression() {
         let provider = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
         ctx.deregister_table("t").unwrap();
         ctx.register_table("t", Arc::new(provider)).unwrap();
-        let expected = vec![
+        let expected = [
             "+-----------+",
             "| sqrt(t.v) |",
             "+-----------+",
@@ -726,7 +726,7 @@ async fn pi_function() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "select pi(), pi() / 2, pi() / 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------+--------------------+--------------------+",
         "| pi                | pi / Int64(2)      | pi / Int64(3)      |",
         "+-------------------+--------------------+--------------------+",

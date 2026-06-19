@@ -53,10 +53,10 @@ fn hash_null(random_state: &RandomState, hashes_buffer: &'_ mut [u64], mul_col: 
     }
 }
 
-fn hash_decimal128<'a>(
+fn hash_decimal128(
     array: &ArrayRef,
     random_state: &RandomState,
-    hashes_buffer: &'a mut [u64],
+    hashes_buffer: &mut [u64],
     mul_col: bool,
 ) {
     let array = array.as_any().downcast_ref::<DecimalArray>().unwrap();
@@ -644,7 +644,7 @@ pub fn create_hashes<'a>(
 mod tests {
     use crate::from_slice::FromSlice;
     use arrow::{array::DictionaryArray, datatypes::Int8Type};
-    use std::sync::Arc;
+    use std::{slice, sync::Arc};
 
     use super::*;
 
@@ -684,7 +684,7 @@ mod tests {
     // Tests actual values of hashes, which are different if forcing collisions
     #[cfg(not(feature = "force_hash_collisions"))]
     fn create_hashes_for_dict_arrays() {
-        let strings = vec![Some("foo"), None, Some("bar"), Some("foo"), None];
+        let strings = [Some("foo"), None, Some("bar"), Some("foo"), None];
 
         let string_array = Arc::new(strings.iter().cloned().collect::<StringArray>());
         let dict_array = Arc::new(
@@ -728,11 +728,11 @@ mod tests {
     // Tests actual values of hashes, which are different if forcing collisions
     #[cfg(not(feature = "force_hash_collisions"))]
     fn create_multi_column_hash_for_dict_arrays() {
-        let strings1 = vec![Some("foo"), None, Some("bar")];
-        let strings2 = vec![Some("blarg"), Some("blah"), None];
+        let strings1 = [Some("foo"), None, Some("bar")];
+        let strings2 = [Some("blarg"), Some("blah"), None];
 
         let string_array = Arc::new(strings1.iter().cloned().collect::<StringArray>());
-        let dict_array = Arc::new(
+        let dict_array: ArrayRef = Arc::new(
             strings2
                 .iter()
                 .cloned()
@@ -742,7 +742,12 @@ mod tests {
         let random_state = RandomState::with_seeds(0, 0, 0, 0);
 
         let mut one_col_hashes = vec![0; strings1.len()];
-        create_hashes(&[dict_array.clone()], &random_state, &mut one_col_hashes).unwrap();
+        create_hashes(
+            slice::from_ref(&dict_array),
+            &random_state,
+            &mut one_col_hashes,
+        )
+        .unwrap();
 
         let mut two_col_hashes = vec![0; strings1.len()];
         create_hashes(

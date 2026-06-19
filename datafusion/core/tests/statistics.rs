@@ -135,6 +135,7 @@ impl ExecutionPlan for StatisticsValidation {
         Ok(self)
     }
 
+    #[allow(clippy::diverging_sub_expression)]
     async fn execute(
         &self,
         _partition: usize,

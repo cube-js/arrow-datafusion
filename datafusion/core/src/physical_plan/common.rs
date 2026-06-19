@@ -282,6 +282,68 @@ impl<T> Drop for AbortOnDropMany<T> {
     }
 }
 
+/// Write in Arrow IPC format.
+pub struct IPCWriter {
+    /// path
+    pub path: PathBuf,
+    /// Inner writer
+    pub writer: FileWriter<File>,
+    /// bathes written
+    pub num_batches: u64,
+    /// rows written
+    pub num_rows: u64,
+    /// bytes written
+    pub num_bytes: u64,
+}
+
+impl IPCWriter {
+    /// Create new writer
+    pub fn new(path: &Path, schema: &Schema) -> Result<Self> {
+        let file = File::create(path).map_err(|e| {
+            DataFusionError::Execution(format!(
+                "Failed to create partition file at {:?}: {:?}",
+                path, e
+            ))
+        })?;
+        Ok(Self {
+            num_batches: 0,
+            num_rows: 0,
+            num_bytes: 0,
+            path: path.into(),
+            writer: FileWriter::try_new(file, schema)?,
+        })
+    }
+
+    /// Write one single batch
+    pub fn write(&mut self, batch: &RecordBatch) -> Result<()> {
+        self.writer.write(batch)?;
+        self.num_batches += 1;
+        self.num_rows += batch.num_rows() as u64;
+        let num_bytes: usize = batch_byte_size(batch);
+        self.num_bytes += num_bytes as u64;
+        Ok(())
+    }
+
+    /// Finish the writer
+    pub fn finish(&mut self) -> Result<()> {
+        self.writer.finish().map_err(DataFusionError::ArrowError)
+    }
+
+    /// Path write to
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+/// Returns the total number of bytes of memory occupied physically by this batch.
+pub fn batch_byte_size(batch: &RecordBatch) -> usize {
+    batch
+        .columns()
+        .iter()
+        .map(|array| array.get_array_memory_size())
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,8 +379,8 @@ mod tests {
                 RecordBatch::try_new(
                     Arc::clone(&schema),
                     vec![
-                        Arc::new(Float32Array::from_slice(&vec![i as f32; batch_size])),
-                        Arc::new(Float64Array::from_slice(&vec![i as f64; batch_size])),
+                        Arc::new(Float32Array::from_slice(vec![i as f32; batch_size])),
+                        Arc::new(Float64Array::from_slice(vec![i as f64; batch_size])),
                     ],
                 )
                 .unwrap()
@@ -385,66 +447,4 @@ mod tests {
         assert_eq!(result, expected);
         Ok(())
     }
-}
-
-/// Write in Arrow IPC format.
-pub struct IPCWriter {
-    /// path
-    pub path: PathBuf,
-    /// Inner writer
-    pub writer: FileWriter<File>,
-    /// bathes written
-    pub num_batches: u64,
-    /// rows written
-    pub num_rows: u64,
-    /// bytes written
-    pub num_bytes: u64,
-}
-
-impl IPCWriter {
-    /// Create new writer
-    pub fn new(path: &Path, schema: &Schema) -> Result<Self> {
-        let file = File::create(path).map_err(|e| {
-            DataFusionError::Execution(format!(
-                "Failed to create partition file at {:?}: {:?}",
-                path, e
-            ))
-        })?;
-        Ok(Self {
-            num_batches: 0,
-            num_rows: 0,
-            num_bytes: 0,
-            path: path.into(),
-            writer: FileWriter::try_new(file, schema)?,
-        })
-    }
-
-    /// Write one single batch
-    pub fn write(&mut self, batch: &RecordBatch) -> Result<()> {
-        self.writer.write(batch)?;
-        self.num_batches += 1;
-        self.num_rows += batch.num_rows() as u64;
-        let num_bytes: usize = batch_byte_size(batch);
-        self.num_bytes += num_bytes as u64;
-        Ok(())
-    }
-
-    /// Finish the writer
-    pub fn finish(&mut self) -> Result<()> {
-        self.writer.finish().map_err(DataFusionError::ArrowError)
-    }
-
-    /// Path write to
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-/// Returns the total number of bytes of memory occupied physically by this batch.
-pub fn batch_byte_size(batch: &RecordBatch) -> usize {
-    batch
-        .columns()
-        .iter()
-        .map(|array| array.get_array_memory_size())
-        .sum()
 }

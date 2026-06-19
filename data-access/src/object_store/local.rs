@@ -73,6 +73,7 @@ impl LocalFileReader {
 
 #[async_trait]
 impl ObjectReader for LocalFileReader {
+    #[allow(clippy::diverging_sub_expression)]
     async fn chunk_reader(
         &self,
         _start: u64,

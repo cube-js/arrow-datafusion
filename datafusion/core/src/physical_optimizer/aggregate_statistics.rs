@@ -100,6 +100,7 @@ impl PhysicalOptimizerRule for AggregateStatistics {
 /// - its child (with posssible intermediate layers) is a partial `HashAggregateExec` node
 /// - they both have no grouping expression
 /// - the statistics are exact
+///
 /// If this is the case, return a ref to the partial `HashAggregateExec`, else `None`.
 /// We would have prefered to return a casted ref to HashAggregateExec but the recursion requires
 /// the `ExecutionPlan.children()` method that returns an owned reference.

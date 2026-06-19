@@ -199,7 +199,7 @@ impl SchemaProvider for InformationSchemaProvider {
     }
 
     fn table_exist(&self, name: &str) -> bool {
-        return matches!(name.to_ascii_lowercase().as_str(), TABLES | COLUMNS);
+        matches!(name.to_ascii_lowercase().as_str(), TABLES | COLUMNS)
     }
 }
 

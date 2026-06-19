@@ -216,7 +216,7 @@ impl<'a> AvroReadOptions<'a> {
 
     /// Helper to convert these user facing options to `ListingTable` options
     pub fn to_listing_options(&self, target_partitions: usize) -> ListingOptions {
-        let file_format = AvroFormat::default();
+        let file_format = AvroFormat;
 
         ListingOptions {
             format: Arc::new(file_format),

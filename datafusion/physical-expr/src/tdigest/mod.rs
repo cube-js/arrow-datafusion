@@ -86,7 +86,7 @@ impl TryIntoOrderedF64 for ScalarValue {
     fn try_as_f64(&self) -> Result<Option<OrderedFloat<f64>>> {
         match self {
             ScalarValue::Float32(v) => Ok(v.map(|v| OrderedFloat::from(v as f64))),
-            ScalarValue::Float64(v) => Ok(v.map(|v| OrderedFloat::from(v as f64))),
+            ScalarValue::Float64(v) => Ok(v.map(OrderedFloat::from)),
             ScalarValue::Int8(v) => Ok(v.map(|v| OrderedFloat::from(v as f64))),
             ScalarValue::Int16(v) => Ok(v.map(|v| OrderedFloat::from(v as f64))),
             ScalarValue::Int32(v) => Ok(v.map(|v| OrderedFloat::from(v as f64))),
@@ -184,8 +184,8 @@ impl TDigest {
             max_size,
             sum: OrderedFloat::from(0.0),
             count: OrderedFloat::from(0.0),
-            max: OrderedFloat::from(std::f64::NAN),
-            min: OrderedFloat::from(std::f64::NAN),
+            max: OrderedFloat::from(f64::NAN),
+            min: OrderedFloat::from(f64::NAN),
         }
     }
 
@@ -228,8 +228,8 @@ impl Default for TDigest {
             max_size: 100,
             sum: OrderedFloat::from(0.0),
             count: OrderedFloat::from(0.0),
-            max: OrderedFloat::from(std::f64::NAN),
-            min: OrderedFloat::from(std::f64::NAN),
+            max: OrderedFloat::from(f64::NAN),
+            min: OrderedFloat::from(f64::NAN),
         }
     }
 }
@@ -419,8 +419,8 @@ impl TDigest {
         let mut starts: Vec<usize> = Vec::with_capacity(digests.len());
 
         let mut count: f64 = 0.0;
-        let mut min = OrderedFloat::from(std::f64::INFINITY);
-        let mut max = OrderedFloat::from(std::f64::NEG_INFINITY);
+        let mut min = OrderedFloat::from(f64::INFINITY);
+        let mut max = OrderedFloat::from(f64::NEG_INFINITY);
 
         let mut start: usize = 0;
         for digest in digests.iter() {
@@ -462,8 +462,7 @@ impl TDigest {
         let mut compressed: Vec<Centroid> = Vec::with_capacity(max_size);
 
         let mut k_limit: f64 = 1.0;
-        let mut q_limit_times_count =
-            Self::k_to_q(k_limit, max_size as f64) * (count as f64);
+        let mut q_limit_times_count = Self::k_to_q(k_limit, max_size as f64) * count;
 
         let mut iter_centroids = centroids.iter_mut();
         let mut curr = iter_centroids.next().unwrap();
@@ -484,8 +483,7 @@ impl TDigest {
                 sums_to_merge = OrderedFloat::from(0.0);
                 weights_to_merge = OrderedFloat::from(0.0);
                 compressed.push(curr.clone());
-                q_limit_times_count =
-                    Self::k_to_q(k_limit, max_size as f64) * (count as f64);
+                q_limit_times_count = Self::k_to_q(k_limit, max_size as f64) * count;
                 k_limit += 1.0;
                 curr = centroid;
             }
@@ -498,7 +496,7 @@ impl TDigest {
         compressed.shrink_to_fit();
         compressed.sort();
 
-        result.count = OrderedFloat::from(count as f64);
+        result.count = OrderedFloat::from(count);
         result.min = min;
         result.max = max;
         result.centroids = compressed;
@@ -733,7 +731,7 @@ mod tests {
         let mut t = TDigest::new(10);
 
         for v in vals {
-            t = t.merge_unsorted_f64(vec![OrderedFloat::from(v as f64)]);
+            t = t.merge_unsorted_f64(vec![OrderedFloat::from(v)]);
         }
 
         assert_error_bounds!(t, quantile = 0.5, want = 1.0);
@@ -746,7 +744,7 @@ mod tests {
         let t = TDigest::new(100);
         let values: Vec<_> = (1..=1_000_000)
             .map(f64::from)
-            .map(|v| OrderedFloat::from(v as f64))
+            .map(OrderedFloat::from)
             .collect();
 
         let t = t.merge_unsorted_f64(values);
@@ -764,7 +762,7 @@ mod tests {
         let t = TDigest::new(100);
         let mut values: Vec<_> = (1..=600_000)
             .map(f64::from)
-            .map(|v| OrderedFloat::from(v as f64))
+            .map(OrderedFloat::from)
             .collect();
         for _ in 0..400_000 {
             values.push(OrderedFloat::from(1_000_000_f64));
@@ -784,10 +782,8 @@ mod tests {
 
         for _ in 1..=100 {
             let t = TDigest::new(100);
-            let values: Vec<_> = (1..=1_000)
-                .map(f64::from)
-                .map(|v| OrderedFloat::from(v as f64))
-                .collect();
+            let values: Vec<_> =
+                (1..=1_000).map(f64::from).map(OrderedFloat::from).collect();
             let t = t.merge_unsorted_f64(values);
             digests.push(t)
         }

@@ -51,7 +51,7 @@ impl OuterQueryCursor {
     }
 
     pub fn set_position(&self, pos: usize) -> Result<()> {
-        if let Some(mut batch_and_pos) = self
+        if let Some(batch_and_pos) = self
             .record_batch_and_pos
             .write()
             .map_err(|e| DataFusionError::Execution(e.to_string()))?

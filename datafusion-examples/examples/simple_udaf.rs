@@ -168,9 +168,9 @@ async fn main() -> Result<()> {
         Arc::new(DataType::Float64),
         Volatility::Immutable,
         // This is the accumulator factory; DataFusion uses it to create new accumulators.
-        Arc::new(|| Ok(Box::new(GeometricMean::new()))),
+        Arc::new(|_| Ok(Box::new(GeometricMean::new()))),
         // This is the description of the state. `state()` must match the types here.
-        Arc::new(vec![DataType::Float64, DataType::UInt32]),
+        Arc::new(|_, _| Ok(Arc::new(vec![DataType::Float64, DataType::UInt32]))),
     );
 
     // get a DataFrame from the context
@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
     let df = ctx.table("t")?;
 
     // perform the aggregation
-    let df = df.aggregate(vec![], vec![geometric_mean.call(vec![col("a")])])?;
+    let df = df.aggregate(vec![], vec![geometric_mean.call(vec![col("a")], false)])?;
 
     // note that "a" is f32, not f64. DataFusion coerces it to match the UDAF's signature.
 

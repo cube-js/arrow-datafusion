@@ -75,7 +75,7 @@ pub enum DataFusionError {
     External(GenericError),
     #[cfg(feature = "jit")]
     /// Error occurs during code generation
-    JITError(ModuleError),
+    JITError(Box<ModuleError>),
 }
 
 impl From<io::Error> for DataFusionError {
@@ -123,7 +123,7 @@ impl From<ParserError> for DataFusionError {
 #[cfg(feature = "jit")]
 impl From<ModuleError> for DataFusionError {
     fn from(e: ModuleError) -> Self {
-        DataFusionError::JITError(e)
+        DataFusionError::JITError(Box::new(e))
     }
 }
 
@@ -177,6 +177,13 @@ impl Display for DataFusionError {
 
 impl error::Error for DataFusionError {}
 
+#[macro_export]
+macro_rules! internal_err {
+    ($($arg:tt)*) => {
+        Err(DataFusionError::Internal(format!($($arg)*)))
+    };
+}
+
 #[cfg(test)]
 mod test {
     use crate::error::DataFusionError;
@@ -214,11 +221,4 @@ mod test {
         let _bar = Err(ArrowError::SchemaError("bar".to_string()))?;
         Ok(())
     }
-}
-
-#[macro_export]
-macro_rules! internal_err {
-    ($($arg:tt)*) => {
-        Err(DataFusionError::Internal(format!($($arg)*)))
-    };
 }

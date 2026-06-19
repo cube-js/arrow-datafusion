@@ -139,9 +139,11 @@ mod tests {
         test_i32_result(&r, vec![], 0..0, vec![], expected)?;
 
         let expected = vec![1.0; 1];
+        #[allow(clippy::single_range_in_vec_init)]
         test_i32_result(&r, vec![20; 1], 0..1, vec![0..1], expected)?;
 
         let expected = vec![1.0; 2];
+        #[allow(clippy::single_range_in_vec_init)]
         test_i32_result(&r, vec![20; 2], 0..2, vec![0..2], expected)?;
 
         let expected = vec![0.5, 0.5, 1.0, 1.0];

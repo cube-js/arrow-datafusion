@@ -20,6 +20,7 @@
 use std::collections::HashSet;
 use std::iter;
 use std::ops::RangeFrom;
+use std::slice;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::{convert::TryInto, vec};
@@ -234,7 +235,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             // We don't support cascade and purge for now.
             {
                 Ok(LogicalPlan::DropTable(DropTable {
-                    name: names.get(0).unwrap().to_string(),
+                    name: names.first().unwrap().to_string(),
                     if_exists,
                     schema: DFSchemaRef::new(DFSchema::empty()),
                 }))
@@ -757,9 +758,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     (None, None) => {
                         let table_udf =
                             self.schema_provider.get_table_function_meta(&table_name);
-                        if table_udf.is_some() {
+                        if let Some(table_udf) = table_udf {
                             let udtf = Expr::TableUDF {
-                                fun: table_udf.unwrap(),
+                                fun: table_udf,
                                 args: self
                                     .function_args_to_expr(args, &DFSchema::empty(), None)
                                     .unwrap(),
@@ -914,7 +915,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
                 // List of the plans that have not yet been joined
                 let mut remaining_plans: Vec<Option<LogicalPlan>> =
-                    plans.into_iter().map(Some).collect();
+                    plans.map(Some).collect();
 
                 // Take from the list of remaining plans,
                 loop {
@@ -1145,44 +1146,44 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 };
                 self.validate_schema_satisfies_exprs(
                     plan.schema(),
-                    &[group_by_expr.clone()],
+                    slice::from_ref(&group_by_expr),
                 )?;
                 Ok(group_by_expr)
             })
             .collect::<Result<Vec<Expr>>>()?;
 
         // process group by, aggregation or having
-        let (plan, select_exprs_post_aggr, having_expr_post_aggr_opt) = if !group_by_exprs
-            .is_empty()
-            || !aggr_exprs.is_empty()
-        {
-            self.aggregate(
-                plan,
-                &select_exprs,
-                &having_expr_opt,
-                group_by_exprs,
-                aggr_exprs,
-            )?
-        } else {
-            if let Some(having_expr) = &having_expr_opt {
-                let available_columns = select_exprs
-                    .iter()
-                    .map(|expr| expr_as_column_expr(expr, &plan))
-                    .collect::<Result<Vec<Expr>>>()?;
+        let (plan, select_exprs_post_aggr, having_expr_post_aggr_opt) =
+            if !group_by_exprs.is_empty() || !aggr_exprs.is_empty() {
+                self.aggregate(
+                    plan,
+                    &select_exprs,
+                    &having_expr_opt,
+                    group_by_exprs,
+                    aggr_exprs,
+                )?
+            } else {
+                if let Some(having_expr) = &having_expr_opt {
+                    let available_columns = select_exprs
+                        .iter()
+                        .map(|expr| expr_as_column_expr(expr, &plan))
+                        .collect::<Result<Vec<Expr>>>()?;
 
-                // Ensure the HAVING expression is using only columns
-                // provided by the SELECT.
-                if !can_columns_satisfy_exprs(&available_columns, &[having_expr.clone()])?
-                {
-                    return Err(DataFusionError::Plan(
-                        "Having references column(s) not provided by the select"
-                            .to_owned(),
-                    ));
+                    // Ensure the HAVING expression is using only columns
+                    // provided by the SELECT.
+                    if !can_columns_satisfy_exprs(
+                        &available_columns,
+                        slice::from_ref(having_expr),
+                    )? {
+                        return Err(DataFusionError::Plan(
+                            "Having references column(s) not provided by the select"
+                                .to_owned(),
+                        ));
+                    }
                 }
-            }
 
-            (plan, select_exprs, having_expr_opt)
-        };
+                (plan, select_exprs, having_expr_opt)
+            };
 
         let plan = if let Some(having_expr_post_aggr) = having_expr_post_aggr_opt {
             LogicalPlanBuilder::from(plan)
@@ -1356,7 +1357,7 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
             if !can_columns_satisfy_exprs(
                 &column_exprs_post_aggr,
-                &[having_expr_post_aggr.clone()],
+                slice::from_ref(&having_expr_post_aggr),
             )? {
                 return Err(DataFusionError::Plan(
                     "Having references non-aggregate values".to_owned(),

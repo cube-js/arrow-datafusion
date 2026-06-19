@@ -40,6 +40,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tempfile::TempDir;
 
+#[allow(missing_docs)]
 pub fn create_table_dual() -> Arc<dyn TableProvider> {
     let dual_schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Int32, false),
@@ -194,6 +195,7 @@ pub fn test_table_scan() -> Result<LogicalPlan> {
     test_table_scan_with_name("test")
 }
 
+#[allow(missing_docs)]
 pub fn assert_fields_eq(plan: &LogicalPlan, expected: Vec<&str>) {
     let actual: Vec<String> = plan
         .schema()

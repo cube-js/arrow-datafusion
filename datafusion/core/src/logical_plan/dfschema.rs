@@ -18,4 +18,4 @@
 //! DFSchema is an extended schema struct that DataFusion uses to provide support for
 //! fields with optional relation names.
 
-pub use datafusion_common::{DFField, DFSchema, DFSchemaRef, ExprSchema, ToDFSchema};
+pub use datafusion_common::{DFField, DFSchema, DFSchemaRef, ToDFSchema};

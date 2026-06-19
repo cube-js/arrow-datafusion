@@ -27,7 +27,6 @@ use crate::{
 };
 
 use crate::datasource::object_store_registry::ObjectStoreRegistry;
-use datafusion_common::DataFusionError;
 use datafusion_data_access::object_store::ObjectStore;
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
@@ -104,9 +103,7 @@ impl RuntimeEnv {
         &self,
         uri: &'a str,
     ) -> Result<(Arc<dyn ObjectStore>, &'a str)> {
-        self.object_store_registry
-            .get_by_uri(uri)
-            .map_err(DataFusionError::from)
+        self.object_store_registry.get_by_uri(uri)
     }
 }
 

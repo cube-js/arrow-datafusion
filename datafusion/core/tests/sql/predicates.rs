@@ -23,7 +23,7 @@ async fn csv_query_with_predicate() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1, c12 FROM aggregate_test_100 WHERE c12 > 0.376 AND c12 < 0.4";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----+---------------------+",
         "| c1 | c12                 |",
         "+----+---------------------+",
@@ -41,7 +41,7 @@ async fn csv_query_with_negative_predicate() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1, c4 FROM aggregate_test_100 WHERE c3 < -55 AND -c4 > 30000";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----+--------+",
         "| c1 | c4     |",
         "+----+--------+",
@@ -59,7 +59,7 @@ async fn csv_query_with_negated_predicate() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT COUNT(1) FROM aggregate_test_100 WHERE NOT(c1 != 'a')";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -76,7 +76,7 @@ async fn csv_query_with_is_not_null_predicate() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT COUNT(1) FROM aggregate_test_100 WHERE c1 IS NOT NULL";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -93,7 +93,7 @@ async fn csv_query_with_is_null_predicate() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT COUNT(1) FROM aggregate_test_100 WHERE c1 IS NULL";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -139,7 +139,7 @@ async fn like() -> Result<()> {
     let sql = "SELECT COUNT(c1) FROM aggregate_test_100 WHERE c13 LIKE '%FB%'";
     // check that the physical and logical schemas are equal
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+------------------------------+",
         "| COUNT(aggregate_test_100.c1) |",
         "+------------------------------+",
@@ -156,7 +156,7 @@ async fn csv_between_expr() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c4 FROM aggregate_test_100 WHERE c12 BETWEEN 0.995 AND 1.0";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c4    |",
         "+-------+",
@@ -173,7 +173,7 @@ async fn csv_between_expr_negated() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c4 FROM aggregate_test_100 WHERE c12 NOT BETWEEN 0 AND 0.995";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c4    |",
         "+-------+",
@@ -198,7 +198,7 @@ async fn like_on_strings() -> Result<()> {
 
     let sql = "SELECT * FROM test WHERE c1 LIKE '%a%'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c1    |",
         "+-------+",
@@ -225,7 +225,7 @@ async fn like_on_string_dictionaries() -> Result<()> {
 
     let sql = "SELECT * FROM test WHERE c1 LIKE '%a%'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c1    |",
         "+-------+",
@@ -252,7 +252,7 @@ async fn test_regexp_is_match() -> Result<()> {
 
     let sql = "SELECT * FROM test WHERE c1 ~ 'z'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c1    |",
         "+-------+",
@@ -263,7 +263,7 @@ async fn test_regexp_is_match() -> Result<()> {
 
     let sql = "SELECT * FROM test WHERE c1 ~* 'z'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c1    |",
         "+-------+",
@@ -275,7 +275,7 @@ async fn test_regexp_is_match() -> Result<()> {
 
     let sql = "SELECT * FROM test WHERE c1 !~ 'z'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c1    |",
         "+-------+",
@@ -288,7 +288,7 @@ async fn test_regexp_is_match() -> Result<()> {
 
     let sql = "SELECT * FROM test WHERE c1 !~* 'z'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c1    |",
         "+-------+",
@@ -305,7 +305,7 @@ async fn except_with_null_not_equal() {
     let sql = "SELECT * FROM (SELECT null AS id1, 1 AS id2) t1
             EXCEPT SELECT * FROM (SELECT null AS id1, 2 AS id2) t2";
 
-    let expected = vec![
+    let expected = [
         "+-----+-----+",
         "| id1 | id2 |",
         "+-----+-----+",
@@ -324,7 +324,7 @@ async fn except_with_null_equal() {
     let sql = "SELECT * FROM (SELECT null AS id1, 1 AS id2) t1
             EXCEPT SELECT * FROM (SELECT null AS id1, 1 AS id2) t2";
 
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     let ctx = create_join_context_qualified("t1", "t2").unwrap();
     let actual = execute_to_batches(&ctx, sql).await;
 
@@ -338,7 +338,7 @@ async fn test_expect_all() -> Result<()> {
     // execute the query
     let sql = "SELECT int_col, double_col FROM alltypes_plain where int_col > 0 EXCEPT ALL SELECT int_col, double_col FROM alltypes_plain where int_col < 1";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------+------------+",
         "| int_col | double_col |",
         "+---------+------------+",
@@ -359,7 +359,7 @@ async fn test_expect_distinct() -> Result<()> {
     // execute the query
     let sql = "SELECT int_col, double_col FROM alltypes_plain where int_col > 0 EXCEPT SELECT int_col, double_col FROM alltypes_plain where int_col < 1";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------+------------+",
         "| int_col | double_col |",
         "+---------+------------+",

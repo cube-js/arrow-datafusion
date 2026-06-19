@@ -492,13 +492,13 @@ impl std::fmt::Display for Expr {
                 ref op,
             } => write!(f, "{} {} {}", left, op, right),
             Expr::AggregateFunction {
-                /// Name of the function
+                // Name of the function
                 ref fun,
-                /// List of expressions to feed to the functions as arguments
+                // List of expressions to feed to the functions as arguments
                 ref args,
-                /// Whether this is a DISTINCT aggregation or not
+                // Whether this is a DISTINCT aggregation or not
                 ref distinct,
-                /// Aggregate function's WITHIN GROUP expression
+                // Aggregate function's WITHIN GROUP expression
                 ref within_group,
             } => {
                 fmt_function(f, &fun.to_string(), *distinct, args, true)?;
@@ -512,9 +512,9 @@ impl std::fmt::Display for Expr {
                 Ok(())
             }
             Expr::ScalarFunction {
-                /// Name of the function
+                // Name of the function
                 ref fun,
-                /// List of expressions to feed to the functions as arguments
+                // List of expressions to feed to the functions as arguments
                 ref args,
             } => fmt_function(f, &fun.to_string(), false, args, true),
             _ => write!(f, "{:?}", self),

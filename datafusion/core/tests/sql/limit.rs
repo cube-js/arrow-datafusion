@@ -24,14 +24,12 @@ async fn csv_query_limit() -> Result<()> {
     let sql = "SELECT c1 FROM aggregate_test_100 LIMIT 2";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+----+",
+    let expected = ["+----+",
         "| c1 |",
         "+----+",
         "| c  |",
         "| d  |",
-        "+----+"
-    ];
+        "+----+"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -93,7 +91,7 @@ async fn csv_query_limit_zero() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1 FROM aggregate_test_100 LIMIT 0";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -110,15 +108,13 @@ async fn limit() -> Result<()> {
         .unwrap();
 
     #[rustfmt::skip]
-    let expected = vec![
-        "+------+",
+    let expected = ["+------+",
         "| i    |",
         "+------+",
         "| 1000 |",
         "| 999  |",
         "| 998  |",
-        "+------+",
-    ];
+        "+------+"];
 
     assert_batches_eq!(expected, &results);
 
@@ -127,15 +123,13 @@ async fn limit() -> Result<()> {
         .unwrap();
 
     #[rustfmt::skip]
-    let expected = vec![
-        "+---+",
+    let expected = ["+---+",
         "| i |",
         "+---+",
         "| 1 |",
         "| 2 |",
         "| 3 |",
-        "+---+",
-    ];
+        "+---+"];
 
     assert_batches_eq!(expected, &results);
 
@@ -193,8 +187,7 @@ async fn csv_offset_without_limit_99() -> Result<()> {
     let actual = execute_to_batches(&ctx, sql).await;
 
     #[rustfmt::skip]
-        let expected = vec![
-        "+----+",
+        let expected = ["+----+",
         "| c1 |",
         "+----+",
         "| e  |",
@@ -209,7 +202,7 @@ async fn csv_offset_without_limit_100() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1 FROM aggregate_test_100 OFFSET 100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -220,7 +213,7 @@ async fn csv_offset_without_limit_101() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1 FROM aggregate_test_100 OFFSET 101";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -233,8 +226,7 @@ async fn csv_query_offset() -> Result<()> {
     let actual = execute_to_batches(&ctx, sql).await;
 
     #[rustfmt::skip]
-        let expected = vec![
-        "+----+",
+        let expected = ["+----+",
         "| c1 |",
         "+----+",
         "| b  |",
@@ -250,7 +242,7 @@ async fn csv_query_offset_the_same_as_nbr_of_rows() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1 FROM aggregate_test_100 LIMIT 1 OFFSET 100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -261,7 +253,7 @@ async fn csv_query_offset_bigger_than_nbr_of_rows() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT c1 FROM aggregate_test_100 LIMIT 1 OFFSET 101";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }

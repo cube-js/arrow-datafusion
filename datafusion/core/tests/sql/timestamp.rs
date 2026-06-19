@@ -37,7 +37,7 @@ async fn query_cast_timestamp_millis() -> Result<()> {
     let sql = "SELECT to_timestamp_millis(ts) FROM t1 LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+--------------------------+",
         "| totimestampmillis(t1.ts) |",
         "+--------------------------+",
@@ -69,7 +69,7 @@ async fn query_cast_timestamp_micros() -> Result<()> {
     let sql = "SELECT to_timestamp_micros(ts) FROM t1 LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+--------------------------+",
         "| totimestampmicros(t1.ts) |",
         "+--------------------------+",
@@ -100,7 +100,7 @@ async fn query_cast_timestamp_seconds() -> Result<()> {
     let sql = "SELECT to_timestamp_seconds(ts) FROM t1 LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------------------------+",
         "| totimestampseconds(t1.ts) |",
         "+---------------------------+",
@@ -123,7 +123,7 @@ async fn query_cast_timestamp_nanos_to_others() -> Result<()> {
     let sql = "SELECT to_timestamp_millis(ts) FROM ts_data LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-------------------------------+",
         "| totimestampmillis(ts_data.ts) |",
         "+-------------------------------+",
@@ -137,7 +137,7 @@ async fn query_cast_timestamp_nanos_to_others() -> Result<()> {
     let sql = "SELECT to_timestamp_micros(ts) FROM ts_data LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-------------------------------+",
         "| totimestampmicros(ts_data.ts) |",
         "+-------------------------------+",
@@ -150,7 +150,7 @@ async fn query_cast_timestamp_nanos_to_others() -> Result<()> {
 
     let sql = "SELECT to_timestamp_seconds(ts) FROM ts_data LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+--------------------------------+",
         "| totimestampseconds(ts_data.ts) |",
         "+--------------------------------+",
@@ -172,7 +172,7 @@ async fn query_cast_timestamp_seconds_to_others() -> Result<()> {
     // Original column is seconds, convert to millis and check timestamp
     let sql = "SELECT to_timestamp_millis(ts) FROM ts_secs LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------------+",
         "| totimestampmillis(ts_secs.ts) |",
         "+-------------------------------+",
@@ -187,7 +187,7 @@ async fn query_cast_timestamp_seconds_to_others() -> Result<()> {
     // Original column is seconds, convert to micros and check timestamp
     let sql = "SELECT to_timestamp_micros(ts) FROM ts_secs LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------------+",
         "| totimestampmicros(ts_secs.ts) |",
         "+-------------------------------+",
@@ -201,7 +201,7 @@ async fn query_cast_timestamp_seconds_to_others() -> Result<()> {
     // to nanos
     let sql = "SELECT to_timestamp(ts) FROM ts_secs LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------+",
         "| totimestamp(ts_secs.ts) |",
         "+-------------------------+",
@@ -225,7 +225,7 @@ async fn query_cast_timestamp_micros_to_others() -> Result<()> {
     // Original column is micros, convert to millis and check timestamp
     let sql = "SELECT to_timestamp_millis(ts) FROM ts_micros LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------------------------------+",
         "| totimestampmillis(ts_micros.ts) |",
         "+---------------------------------+",
@@ -239,7 +239,7 @@ async fn query_cast_timestamp_micros_to_others() -> Result<()> {
     // Original column is micros, convert to seconds and check timestamp
     let sql = "SELECT to_timestamp_seconds(ts) FROM ts_micros LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------------------------+",
         "| totimestampseconds(ts_micros.ts) |",
         "+----------------------------------+",
@@ -253,7 +253,7 @@ async fn query_cast_timestamp_micros_to_others() -> Result<()> {
     // Original column is micros, convert to nanos and check timestamp
     let sql = "SELECT to_timestamp(ts) FROM ts_micros LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------------------+",
         "| totimestamp(ts_micros.ts)  |",
         "+----------------------------+",
@@ -274,7 +274,7 @@ async fn to_timestamp() -> Result<()> {
     let sql = "SELECT COUNT(*) FROM ts_data where ts > to_timestamp('2020-09-08T12:00:00+00:00')";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -362,7 +362,7 @@ async fn to_timestamp_millis() -> Result<()> {
 
     let sql = "SELECT COUNT(*) FROM ts_data where ts > to_timestamp_millis('2020-09-08T12:00:00+00:00')";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -384,7 +384,7 @@ async fn to_timestamp_micros() -> Result<()> {
     let sql = "SELECT COUNT(*) FROM ts_data where ts > to_timestamp_micros('2020-09-08T12:00:00+00:00')";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -403,7 +403,7 @@ async fn to_timestamp_seconds() -> Result<()> {
     let sql = "SELECT COUNT(*) FROM ts_data where ts > to_timestamp_seconds('2020-09-08T12:00:00+00:00')";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -422,7 +422,7 @@ async fn count_distinct_timestamps() -> Result<()> {
     let sql = "SELECT COUNT(DISTINCT(ts)) FROM ts_data";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+----------------------------+",
         "| COUNT(DISTINCT ts_data.ts) |",
         "+----------------------------+",
@@ -492,7 +492,7 @@ async fn timestamp_minmax() -> Result<()> {
 
     let sql = "SELECT MIN(table_a.ts), MAX(table_b.ts) FROM table_a, table_b";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------+----------------------------+",
         "| MIN(table_a.ts)         | MAX(table_b.ts)            |",
         "+-------------------------+----------------------------+",
@@ -870,7 +870,7 @@ async fn group_by_timestamp_millis() -> Result<()> {
     let sql =
         "SELECT timestamp, SUM(count) FROM t1 GROUP BY timestamp ORDER BY timestamp ASC";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------------------+---------------+",
         "| timestamp           | SUM(t1.count) |",
         "+---------------------+---------------+",
@@ -901,7 +901,7 @@ async fn test_current_date() -> Result<()> {
     let sql = "select case when current_date() = cast(now() as date) then 'OK' else 'FAIL' end result";
     let results = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+--------+",
         "| result |",
         "+--------+",
@@ -921,7 +921,7 @@ async fn date_trunc_date32_test() -> Result<()> {
     let sql = "select date_trunc('month', cast('2023-02-28' as date)) as dt";
     let results = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------------------+",
         "| dt                  |",
         "+---------------------+",
@@ -933,7 +933,7 @@ async fn date_trunc_date32_test() -> Result<()> {
     let sql = "with w as (select cast('2023-02-28' as date) d) select date_trunc('month', d) as dt from w";
     let results = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------------------+",
         "| dt                  |",
         "+---------------------+",

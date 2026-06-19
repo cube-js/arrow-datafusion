@@ -38,6 +38,7 @@ pub struct TestObjectStore {
 }
 
 impl TestObjectStore {
+    #[allow(missing_docs)]
     pub fn new_arc(files: &[(&str, u64)]) -> Arc<dyn ObjectStore> {
         Arc::new(Self {
             files: files.iter().map(|f| (f.0.to_owned(), f.1)).collect(),
@@ -68,6 +69,7 @@ impl ObjectStore for TestObjectStore {
         ))
     }
 
+    #[allow(clippy::diverging_sub_expression)]
     async fn list_dir(
         &self,
         _prefix: &str,
@@ -97,6 +99,7 @@ struct EmptyObjectReader(u64);
 
 #[async_trait]
 impl ObjectReader for EmptyObjectReader {
+    #[allow(clippy::diverging_sub_expression)]
     async fn chunk_reader(
         &self,
         _start: u64,

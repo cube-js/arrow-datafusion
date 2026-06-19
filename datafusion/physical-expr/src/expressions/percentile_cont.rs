@@ -60,7 +60,7 @@ impl PercentileCont {
             .value();
         let percentile = match lit {
             ScalarValue::Float32(Some(q)) => *q as f64,
-            ScalarValue::Float64(Some(q)) => *q as f64,
+            ScalarValue::Float64(Some(q)) => *q,
             got => return Err(DataFusionError::NotImplemented(format!(
                 "Percentile value for 'PERCENTILE_CONT' must be Float32 or Float64 literal (got data type {})",
                 got

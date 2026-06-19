@@ -84,7 +84,7 @@ macro_rules! assert_fn_batches {
 async fn test_fn_ascii() -> Result<()> {
     let expr = ascii(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+---------------+",
         "| ascii(test.a) |",
         "+---------------+",
@@ -101,7 +101,7 @@ async fn test_fn_ascii() -> Result<()> {
 async fn test_fn_bit_length() -> Result<()> {
     let expr = bit_length(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+-------------------+",
         "| bitlength(test.a) |",
         "+-------------------+",
@@ -120,7 +120,7 @@ async fn test_fn_bit_length() -> Result<()> {
 async fn test_fn_btrim() -> Result<()> {
     let expr = btrim(vec![lit("      a b c             ")]);
 
-    let expected = vec![
+    let expected = [
         "+-----------------------------------------+",
         "| btrim(Utf8(\"      a b c             \")) |",
         "+-----------------------------------------+",
@@ -137,7 +137,7 @@ async fn test_fn_btrim() -> Result<()> {
 async fn test_fn_btrim_with_chars() -> Result<()> {
     let expr = btrim(vec![col("a"), lit("ab")]);
 
-    let expected = vec![
+    let expected = [
         "+--------------------------+",
         "| btrim(test.a,Utf8(\"ab\")) |",
         "+--------------------------+",
@@ -157,7 +157,7 @@ async fn test_fn_btrim_with_chars() -> Result<()> {
 async fn test_fn_approx_percentile_cont() -> Result<()> {
     let expr = approx_percentile_cont(col("b"), lit(0.5));
 
-    let expected = vec![
+    let expected = [
         "+-------------------------------------------+",
         "| APPROXPERCENTILECONT(test.b,Float64(0.5)) |",
         "+-------------------------------------------+",
@@ -178,7 +178,7 @@ async fn test_fn_approx_percentile_cont() -> Result<()> {
 async fn test_fn_character_length() -> Result<()> {
     let expr = character_length(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+-------------------------+",
         "| characterlength(test.a) |",
         "+-------------------------+",
@@ -198,7 +198,7 @@ async fn test_fn_character_length() -> Result<()> {
 async fn test_fn_chr() -> Result<()> {
     let expr = chr(lit(128175));
 
-    let expected = vec![
+    let expected = [
         "+--------------------+",
         "| chr(Int32(128175)) |",
         "+--------------------+",
@@ -215,7 +215,7 @@ async fn test_fn_chr() -> Result<()> {
 async fn test_fn_initcap() -> Result<()> {
     let expr = initcap(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| initcap(test.a) |",
         "+-----------------+",
@@ -236,7 +236,7 @@ async fn test_fn_initcap() -> Result<()> {
 async fn test_fn_left() -> Result<()> {
     let expr = left(col("a"), lit(3));
 
-    let expected = vec![
+    let expected = [
         "+-----------------------+",
         "| left(test.a,Int32(3)) |",
         "+-----------------------+",
@@ -256,7 +256,7 @@ async fn test_fn_left() -> Result<()> {
 async fn test_fn_lower() -> Result<()> {
     let expr = lower(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+---------------+",
         "| lower(test.a) |",
         "+---------------+",
@@ -277,7 +277,7 @@ async fn test_fn_lower() -> Result<()> {
 async fn test_fn_lpad() -> Result<()> {
     let expr = lpad(vec![col("a"), lit(10)]);
 
-    let expected = vec![
+    let expected = [
         "+------------------------+",
         "| lpad(test.a,Int32(10)) |",
         "+------------------------+",
@@ -298,7 +298,7 @@ async fn test_fn_lpad() -> Result<()> {
 async fn test_fn_lpad_with_string() -> Result<()> {
     let expr = lpad(vec![col("a"), lit(10), lit("*")]);
 
-    let expected = vec![
+    let expected = [
         "+----------------------------------+",
         "| lpad(test.a,Int32(10),Utf8(\"*\")) |",
         "+----------------------------------+",
@@ -318,7 +318,7 @@ async fn test_fn_lpad_with_string() -> Result<()> {
 async fn test_fn_ltrim() -> Result<()> {
     let expr = ltrim(lit("      a b c             "));
 
-    let expected = vec![
+    let expected = [
         "+-----------------------------------------+",
         "| ltrim(Utf8(\"      a b c             \")) |",
         "+-----------------------------------------+",
@@ -335,7 +335,7 @@ async fn test_fn_ltrim() -> Result<()> {
 async fn test_fn_ltrim_with_columns() -> Result<()> {
     let expr = ltrim(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+---------------+",
         "| ltrim(test.a) |",
         "+---------------+",
@@ -356,7 +356,7 @@ async fn test_fn_ltrim_with_columns() -> Result<()> {
 async fn test_fn_md5() -> Result<()> {
     let expr = md5(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+----------------------------------+",
         "| md5(test.a)                      |",
         "+----------------------------------+",
@@ -382,7 +382,7 @@ async fn test_fn_regexp_match() -> Result<()> {
     // The below will fail
     // let expr = regexp_match( vec![col("a"), lit("[a-z]"), lit("g")]);
 
-    let expected = vec![
+    let expected = [
         "+-----------------------------------+",
         "| regexpmatch(test.a,Utf8(\"[a-z]\")) |",
         "+-----------------------------------+",
@@ -403,7 +403,7 @@ async fn test_fn_regexp_match() -> Result<()> {
 async fn test_fn_regexp_replace() -> Result<()> {
     let expr = regexp_replace(vec![col("a"), lit("[a-z]"), lit("x"), lit("g")]);
 
-    let expected = vec![
+    let expected = [
         "+---------------------------------------------------------+",
         "| regexpreplace(test.a,Utf8(\"[a-z]\"),Utf8(\"x\"),Utf8(\"g\")) |",
         "+---------------------------------------------------------+",
@@ -423,7 +423,7 @@ async fn test_fn_regexp_replace() -> Result<()> {
 async fn test_fn_replace() -> Result<()> {
     let expr = replace(col("a"), lit("abc"), lit("x"));
 
-    let expected = vec![
+    let expected = [
         "+---------------------------------------+",
         "| replace(test.a,Utf8(\"abc\"),Utf8(\"x\")) |",
         "+---------------------------------------+",
@@ -443,7 +443,7 @@ async fn test_fn_replace() -> Result<()> {
 async fn test_fn_repeat() -> Result<()> {
     let expr = repeat(col("a"), lit(2));
 
-    let expected = vec![
+    let expected = [
         "+-------------------------+",
         "| repeat(test.a,Int32(2)) |",
         "+-------------------------+",
@@ -464,7 +464,7 @@ async fn test_fn_repeat() -> Result<()> {
 async fn test_fn_reverse() -> Result<()> {
     let expr = reverse(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| reverse(test.a) |",
         "+-----------------+",
@@ -485,7 +485,7 @@ async fn test_fn_reverse() -> Result<()> {
 async fn test_fn_right() -> Result<()> {
     let expr = right(col("a"), lit(3));
 
-    let expected = vec![
+    let expected = [
         "+------------------------+",
         "| right(test.a,Int32(3)) |",
         "+------------------------+",
@@ -506,7 +506,7 @@ async fn test_fn_right() -> Result<()> {
 async fn test_fn_rpad() -> Result<()> {
     let expr = rpad(vec![col("a"), lit(11)]);
 
-    let expected = vec![
+    let expected = [
         "+------------------------+",
         "| rpad(test.a,Int32(11)) |",
         "+------------------------+",
@@ -527,7 +527,7 @@ async fn test_fn_rpad() -> Result<()> {
 async fn test_fn_rpad_with_characters() -> Result<()> {
     let expr = rpad(vec![col("a"), lit(11), lit("x")]);
 
-    let expected = vec![
+    let expected = [
         "+----------------------------------+",
         "| rpad(test.a,Int32(11),Utf8(\"x\")) |",
         "+----------------------------------+",
@@ -548,7 +548,7 @@ async fn test_fn_rpad_with_characters() -> Result<()> {
 async fn test_fn_sha224() -> Result<()> {
     let expr = sha224(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+----------------------------------------------------------+",
         "| sha224(test.a)                                           |",
         "+----------------------------------------------------------+",
@@ -568,7 +568,7 @@ async fn test_fn_sha224() -> Result<()> {
 async fn test_fn_split_part() -> Result<()> {
     let expr = split_part(col("a"), lit("b"), lit(1));
 
-    let expected = vec![
+    let expected = [
         "+--------------------------------------+",
         "| splitpart(test.a,Utf8(\"b\"),Int32(1)) |",
         "+--------------------------------------+",
@@ -587,7 +587,7 @@ async fn test_fn_split_part() -> Result<()> {
 async fn test_fn_starts_with() -> Result<()> {
     let expr = starts_with(col("a"), lit("abc"));
 
-    let expected = vec![
+    let expected = [
         "+--------------------------------+",
         "| startswith(test.a,Utf8(\"abc\")) |",
         "+--------------------------------+",
@@ -608,7 +608,7 @@ async fn test_fn_starts_with() -> Result<()> {
 async fn test_fn_strpos() -> Result<()> {
     let expr = strpos(col("a"), lit("f"));
 
-    let expected = vec![
+    let expected = [
         "+--------------------------+",
         "| strpos(test.a,Utf8(\"f\")) |",
         "+--------------------------+",
@@ -628,7 +628,7 @@ async fn test_fn_strpos() -> Result<()> {
 async fn test_fn_substr() -> Result<()> {
     let expr = substr(col("a"), lit(2));
 
-    let expected = vec![
+    let expected = [
         "+-------------------------+",
         "| substr(test.a,Int32(2)) |",
         "+-------------------------+",
@@ -647,7 +647,7 @@ async fn test_fn_substr() -> Result<()> {
 async fn test_fn_to_hex() -> Result<()> {
     let expr = to_hex(col("b"));
 
-    let expected = vec![
+    let expected = [
         "+---------------+",
         "| tohex(test.b) |",
         "+---------------+",
@@ -667,7 +667,7 @@ async fn test_fn_to_hex() -> Result<()> {
 async fn test_fn_translate() -> Result<()> {
     let expr = translate(col("a"), lit("bc"), lit("xx"));
 
-    let expected = vec![
+    let expected = [
         "+-----------------------------------------+",
         "| translate(test.a,Utf8(\"bc\"),Utf8(\"xx\")) |",
         "+-----------------------------------------+",
@@ -686,7 +686,7 @@ async fn test_fn_translate() -> Result<()> {
 async fn test_fn_upper() -> Result<()> {
     let expr = upper(col("a"));
 
-    let expected = vec![
+    let expected = [
         "+---------------+",
         "| upper(test.a) |",
         "+---------------+",

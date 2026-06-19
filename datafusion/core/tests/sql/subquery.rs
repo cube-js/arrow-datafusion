@@ -25,7 +25,7 @@ async fn subquery_select_no_from() -> Result<()> {
     let sql = "SELECT c1, (SELECT c1 + 1) FROM aggregate_simple ORDER BY c1 LIMIT 2";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+------------------+",
         "| c1      | c1 Plus Int64(1) |",
         "+---------+------------------+",
@@ -46,7 +46,7 @@ async fn subquery_select_with_from() -> Result<()> {
     let sql = "SELECT c1, (SELECT o.c1 + i.c1 FROM aggregate_simple AS i WHERE o.c1 = i.c1 LIMIT 1) FROM aggregate_simple o ORDER BY c1 LIMIT 2";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+----------------+",
         "| c1      | o.c1 Plus i.c1 |",
         "+---------+----------------+",
@@ -68,7 +68,7 @@ async fn subquery_where_no_from() -> Result<()> {
         "SELECT DISTINCT c1 FROM aggregate_simple o WHERE (SELECT NOT c3) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -89,7 +89,7 @@ async fn subquery_where_with_from() -> Result<()> {
     let sql = "SELECT DISTINCT c1 FROM aggregate_simple o WHERE (SELECT c3 FROM aggregate_simple p WHERE o.c1 = p.c1 LIMIT 1) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -112,7 +112,7 @@ async fn subquery_select_and_where_no_from() -> Result<()> {
     let sql = "SELECT c1, (SELECT c1 + 1) FROM aggregate_simple o WHERE (SELECT NOT c3) ORDER BY c1 LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+------------------+",
         "| c1      | c1 Plus Int64(1) |",
         "+---------+------------------+",
@@ -135,7 +135,7 @@ async fn subquery_select_and_where_with_from() -> Result<()> {
     let sql = "SELECT c1, (SELECT c1 + 1) FROM aggregate_simple o WHERE (SELECT c3 FROM aggregate_simple p WHERE o.c1 = p.c1 LIMIT 1) ORDER BY c1 LIMIT 2";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+------------------+",
         "| c1      | c1 Plus Int64(1) |",
         "+---------+------------------+",
@@ -156,7 +156,7 @@ async fn subquery_exists() -> Result<()> {
     let sql = "SELECT DISTINCT c1 FROM aggregate_simple o WHERE EXISTS(SELECT 1 FROM aggregate_simple p WHERE o.c1 * 2 = p.c1) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -177,7 +177,7 @@ async fn subquery_projection_pushdown() -> Result<()> {
     let sql = "SELECT c1, (SELECT o.c2 FROM aggregate_simple AS i WHERE o.c1 = i.c1 LIMIT 1) FROM aggregate_simple o ORDER BY c1 LIMIT 2";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+----------------+",
         "| c1      | o.c2           |",
         "+---------+----------------+",
@@ -197,7 +197,7 @@ async fn subquery_any() -> Result<()> {
     let sql = "SELECT DISTINCT c1 FROM aggregate_simple o WHERE c1 = ANY(SELECT c1 FROM aggregate_simple p WHERE c3) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -219,7 +219,7 @@ async fn subquery_all() -> Result<()> {
     let sql = "SELECT DISTINCT c1 FROM aggregate_simple o WHERE c1 > ALL(SELECT DISTINCT c1 FROM aggregate_simple p ORDER BY c1 LIMIT 3) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -240,7 +240,7 @@ async fn subquery_in() -> Result<()> {
     let sql = "SELECT DISTINCT c1 FROM aggregate_simple o WHERE c1 IN (SELECT c1 FROM aggregate_simple p WHERE c3) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -262,7 +262,7 @@ async fn subquery_in_cte() -> Result<()> {
     let sql = "WITH cte as (SELECT c1 v FROM aggregate_simple where c3) SELECT DISTINCT c1 FROM aggregate_simple o WHERE c1 in (SELECT v FROM cte) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -283,7 +283,7 @@ async fn subquery_not_in_cte() -> Result<()> {
     let sql = "WITH cte as (SELECT c1 v FROM aggregate_simple where c3 = false) SELECT DISTINCT c1 FROM aggregate_simple o WHERE c1 not in (SELECT v FROM cte) ORDER BY c1";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c1      |",
         "+---------+",
@@ -305,7 +305,7 @@ async fn subquery_topn() -> Result<()> {
     let sql = "SELECT c3, ROUND(SUM(c1), 5) AS sum FROM aggregate_simple WHERE c3 IN (SELECT c3 FROM aggregate_simple GROUP BY c3 ORDER BY SUM(c1) DESC LIMIT 1) GROUP BY c3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+------+---------+",
         "| c3   | sum     |",
         "+------+---------+",

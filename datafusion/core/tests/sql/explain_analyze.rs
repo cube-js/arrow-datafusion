@@ -145,11 +145,11 @@ async fn explain_analyze_baseline_metrics() {
             metrics.iter().for_each(|m| match m.value() {
                 MetricValue::StartTimestamp(ts) => {
                     saw_start = true;
-                    assert!(ts.value().unwrap().timestamp_nanos() > 0);
+                    assert!(ts.value().unwrap().timestamp_nanos_opt().unwrap() > 0);
                 }
                 MetricValue::EndTimestamp(ts) => {
                     saw_end = true;
-                    assert!(ts.value().unwrap().timestamp_nanos() > 0);
+                    assert!(ts.value().unwrap().timestamp_nanos_opt().unwrap() > 0);
                 }
                 _ => {}
             });

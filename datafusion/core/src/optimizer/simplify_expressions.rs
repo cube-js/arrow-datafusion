@@ -1862,8 +1862,8 @@ mod tests {
         let expected = format!(
             "Projection: TimestampNanosecond({}, Some(\"UTC\")) AS now, TimestampNanosecond({}, Some(\"UTC\")) AS t2\
             \n  TableScan: test projection=None",
-            time.timestamp_nanos(),
-            time.timestamp_nanos()
+            time.timestamp_nanos_opt().unwrap(),
+            time.timestamp_nanos_opt().unwrap()
         );
 
         assert_eq!(actual, expected);

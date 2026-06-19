@@ -89,7 +89,7 @@ pub async fn main() -> Result<()> {
 
     if let Some(ref path) = args.data_path {
         let p = Path::new(path);
-        env::set_current_dir(&p).unwrap();
+        env::set_current_dir(p).unwrap();
     };
 
     let mut session_config = SessionConfig::new().with_information_schema(true);

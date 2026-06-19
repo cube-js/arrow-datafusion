@@ -1054,7 +1054,7 @@ mod tests {
             &schema_descr,
             vec![ParquetStatistics::int32(Some(11), Some(20), None, 0, false)],
         );
-        let row_group_metadata = vec![rgm1, rgm2];
+        let row_group_metadata = [rgm1, rgm2];
         let mut row_group_predicate =
             build_row_group_predicate(&pruning_predicate, parquet_file_metrics());
         let row_group_filter = row_group_metadata
@@ -1084,7 +1084,7 @@ mod tests {
             &schema_descr,
             vec![ParquetStatistics::int32(Some(11), Some(20), None, 0, false)],
         );
-        let row_group_metadata = vec![rgm1, rgm2];
+        let row_group_metadata = [rgm1, rgm2];
         let mut row_group_predicate =
             build_row_group_predicate(&pruning_predicate, parquet_file_metrics());
         let row_group_filter = row_group_metadata
@@ -1129,7 +1129,7 @@ mod tests {
                 ParquetStatistics::int32(Some(11), Some(20), None, 0, false),
             ],
         );
-        let row_group_metadata = vec![rgm1, rgm2];
+        let row_group_metadata = [rgm1, rgm2];
         let mut row_group_predicate =
             build_row_group_predicate(&pruning_predicate, parquet_file_metrics());
         let row_group_filter = row_group_metadata

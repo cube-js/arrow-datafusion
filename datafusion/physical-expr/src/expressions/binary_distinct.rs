@@ -698,7 +698,7 @@ fn scalar_timestamp_add_interval_year_month(
     month %= 12;
 
     let result = change_ym(timestamp, year, 1 + month as u32)?;
-    Ok(Some(result.timestamp_nanos()))
+    Ok(result.and_utc().timestamp_nanos_opt())
 }
 
 fn scalar_timestamp_add_interval_day_time(
@@ -729,7 +729,7 @@ fn scalar_timestamp_add_interval_day_time(
 
     let result =
         timestamp + Duration::days(days as i64) + Duration::milliseconds(millis as i64);
-    Ok(Some(result.timestamp_nanos()))
+    Ok(result.and_utc().timestamp_nanos_opt())
 }
 
 fn scalar_timestamp_add_interval_month_day_nano(
@@ -783,7 +783,7 @@ fn scalar_timestamp_add_interval_month_day_nano(
             months, days, nanos
         ))
     })?;
-    Ok(Some(result.timestamp_nanos()))
+    Ok(result.and_utc().timestamp_nanos_opt())
 }
 
 fn scalar_timestamp_subtract_timestamp(

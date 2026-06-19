@@ -189,7 +189,7 @@ impl ExecutionPlan for SubqueryExec {
                                 fields.len()
                             )));
                         }
-                        let data_type = fields.get(0).unwrap().data_type();
+                        let data_type = fields.first().unwrap().data_type();
                         let null_array = || new_null_array(data_type, 1);
 
                         if subquery.output_partitioning().partition_count() != 1 {

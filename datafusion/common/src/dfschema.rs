@@ -253,9 +253,7 @@ impl DFSchema {
     pub fn fields_with_unqualified_name(&self, name: &str) -> Vec<&DFField> {
         self.fields
             .iter()
-            .filter(|field| {
-                field.name().to_ascii_lowercase() == name.to_ascii_lowercase()
-            })
+            .filter(|field| field.name().eq_ignore_ascii_case(name))
             .collect()
     }
 

@@ -103,7 +103,7 @@ async fn scalar_udf() -> Result<()> {
     let task_ctx = ctx.task_ctx();
     let result = collect(plan, task_ctx).await?;
 
-    let expected = vec![
+    let expected = [
         "+-----+-----+-----------------+",
         "| a   | b   | my_add(t.a,t.b) |",
         "+-----+-----+-----------------+",
@@ -191,7 +191,7 @@ async fn simple_udaf() -> Result<()> {
 
     let result = plan_and_collect(&ctx, "SELECT MY_AVG(a) FROM t").await?;
 
-    let expected = vec![
+    let expected = [
         "+-------------+",
         "| my_avg(t.a) |",
         "+-------------+",
@@ -203,7 +203,7 @@ async fn simple_udaf() -> Result<()> {
     // also test DISTINCT. in this case it makes MY_AVG act like MAX function
     let result = plan_and_collect(&ctx, "SELECT MY_AVG(DISTINCT a) FROM t").await?;
 
-    let expected = vec![
+    let expected = [
         "+----------------------+",
         "| my_avg(DISTINCT t.a) |",
         "+----------------------+",

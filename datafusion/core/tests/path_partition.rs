@@ -133,7 +133,7 @@ async fn csv_grouping_by_partition() -> Result<()> {
         .collect()
         .await?;
 
-    let expected = vec![
+    let expected = [
         "+------------+-----------------+----------------------+",
         "| date       | COUNT(UInt8(1)) | COUNT(DISTINCT t.c1) |",
         "+------------+-----------------+----------------------+",
@@ -374,6 +374,7 @@ impl ObjectStore for MirroringObjectStore {
         ))
     }
 
+    #[allow(clippy::diverging_sub_expression)]
     async fn list_dir(
         &self,
         _prefix: &str,

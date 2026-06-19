@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::vtable_address_comparisons)]
+    #[allow(ambiguous_wide_pointer_comparisons)]
     async fn with_new_children() -> Result<()> {
         let schema = test_util::aggr_test_schema();
         let partitions = 4;

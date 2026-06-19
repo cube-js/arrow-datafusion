@@ -25,7 +25,7 @@ async fn equijoin() -> Result<()> {
         "SELECT t1_id, t1_name, t2_name FROM t1 JOIN t2 ON t1_id = t2_id ORDER BY t1_id",
         "SELECT t1_id, t1_name, t2_name FROM t1 JOIN t2 ON t2_id = t1_id ORDER BY t1_id",
     ];
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -44,7 +44,7 @@ async fn equijoin() -> Result<()> {
         "SELECT t1.a, t2.b FROM t1 INNER JOIN t2 ON t1.a = t2.a ORDER BY t1.a",
         "SELECT t1.a, t2.b FROM t1 INNER JOIN t2 ON t2.a = t1.a ORDER BY t1.a",
     ];
-    let expected = vec![
+    let expected = [
         "+---+-----+",
         "| a | b   |",
         "+---+-----+",
@@ -69,7 +69,7 @@ async fn equijoin_multiple_condition_ordering() -> Result<()> {
         "SELECT t1_id, t1_name, t2_name FROM t1 JOIN t2 ON t2_id = t1_id AND t1_name <> t2_name ORDER BY t1_id",
         "SELECT t1_id, t1_name, t2_name FROM t1 JOIN t2 ON t2_id = t1_id AND t2_name <> t1_name ORDER BY t1_id",
     ];
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -91,7 +91,7 @@ async fn equijoin_and_other_condition() -> Result<()> {
     let sql =
         "SELECT t1_id, t1_name, t2_name FROM t1 JOIN t2 ON t1_id = t2_id AND t2_name >= 'y' ORDER BY t1_id";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -111,7 +111,7 @@ async fn equijoin_left_and_condition_from_right() -> Result<()> {
     let res = ctx.create_logical_plan(sql);
     assert!(res.is_ok());
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -134,7 +134,7 @@ async fn equijoin_right_and_condition_from_left() -> Result<()> {
     let res = ctx.create_logical_plan(sql);
     assert!(res.is_ok());
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -168,7 +168,7 @@ async fn left_join() -> Result<()> {
         "SELECT t1_id, t1_name, t2_name FROM t1 LEFT JOIN t2 ON t1_id = t2_id ORDER BY t1_id",
         "SELECT t1_id, t1_name, t2_name FROM t1 LEFT JOIN t2 ON t2_id = t1_id ORDER BY t1_id",
     ];
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -218,7 +218,7 @@ async fn left_join_null_filter() -> Result<()> {
     // remove nulls, we can rewrite the join as an inner join and then push down the filter.
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t2_id, t2_name FROM t1 LEFT JOIN t2 ON t1_id = t2_id WHERE t2_name IS NULL ORDER BY t1_id";
-    let expected = vec![
+    let expected = [
         "+-------+-------+---------+",
         "| t1_id | t2_id | t2_name |",
         "+-------+-------+---------+",
@@ -239,7 +239,7 @@ async fn left_join_null_filter_on_join_column() -> Result<()> {
     // Again, since t2 is the non-preserved side of the join, we cannot push down a NULL filter.
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t2_id, t2_name FROM t1 LEFT JOIN t2 ON t1_id = t2_id WHERE t2_id IS NULL ORDER BY t1_id";
-    let expected = vec![
+    let expected = [
         "+-------+-------+---------+",
         "| t1_id | t2_id | t2_name |",
         "+-------+-------+---------+",
@@ -258,7 +258,7 @@ async fn left_join_null_filter_on_join_column() -> Result<()> {
 async fn left_join_not_null_filter() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t2_id, t2_name FROM t1 LEFT JOIN t2 ON t1_id = t2_id WHERE t2_name IS NOT NULL ORDER BY t1_id";
-    let expected = vec![
+    let expected = [
         "+-------+-------+---------+",
         "| t1_id | t2_id | t2_name |",
         "+-------+-------+---------+",
@@ -277,7 +277,7 @@ async fn left_join_not_null_filter() -> Result<()> {
 async fn left_join_not_null_filter_on_join_column() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t2_id, t2_name FROM t1 LEFT JOIN t2 ON t1_id = t2_id WHERE t2_id IS NOT NULL ORDER BY t1_id";
-    let expected = vec![
+    let expected = [
         "+-------+-------+---------+",
         "| t1_id | t2_id | t2_name |",
         "+-------+-------+---------+",
@@ -298,7 +298,7 @@ async fn self_join_non_equijoin() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql =
         "SELECT x.t1_id, y.t1_id FROM t1 x JOIN t1 y ON x.t1_id = 11 AND y.t1_id = 44";
-    let expected = vec![
+    let expected = [
         "+-------+-------+",
         "| t1_id | t1_id |",
         "+-------+-------+",
@@ -315,7 +315,7 @@ async fn self_join_non_equijoin() -> Result<()> {
 async fn right_join_null_filter() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t1_name, t2_id FROM t1 RIGHT JOIN t2 ON t1_id = t2_id WHERE t1_name IS NULL ORDER BY t2_id";
-    let expected = vec![
+    let expected = [
         "+-------+---------+-------+",
         "| t1_id | t1_name | t2_id |",
         "+-------+---------+-------+",
@@ -333,7 +333,7 @@ async fn right_join_null_filter() -> Result<()> {
 async fn right_join_null_filter_on_join_column() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t1_name, t2_id FROM t1 RIGHT JOIN t2 ON t1_id = t2_id WHERE t1_id IS NULL ORDER BY t2_id";
-    let expected = vec![
+    let expected = [
         "+-------+---------+-------+",
         "| t1_id | t1_name | t2_id |",
         "+-------+---------+-------+",
@@ -350,7 +350,7 @@ async fn right_join_null_filter_on_join_column() -> Result<()> {
 async fn right_join_not_null_filter() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t1_name, t2_id FROM t1 RIGHT JOIN t2 ON t1_id = t2_id WHERE t1_name IS NOT NULL ORDER BY t2_id";
-    let expected = vec![
+    let expected = [
         "+-------+---------+-------+",
         "| t1_id | t1_name | t2_id |",
         "+-------+---------+-------+",
@@ -369,7 +369,7 @@ async fn right_join_not_null_filter() -> Result<()> {
 async fn right_join_not_null_filter_on_join_column() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t1_name, t2_id FROM t1 RIGHT JOIN t2 ON t1_id = t2_id WHERE t1_id IS NOT NULL ORDER BY t2_id";
-    let expected = vec![
+    let expected = [
         "+-------+---------+-------+",
         "| t1_id | t1_name | t2_id |",
         "+-------+---------+-------+",
@@ -389,7 +389,7 @@ async fn right_join_not_null_filter_on_join_column() -> Result<()> {
 async fn full_join_null_filter() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t1_name, t2_id FROM t1 FULL OUTER JOIN t2 ON t1_id = t2_id WHERE t1_name IS NULL ORDER BY t1_id";
-    let expected = vec![
+    let expected = [
         "+-------+---------+-------+",
         "| t1_id | t1_name | t2_id |",
         "+-------+---------+-------+",
@@ -432,7 +432,7 @@ async fn right_join() -> Result<()> {
         "SELECT t1_id, t1_name, t2_name FROM t1 RIGHT JOIN t2 ON t1_id = t2_id ORDER BY t1_id",
         "SELECT t1_id, t1_name, t2_name FROM t1 RIGHT JOIN t2 ON t2_id = t1_id ORDER BY t1_id"
     ];
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -489,7 +489,7 @@ async fn left_join_using() -> Result<()> {
     let ctx = create_join_context("id", "id")?;
     let sql = "SELECT id, t1_name, t2_name FROM t1 LEFT JOIN t2 USING (id) ORDER BY id";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----+---------+---------+",
         "| id | t1_name | t2_name |",
         "+----+---------+---------+",
@@ -510,7 +510,7 @@ async fn equijoin_implicit_syntax() -> Result<()> {
         "SELECT t1_id, t1_name, t2_name FROM t1, t2 WHERE t1_id = t2_id ORDER BY t1_id",
         "SELECT t1_id, t1_name, t2_name FROM t1, t2 WHERE t2_id = t1_id ORDER BY t1_id",
     ];
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -536,7 +536,7 @@ async fn equijoin_implicit_syntax_with_filter() -> Result<()> {
         AND t2_id < 99 \
         ORDER BY t1_id";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -555,7 +555,7 @@ async fn equijoin_implicit_syntax_reversed() -> Result<()> {
     let sql =
         "SELECT t1_id, t1_name, t2_name FROM t1, t2 WHERE t2_id = t1_id ORDER BY t1_id";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+---------+---------+",
         "| t1_id | t1_name | t2_name |",
         "+-------+---------+---------+",
@@ -693,7 +693,7 @@ async fn test_join_timestamp() -> Result<()> {
                      ORDER BY a.time";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-------------------------------+-------------------------------+",
         "| time                          | time                          |",
         "+-------------------------------+-------------------------------+",
@@ -734,7 +734,7 @@ async fn test_join_float32() -> Result<()> {
                      ORDER BY a.population";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+------+------------+------+------------+",
         "| city | population | city | population |",
         "+------+------------+------+------------+",
@@ -775,7 +775,7 @@ async fn test_join_float64() -> Result<()> {
                      ORDER BY a.population";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+------+------------+------+------------+",
         "| city | population | city | population |",
         "+------+------------+------+------------+",
@@ -806,7 +806,7 @@ async fn inner_join_qualified_names() -> Result<()> {
             ORDER BY t1.a",
     ];
 
-    let expected = vec![
+    let expected = [
         "+---+----+----+---+-----+-----+",
         "| a | b  | c  | a | b   | c   |",
         "+---+----+----+---+-----+-----+",
@@ -828,7 +828,7 @@ async fn inner_join_qualified_names() -> Result<()> {
 async fn issue_3002() -> Result<()> {
     // repro case for https://github.com/apache/arrow-datafusion/issues/3002
     let sql = "select a.a, b.b from a join b on a.a = b.b";
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     let ctx = create_join_context_qualified("a", "b")?;
     let actual = execute_to_batches(&ctx, sql).await;
     assert_batches_eq!(expected, &actual);
@@ -841,10 +841,8 @@ async fn inner_join_nulls() {
             INNER JOIN (SELECT null AS id2) t2 ON id1 = id2";
 
     #[rustfmt::skip]
-    let expected = vec![
-        "++",
-        "++",
-    ];
+    let expected = ["++",
+        "++"];
 
     let ctx = create_join_context_qualified("t1", "t2").unwrap();
     let actual = execute_to_batches(&ctx, sql).await;
@@ -921,15 +919,13 @@ async fn join_timestamp() -> Result<()> {
     let ctx = SessionContext::new();
     ctx.register_table("t", table_with_timestamps()).unwrap();
 
-    let expected = vec![
-        "+-------------------------------+----------------------------+-------------------------+---------------------+-------+-------------------------------+----------------------------+-------------------------+---------------------+-------+",
+    let expected = ["+-------------------------------+----------------------------+-------------------------+---------------------+-------+-------------------------------+----------------------------+-------------------------+---------------------+-------+",
         "| nanos                         | micros                     | millis                  | secs                | name  | nanos                         | micros                     | millis                  | secs                | name  |",
         "+-------------------------------+----------------------------+-------------------------+---------------------+-------+-------------------------------+----------------------------+-------------------------+---------------------+-------+",
         "| 2011-12-13 11:13:10.123450    | 2011-12-13 11:13:10.123450 | 2011-12-13 11:13:10.123 | 2011-12-13 11:13:10 | Row 1 | 2011-12-13 11:13:10.123450    | 2011-12-13 11:13:10.123450 | 2011-12-13 11:13:10.123 | 2011-12-13 11:13:10 | Row 1 |",
         "| 2018-11-13 17:11:10.011375885 | 2018-11-13 17:11:10.011375 | 2018-11-13 17:11:10.011 | 2018-11-13 17:11:10 | Row 0 | 2018-11-13 17:11:10.011375885 | 2018-11-13 17:11:10.011375 | 2018-11-13 17:11:10.011 | 2018-11-13 17:11:10 | Row 0 |",
         "| 2021-01-01 05:11:10.432       | 2021-01-01 05:11:10.432    | 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10 | Row 3 | 2021-01-01 05:11:10.432       | 2021-01-01 05:11:10.432    | 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10 | Row 3 |",
-        "+-------------------------------+----------------------------+-------------------------+---------------------+-------+-------------------------------+----------------------------+-------------------------+---------------------+-------+",
-    ];
+        "+-------------------------------+----------------------------+-------------------------+---------------------+-------+-------------------------------+----------------------------+-------------------------+---------------------+-------+"];
 
     let results = execute_to_batches(
         &ctx,
