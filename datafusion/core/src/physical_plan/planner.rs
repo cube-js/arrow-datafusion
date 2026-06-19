@@ -2288,6 +2288,7 @@ mod tests {
             unimplemented!("NoOpExecutionPlan::with_new_children");
         }
 
+        #[allow(clippy::diverging_sub_expression)]
         async fn execute(
             &self,
             _partition: usize,

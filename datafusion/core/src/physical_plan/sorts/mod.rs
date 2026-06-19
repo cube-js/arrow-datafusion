@@ -210,7 +210,7 @@ impl Eq for SortKeyCursor {}
 
 impl PartialOrd for SortKeyCursor {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.compare(self).ok()
+        Some(self.cmp(other))
     }
 }
 

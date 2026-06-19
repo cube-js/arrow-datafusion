@@ -49,7 +49,7 @@ async fn test_order_by_agg_expr() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT MIN(c12) FROM aggregate_test_100 ORDER BY MIN(c12)";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------------------+",
         "| MIN(aggregate_test_100.c12) |",
         "+-----------------------------+",
@@ -69,7 +69,7 @@ async fn test_nulls_first_asc() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (null, 'three')) AS t (num,letter) ORDER BY num";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----+--------+",
         "| num | letter |",
         "+-----+--------+",
@@ -87,7 +87,7 @@ async fn test_nulls_first_desc() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (null, 'three')) AS t (num,letter) ORDER BY num DESC";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----+--------+",
         "| num | letter |",
         "+-----+--------+",
@@ -105,7 +105,7 @@ async fn test_specific_nulls_last_desc() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (null, 'three')) AS t (num,letter) ORDER BY num DESC NULLS LAST";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----+--------+",
         "| num | letter |",
         "+-----+--------+",
@@ -123,7 +123,7 @@ async fn test_specific_nulls_first_asc() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (null, 'three')) AS t (num,letter) ORDER BY num ASC NULLS FIRST";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----+--------+",
         "| num | letter |",
         "+-----+--------+",

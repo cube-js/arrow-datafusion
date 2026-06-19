@@ -379,9 +379,9 @@ pub fn initcap<T: StringOffsetSizeTrait>(args: &[ArrayRef]) -> Result<ArrayRef> 
                     } else {
                         char_vector.push(c.to_ascii_uppercase());
                     }
-                    previous_character_letter_or_number = ('A'..='Z').contains(&c)
-                        || ('a'..='z').contains(&c)
-                        || ('0'..='9').contains(&c);
+                    previous_character_letter_or_number = c.is_ascii_uppercase()
+                        || c.is_ascii_lowercase()
+                        || c.is_ascii_digit();
                 }
                 char_vector.iter().collect::<String>()
             })

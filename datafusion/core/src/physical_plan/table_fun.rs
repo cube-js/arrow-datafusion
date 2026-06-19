@@ -257,10 +257,7 @@ impl TableFunStream {
             .filter(|a| a.as_any().downcast_ref::<NullArray>().is_none())
             .map(|a| {
                 Ok((
-                    (
-                        a.clone(),
-                        (0..a.len()).into_iter().map(|_| 1).collect::<Vec<_>>(),
-                    ),
+                    (a.clone(), (0..a.len()).map(|_| 1).collect::<Vec<_>>()),
                     false,
                 ))
             }))

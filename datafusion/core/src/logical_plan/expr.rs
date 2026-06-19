@@ -18,7 +18,6 @@
 //! This module provides an `Expr` enum for representing expressions
 //! such as `col = 5` or `SUM(col)`. See examples on the [`Expr`] struct.
 
-pub use super::Operator;
 use crate::error::Result;
 use crate::logical_plan::ExprSchemable;
 use crate::logical_plan::LogicalPlan;
@@ -305,8 +304,11 @@ pub fn call_fn(name: impl AsRef<str>, args: Vec<Expr>) -> Result<Expr> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{col, lit, when};
+    use std::slice;
+
+    use super::super::{col, lit, when, Operator};
     use super::*;
+
     use datafusion_expr::expr_fn::binary_expr;
 
     #[test]
@@ -345,7 +347,7 @@ mod tests {
     #[test]
     fn combine_one_filter() {
         let filter = binary_expr(col("c1"), Operator::Lt, lit(1));
-        let result = combine_filters(&[filter.clone()]);
+        let result = combine_filters(slice::from_ref(&filter));
         assert_eq!(result, Some(filter));
     }
 

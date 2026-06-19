@@ -429,10 +429,7 @@ impl<'a> PruningExpressionBuilder<'a> {
             };
 
         let (column_expr, correct_operator, scalar_expr) =
-            match rewrite_expr_to_prunable(column_expr, correct_operator, scalar_expr) {
-                Ok(ret) => ret,
-                Err(e) => return Err(e),
-            };
+            rewrite_expr_to_prunable(column_expr, correct_operator, scalar_expr)?;
         let column = columns.iter().next().unwrap().clone();
         let field = match schema.column_with_name(&column.flat_name()) {
             Some((_, f)) => f,
@@ -518,7 +515,7 @@ fn rewrite_expr_to_prunable(
                         .to_string(),
                 ));
             }
-            return match c.as_ref() {
+            match c.as_ref() {
                 Expr::Column(_) => Ok((
                     c.as_ref().clone(),
                     reverse_operator(op),
@@ -528,7 +525,7 @@ fn rewrite_expr_to_prunable(
                     "Not with complex expression {:?} is not supported",
                     column_expr
                 ))),
-            };
+            }
         }
 
         _ => Err(DataFusionError::Plan(format!(
@@ -968,7 +965,7 @@ mod tests {
 
         let batch =
             build_statistics_record_batch(&statistics, &required_columns).unwrap();
-        let expected = vec![
+        let expected = [
             "+--------+--------+--------+--------+",
             "| s1_min | s2_max | s3_max | s3_min |",
             "+--------+--------+--------+--------+",
@@ -1007,7 +1004,7 @@ mod tests {
 
         let batch =
             build_statistics_record_batch(&statistics, &required_columns).unwrap();
-        let expected = vec![
+        let expected = [
             "+-------------------------------+",
             "| s1_min                        |",
             "+-------------------------------+",

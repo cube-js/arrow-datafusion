@@ -270,13 +270,13 @@ fn check_column_satisfies_expr(columns: &[Expr], expr: &Expr) -> Result<()> {
 /// The function's return type is `Result<Option<Expr>>>`, where:
 ///
 /// * `Ok(Some(replacement_expr))`: A replacement `Expr` is provided; it is
-///       swapped in at the particular node in the tree. Any nested `Expr` are
-///       not subject to cloning/replacement.
+///   swapped in at the particular node in the tree. Any nested `Expr` are
+///   not subject to cloning/replacement.
 /// * `Ok(None)`: A replacement `Expr` is not provided. The `Expr` is
-///       recreated, with all of its nested `Expr`'s subject to
-///       cloning/replacement.
+///   recreated, with all of its nested `Expr`'s subject to
+///   cloning/replacement.
 /// * `Err(err)`: Any error returned by the function is returned as-is by
-///       `clone_with_replacement()`.
+///   `clone_with_replacement()`.
 fn clone_with_replacement<F>(expr: &Expr, replacement_fn: &F) -> Result<Expr>
 where
     F: Fn(&Expr) -> Result<Option<Expr>>,

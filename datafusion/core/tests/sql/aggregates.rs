@@ -258,7 +258,7 @@ async fn csv_query_external_table_count() {
     register_aggregate_csv_by_sql(&ctx).await;
     let sql = "SELECT COUNT(c12) FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------------+",
         "| COUNT(aggregate_test_100.c12) |",
         "+-------------------------------+",
@@ -277,13 +277,11 @@ async fn csv_query_external_table_sum() {
     let sql =
         "SELECT SUM(CAST(c7 AS BIGINT)), SUM(CAST(c8 AS BIGINT)) FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
-        "+-------------------------------------------+-------------------------------------------+",
+    let expected = ["+-------------------------------------------+-------------------------------------------+",
         "| SUM(CAST(aggregate_test_100.c7 AS Int64)) | SUM(CAST(aggregate_test_100.c8 AS Int64)) |",
         "+-------------------------------------------+-------------------------------------------+",
         "| 13060                                     | 3017641                                   |",
-        "+-------------------------------------------+-------------------------------------------+",
-    ];
+        "+-------------------------------------------+-------------------------------------------+"];
     assert_batches_eq!(expected, &actual);
 }
 
@@ -293,7 +291,7 @@ async fn csv_query_count() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT count(c12) FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------------+",
         "| COUNT(aggregate_test_100.c12) |",
         "+-------------------------------+",
@@ -310,7 +308,7 @@ async fn csv_query_count_distinct() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT count(distinct c2) FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------------------------------------+",
         "| COUNT(DISTINCT aggregate_test_100.c2) |",
         "+---------------------------------------+",
@@ -327,7 +325,7 @@ async fn csv_query_count_distinct_expr() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT count(distinct c2 % 2) FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+--------------------------------------------------+",
         "| COUNT(DISTINCT aggregate_test_100.c2 % Int64(2)) |",
         "+--------------------------------------------------+",
@@ -344,7 +342,7 @@ async fn csv_query_count_star() {
     register_aggregate_csv_by_sql(&ctx).await;
     let sql = "SELECT COUNT(*) FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -360,7 +358,7 @@ async fn csv_query_count_one() {
     register_aggregate_csv_by_sql(&ctx).await;
     let sql = "SELECT COUNT(1) FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| COUNT(UInt8(1)) |",
         "+-----------------+",
@@ -376,7 +374,7 @@ async fn csv_query_approx_count() -> Result<()> {
     register_aggregate_csv(&ctx).await?;
     let sql = "SELECT approx_distinct(c9) count_c9, approx_distinct(cast(c9 as varchar)) count_c9_str FROM aggregate_test_100";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------+--------------+",
         "| count_c9 | count_c9_str |",
         "+----------+--------------+",
@@ -589,7 +587,7 @@ async fn query_count_without_from() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT count(1 + 1)";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------------------+",
         "| COUNT(Int64(1) + Int64(1)) |",
         "+----------------------------+",
@@ -607,7 +605,7 @@ async fn csv_query_array_agg() -> Result<()> {
     let sql =
         "SELECT array_agg(c13) FROM (SELECT * FROM aggregate_test_100 ORDER BY c13 LIMIT 2) test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+------------------------------------------------------------------+",
         "| ARRAYAGG(test.c13)                                               |",
         "+------------------------------------------------------------------+",
@@ -625,7 +623,7 @@ async fn csv_query_array_agg_empty() -> Result<()> {
     let sql =
         "SELECT array_agg(c13) FROM (SELECT * FROM aggregate_test_100 LIMIT 0) test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+--------------------+",
         "| ARRAYAGG(test.c13) |",
         "+--------------------+",
@@ -643,7 +641,7 @@ async fn csv_query_array_agg_one() -> Result<()> {
     let sql =
         "SELECT array_agg(c13) FROM (SELECT * FROM aggregate_test_100 ORDER BY c13 LIMIT 1) test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------------------------+",
         "| ARRAYAGG(test.c13)               |",
         "+----------------------------------+",
@@ -846,7 +844,7 @@ async fn csv_query_projection_drop_out_aggr_merge() -> Result<()> {
         ) t2
     ";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+--------+-------+",
         "| first | second | third |",
         "+-------+--------+-------+",
@@ -868,7 +866,7 @@ async fn csv_query_projection_drop_out_aggr_merge() -> Result<()> {
         ORDER BY 1
     ";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------------------+",
         "| round(t.num Multiply Float64(2.25)) |",
         "+-------------------------------------+",
@@ -910,7 +908,7 @@ async fn aggregate_timestamps_count() -> Result<()> {
     )
     .await;
 
-    let expected = vec![
+    let expected = [
         "+----------------+-----------------+-----------------+---------------+",
         "| COUNT(t.nanos) | COUNT(t.micros) | COUNT(t.millis) | COUNT(t.secs) |",
         "+----------------+-----------------+-----------------+---------------+",
@@ -933,13 +931,11 @@ async fn aggregate_timestamps_min() -> Result<()> {
     )
     .await;
 
-    let expected = vec![
-        "+----------------------------+----------------------------+-------------------------+---------------------+",
+    let expected = ["+----------------------------+----------------------------+-------------------------+---------------------+",
         "| MIN(t.nanos)               | MIN(t.micros)              | MIN(t.millis)           | MIN(t.secs)         |",
         "+----------------------------+----------------------------+-------------------------+---------------------+",
         "| 2011-12-13 11:13:10.123450 | 2011-12-13 11:13:10.123450 | 2011-12-13 11:13:10.123 | 2011-12-13 11:13:10 |",
-        "+----------------------------+----------------------------+-------------------------+---------------------+",
-    ];
+        "+----------------------------+----------------------------+-------------------------+---------------------+"];
     assert_batches_sorted_eq!(expected, &results);
 
     Ok(())
@@ -956,13 +952,11 @@ async fn aggregate_timestamps_max() -> Result<()> {
     )
     .await;
 
-    let expected = vec![
-        "+-------------------------+-------------------------+-------------------------+---------------------+",
+    let expected = ["+-------------------------+-------------------------+-------------------------+---------------------+",
         "| MAX(t.nanos)            | MAX(t.micros)           | MAX(t.millis)           | MAX(t.secs)         |",
         "+-------------------------+-------------------------+-------------------------+---------------------+",
         "| 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10 |",
-        "+-------------------------+-------------------------+-------------------------+---------------------+",
-    ];
+        "+-------------------------+-------------------------+-------------------------+---------------------+"];
     assert_batches_sorted_eq!(expected, &results);
 
     Ok(())
@@ -992,7 +986,7 @@ async fn aggregate_decimal_min() -> Result<()> {
     let result = plan_and_collect(&ctx, "select min(c1) from d_table")
         .await
         .unwrap();
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| MIN(d_table.c1) |",
         "+-----------------+",
@@ -1016,7 +1010,7 @@ async fn aggregate_decimal_max() -> Result<()> {
     let result = plan_and_collect(&ctx, "select max(c1) from d_table")
         .await
         .unwrap();
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| MAX(d_table.c1) |",
         "+-----------------+",
@@ -1039,7 +1033,7 @@ async fn aggregate_decimal_sum() -> Result<()> {
     let result = plan_and_collect(&ctx, "select sum(c1) from d_table")
         .await
         .unwrap();
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| SUM(d_table.c1) |",
         "+-----------------+",
@@ -1062,7 +1056,7 @@ async fn aggregate_decimal_avg() -> Result<()> {
     let result = plan_and_collect(&ctx, "select avg(c1) from d_table")
         .await
         .unwrap();
-    let expected = vec![
+    let expected = [
         "+-----------------+",
         "| AVG(d_table.c1) |",
         "+-----------------+",
@@ -1082,7 +1076,7 @@ async fn aggregate() -> Result<()> {
     let results = execute_with_partition("SELECT SUM(c1), SUM(c2) FROM test", 4).await?;
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
+    let expected = [
         "+--------------+--------------+",
         "| SUM(test.c1) | SUM(test.c2) |",
         "+--------------+--------------+",
@@ -1104,7 +1098,7 @@ async fn aggregate_empty() -> Result<()> {
 
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
+    let expected = [
         "+--------------+--------------+",
         "| SUM(test.c1) | SUM(test.c2) |",
         "+--------------+--------------+",
@@ -1121,7 +1115,7 @@ async fn aggregate_avg() -> Result<()> {
     let results = execute_with_partition("SELECT AVG(c1), AVG(c2) FROM test", 4).await?;
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
+    let expected = [
         "+--------------+--------------+",
         "| AVG(test.c1) | AVG(test.c2) |",
         "+--------------+--------------+",
@@ -1138,7 +1132,7 @@ async fn aggregate_max() -> Result<()> {
     let results = execute_with_partition("SELECT MAX(c1), MAX(c2) FROM test", 4).await?;
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
+    let expected = [
         "+--------------+--------------+",
         "| MAX(test.c1) | MAX(test.c2) |",
         "+--------------+--------------+",
@@ -1155,7 +1149,7 @@ async fn aggregate_min() -> Result<()> {
     let results = execute_with_partition("SELECT MIN(c1), MIN(c2) FROM test", 4).await?;
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
+    let expected = [
         "+--------------+--------------+",
         "| MIN(test.c1) | MIN(test.c2) |",
         "+--------------+--------------+",
@@ -1172,7 +1166,7 @@ async fn aggregate_grouped() -> Result<()> {
     let results =
         execute_with_partition("SELECT c1, SUM(c2) FROM test GROUP BY c1", 4).await?;
 
-    let expected = vec![
+    let expected = [
         "+----+--------------+",
         "| c1 | SUM(test.c2) |",
         "+----+--------------+",
@@ -1192,7 +1186,7 @@ async fn aggregate_grouped_avg() -> Result<()> {
     let results =
         execute_with_partition("SELECT c1, AVG(c2) FROM test GROUP BY c1", 4).await?;
 
-    let expected = vec![
+    let expected = [
         "+----+--------------+",
         "| c1 | AVG(test.c2) |",
         "+----+--------------+",
@@ -1215,7 +1209,7 @@ async fn aggregate_grouped_empty() -> Result<()> {
     )
     .await?;
 
-    let expected = vec![
+    let expected = [
         "+----+--------------+",
         "| c1 | AVG(test.c2) |",
         "+----+--------------+",
@@ -1231,7 +1225,7 @@ async fn aggregate_grouped_max() -> Result<()> {
     let results =
         execute_with_partition("SELECT c1, MAX(c2) FROM test GROUP BY c1", 4).await?;
 
-    let expected = vec![
+    let expected = [
         "+----+--------------+",
         "| c1 | MAX(test.c2) |",
         "+----+--------------+",
@@ -1251,7 +1245,7 @@ async fn aggregate_grouped_min() -> Result<()> {
     let results =
         execute_with_partition("SELECT c1, MIN(c2) FROM test GROUP BY c1", 4).await?;
 
-    let expected = vec![
+    let expected = [
         "+----+--------------+",
         "| c1 | MIN(test.c2) |",
         "+----+--------------+",
@@ -1275,13 +1269,11 @@ async fn aggregate_avg_add() -> Result<()> {
     .await?;
     assert_eq!(results.len(), 1);
 
-    let expected = vec![
-        "+--------------+----------------------------+----------------------------+----------------------------+",
+    let expected = ["+--------------+----------------------------+----------------------------+----------------------------+",
         "| AVG(test.c1) | AVG(test.c1) Plus Int64(1) | AVG(test.c1) Plus Int64(2) | Int64(1) Plus AVG(test.c1) |",
         "+--------------+----------------------------+----------------------------+----------------------------+",
         "| 1.5          | 2.5                        | 3.5                        | 2.5                        |",
-        "+--------------+----------------------------+----------------------------+----------------------------+",
-    ];
+        "+--------------+----------------------------+----------------------------+----------------------------+"];
     assert_batches_sorted_eq!(expected, &results);
 
     Ok(())

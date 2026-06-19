@@ -95,7 +95,7 @@ impl FileFormat for CsvFormat {
     async fn infer_schema(&self, mut readers: ObjectReaderStream) -> Result<SchemaRef> {
         let mut schemas = vec![];
 
-        let mut records_to_read = self.schema_infer_max_rec.unwrap_or(std::usize::MAX);
+        let mut records_to_read = self.schema_infer_max_rec.unwrap_or(usize::MAX);
 
         while let Some(obj_reader) = readers.next().await {
             let mut reader = obj_reader?.sync_reader()?;

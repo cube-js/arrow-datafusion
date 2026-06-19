@@ -28,10 +28,20 @@ use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 /// External Function signature
+/// Address of a registered extern function.
+///
+/// SAFETY: the address is only stored and copied; it is never dereferenced or
+/// called through this type. It points to a `'static` extern function that is
+/// valid on every thread, so sending/sharing the address across threads is
+/// sound (it moves/reads a plain integer, with no interior mutability).
+struct FuncPtr(*const u8);
+unsafe impl Send for FuncPtr {}
+unsafe impl Sync for FuncPtr {}
+
 struct ExternFuncSignature {
     name: String,
     /// pointer to the function
-    code: *const u8,
+    code: FuncPtr,
     params: Vec<JITType>,
     returns: Option<JITType>,
 }
@@ -97,7 +107,7 @@ impl Assembler {
             fn_name.clone(),
             ExternFuncSignature {
                 name: fn_name,
-                code: ptr,
+                code: FuncPtr(ptr),
                 params,
                 returns,
             },
@@ -123,7 +133,7 @@ impl Assembler {
             .lock()
             .extern_funcs
             .values()
-            .map(|s| (s.name.clone(), s.code))
+            .map(|s| (s.name.clone(), s.code.0))
             .collect::<Vec<_>>();
         JIT::new(symbols)
     }
@@ -172,7 +182,7 @@ impl FunctionBuilder {
     }
 
     /// Enter the function body at start the building.
-    pub fn enter_block(&mut self) -> CodeBlock {
+    pub fn enter_block(&mut self) -> CodeBlock<'_> {
         self.fields.push_back(HashMap::new());
         CodeBlock {
             fields: &mut self.fields,
@@ -261,7 +271,7 @@ impl<'a> CodeBlock<'a> {
             } else {
                 assert!(!then_stmts.is_empty());
                 #[allow(clippy::iter_with_drain)]
-                let then_stmts = then_stmts.drain(..).collect::<Vec<_>>();
+                let then_stmts = std::mem::take(then_stmts);
                 let else_stmts = self.stmts.drain(..).collect::<Vec<_>>();
                 Ok(Stmt::IfElse(
                     Box::new(condition.clone()),
@@ -367,7 +377,7 @@ impl<'a> CodeBlock<'a> {
     }
 
     /// Enter `while` loop block. Try [while_block] first which is much easier to use.
-    fn while_loop(&mut self, cond: Expr) -> Result<CodeBlock> {
+    fn while_loop(&mut self, cond: Expr) -> Result<CodeBlock<'_>> {
         if cond.get_type() != BOOL {
             internal_err!("while condition must be bool")
         } else {
@@ -384,7 +394,7 @@ impl<'a> CodeBlock<'a> {
     }
 
     /// Enter `if-then-else`'s then block. Try [if_block] first which is much easier to use.
-    fn if_else(&mut self, cond: Expr) -> Result<CodeBlock> {
+    fn if_else(&mut self, cond: Expr) -> Result<CodeBlock<'_>> {
         if cond.get_type() != BOOL {
             internal_err!("if condition must be bool")
         } else {

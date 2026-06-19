@@ -108,7 +108,7 @@ fn create_record_batch(
 ) -> RecordBatch {
     // the 4 here is the number of different keys.
     // a higher number increase sparseness
-    let vs = vec![0, 1, 2, 3];
+    let vs = [0, 1, 2, 3];
     let keys: Vec<String> = (0..batch_size)
         .map(
             // use random numbers to avoid spurious compiler optimizations wrt to branching
@@ -131,7 +131,7 @@ fn create_record_batch(
         schema,
         vec![
             Arc::new(StringArray::from(keys)),
-            Arc::new(Float32Array::from_slice(&vec![i as f32; batch_size])),
+            Arc::new(Float32Array::from_slice(vec![i as f32; batch_size])),
             Arc::new(Float64Array::from(values)),
             Arc::new(UInt64Array::from(integer_values_wide)),
             Arc::new(UInt64Array::from(integer_values_narrow)),

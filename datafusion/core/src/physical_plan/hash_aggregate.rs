@@ -1036,7 +1036,7 @@ mod tests {
             common::collect(partial_aggregate.execute(0, task_ctx.clone()).await?)
                 .await?;
 
-        let expected = vec![
+        let expected = [
             "+---+---------------+-------------+",
             "| a | AVG(b)[count] | AVG(b)[sum] |",
             "+---+---------------+-------------+",
@@ -1191,7 +1191,7 @@ mod tests {
         }
     }
 
-    //// Tests ////
+    /// Tests ////
 
     #[tokio::test]
     async fn aggregate_source_not_yielding() -> Result<()> {

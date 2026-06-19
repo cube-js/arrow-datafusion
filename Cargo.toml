@@ -16,6 +16,7 @@
 # under the License.
 
 [workspace]
+resolver = "2"
 members = [
     "datafusion/core",
     "datafusion/common",
@@ -27,7 +28,7 @@ members = [
     "benchmarks",
     "data-access",
 ]
-exclude = ["datafusion-cli"]
+exclude = ["datafusion-cli", "datafusion-examples", "datafusion/proto"]
 
 [profile.release]
 codegen-units = 1

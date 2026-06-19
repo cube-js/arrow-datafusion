@@ -117,7 +117,7 @@ impl Accumulator for CountAccumulator {
         let counts = states[0].as_any().downcast_ref::<Int64Array>().unwrap();
         let delta = &compute::sum(counts);
         if let Some(d) = delta {
-            self.count += *d as i64;
+            self.count += *d;
         }
         Ok(())
     }

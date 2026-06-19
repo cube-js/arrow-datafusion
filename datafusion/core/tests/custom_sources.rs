@@ -45,7 +45,7 @@ use std::task::{Context, Poll};
 use async_trait::async_trait;
 use datafusion::logical_plan::plan::Projection;
 
-//// Custom source dataframe tests ////
+// Custom source dataframe tests //
 
 struct CustomTableProvider;
 #[derive(Debug, Clone)]

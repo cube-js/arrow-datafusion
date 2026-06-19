@@ -82,6 +82,7 @@ impl ObjectStoreRegistry {
     /// Get a suitable store for the URI based on it's scheme. For example:
     /// - URI with scheme `file://` or no schema will return the default LocalFS store
     /// - URI with scheme `s3://` will return the S3 store if it's registered
+    ///
     /// Returns a tuple with the store and the self-described uri of the file in that store
     pub fn get_by_uri<'a>(
         &self,

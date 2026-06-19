@@ -436,7 +436,7 @@ pub fn expr_sub_expressions(expr: &Expr) -> Result<Vec<Expr>> {
         Expr::InSubquery { expr, subquery, .. } => {
             Ok(vec![expr.as_ref().to_owned(), subquery.as_ref().to_owned()])
         }
-        Expr::Wildcard { .. } => Err(DataFusionError::Internal(
+        Expr::Wildcard => Err(DataFusionError::Internal(
             "Wildcard expressions are not valid in a logical query plan".to_owned(),
         )),
         Expr::QualifiedWildcard { .. } => Err(DataFusionError::Internal(

@@ -178,6 +178,7 @@ mod tests {
     }
 
     fn test_without_rank(expr: &Rank, expected: Vec<u64>) -> Result<()> {
+        #[allow(clippy::single_range_in_vec_init)]
         test_i32_result(expr, vec![-2, -2, 1, 3, 3, 3, 7, 8], vec![0..8], expected)
     }
 
@@ -212,6 +213,7 @@ mod tests {
         let values = vec![arr];
         let schema = Schema::new(vec![Field::new("arr", DataType::Int32, false)]);
         let batch = RecordBatch::try_new(Arc::new(schema), values.clone())?;
+        #[allow(clippy::single_range_in_vec_init)]
         let result = expr
             .create_evaluator(&batch)?
             .evaluate_with_rank(vec![0..8], ranks)?;
@@ -248,10 +250,12 @@ mod tests {
 
         // singleton case
         let expected = vec![0.0];
+        #[allow(clippy::single_range_in_vec_init)]
         test_f64_result(&r, vec![13], 0..1, vec![0..1], expected)?;
 
         // uniform case
         let expected = vec![0.0; 7];
+        #[allow(clippy::single_range_in_vec_init)]
         test_f64_result(&r, vec![4; 7], 0..7, vec![0..7], expected)?;
 
         // non-trivial case

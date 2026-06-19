@@ -51,8 +51,7 @@ pub fn coalesce(args: &[ColumnarValue]) -> Result<ColumnarValue> {
                 }
                 ColumnarValue::Scalar(scalar) => {
                     if !scalar.is_null() && res.is_null(i) {
-                        let vec: Vec<bool> =
-                            (0..size).into_iter().map(|j| j == i).collect();
+                        let vec: Vec<bool> = (0..size).map(|j| j == i).collect();
                         let bool_arr = BooleanArray::from(vec);
                         res =
                             zip(&bool_arr, scalar.to_array_of_size(size).as_ref(), &res)?;

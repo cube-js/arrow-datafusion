@@ -57,7 +57,7 @@ impl BatchIndex {
         *inner
     }
 
-    // increment the current index by one
+    /// increment the current index by one
     pub fn incr(&self) {
         let mut inner = self.inner.lock().unwrap();
         *inner += 1;
@@ -389,6 +389,7 @@ impl Default for ErrorExec {
 }
 
 impl ErrorExec {
+    #[allow(missing_docs)]
     pub fn new() -> Self {
         let schema = Arc::new(Schema::new(vec![Field::new(
             "dummy",
@@ -464,6 +465,7 @@ pub struct StatisticsExec {
     schema: Arc<Schema>,
 }
 impl StatisticsExec {
+    #[allow(missing_docs)]
     pub fn new(stats: Statistics, schema: Schema) -> Self {
         assert!(
             stats
@@ -508,6 +510,7 @@ impl ExecutionPlan for StatisticsExec {
         Ok(self)
     }
 
+    #[allow(clippy::diverging_sub_expression)]
     async fn execute(
         &self,
         _partition: usize,

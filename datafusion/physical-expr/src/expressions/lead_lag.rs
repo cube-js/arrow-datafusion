@@ -189,6 +189,7 @@ mod tests {
         let values = vec![arr];
         let schema = Schema::new(vec![Field::new("arr", DataType::Int32, false)]);
         let batch = RecordBatch::try_new(Arc::new(schema), values.clone())?;
+        #[allow(clippy::single_range_in_vec_init)]
         let result = expr.create_evaluator(&batch)?.evaluate(vec![0..8])?;
         assert_eq!(1, result.len());
         let result = result[0].as_any().downcast_ref::<Int32Array>().unwrap();
@@ -206,7 +207,7 @@ mod tests {
                 None,
                 None,
             ),
-            vec![
+            [
                 Some(-2),
                 Some(3),
                 Some(-4),
@@ -228,7 +229,7 @@ mod tests {
                 None,
                 None,
             ),
-            vec![
+            [
                 None,
                 Some(1),
                 Some(-2),
@@ -250,7 +251,7 @@ mod tests {
                 None,
                 Some(ScalarValue::Int32(Some(100))),
             ),
-            vec![
+            [
                 Some(100),
                 Some(1),
                 Some(-2),

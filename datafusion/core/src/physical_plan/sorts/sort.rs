@@ -65,9 +65,9 @@ use tokio::task;
 /// The basic architecture of the algorithm:
 /// 1. get a non-empty new batch from input
 /// 2. check with the memory manager if we could buffer the batch in memory
-/// 2.1 if memory sufficient, then buffer batch in memory, go to 1.
-/// 2.2 if the memory threshold is reached, sort all buffered batches and spill to file.
-///     buffer the batch in memory, go to 1.
+///    2.1. if memory sufficient, then buffer batch in memory, go to 1.
+///    2.2. if the memory threshold is reached, sort all buffered batches and spill to file.
+///    buffer the batch in memory, go to 1.
 /// 3. when input is exhausted, merge all in memory batches and spills to get a total order.
 struct ExternalSorter {
     id: MemoryConsumerId,
@@ -131,7 +131,7 @@ impl ExternalSorter {
                 .metrics_set
                 .new_intermediate_tracking(partition, self.runtime.clone());
             let mut streams: Vec<SortedStream> = vec![];
-            if in_mem_batches.len() > 0 {
+            if !in_mem_batches.is_empty() {
                 let in_mem_stream = in_mem_partial_sort(
                     &mut in_mem_batches,
                     self.schema.clone(),
@@ -158,7 +158,7 @@ impl ExternalSorter {
                 tracking_metrics,
                 self.session_config.batch_size,
             )))
-        } else if in_mem_batches.len() > 0 {
+        } else if !in_mem_batches.is_empty() {
             let tracking_metrics = self
                 .metrics_set
                 .new_final_tracking(partition, self.runtime.clone());
@@ -236,7 +236,7 @@ impl MemoryConsumer for ExternalSorter {
         let partition = self.partition_id();
         let mut in_mem_batches = self.in_mem_batches.lock().await;
         // we could always get a chance to free some memory as long as we are holding some
-        if in_mem_batches.len() == 0 {
+        if in_mem_batches.is_empty() {
             return Ok(0);
         }
 
@@ -284,7 +284,7 @@ fn in_mem_partial_sort(
             buffered_batches.pop()
         } else {
             #[allow(clippy::iter_with_drain)]
-            let batches = buffered_batches.drain(..).collect::<Vec<_>>();
+            let batches = std::mem::take(buffered_batches);
             // combine all record batches into one for each column
             common::combine_batches(&batches, schema.clone())?
         };

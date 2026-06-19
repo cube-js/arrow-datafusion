@@ -23,14 +23,12 @@ async fn union_all() -> Result<()> {
     let sql = "SELECT 1 as x UNION ALL SELECT 2 as x";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+---+",
+    let expected = ["+---+",
         "| x |",
         "+---+",
         "| 1 |",
         "| 2 |",
-        "+---+"
-    ];
+        "+---+"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -52,13 +50,11 @@ async fn union_distinct() -> Result<()> {
     let sql = "SELECT 1 as x UNION SELECT 1 as x";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+---+",
+    let expected = ["+---+",
         "| x |",
         "+---+",
         "| 1 |",
-        "+---+"
-    ];
+        "+---+"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -69,7 +65,7 @@ async fn union_all_with_aggregate() -> Result<()> {
     let sql =
         "SELECT SUM(d) FROM (SELECT 1 as c, 2 as d UNION ALL SELECT 1 as c, 3 AS d) as a";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------+",
         "| SUM(a.d) |",
         "+----------+",

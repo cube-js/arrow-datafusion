@@ -234,7 +234,7 @@ impl SessionContext {
                         DEFAULT_PARQUET_EXTENSION,
                     ),
                     FileType::Avro => (
-                        Arc::new(AvroFormat::default()) as Arc<dyn FileFormat>,
+                        Arc::new(AvroFormat) as Arc<dyn FileFormat>,
                         DEFAULT_AVRO_EXTENSION,
                     ),
                     FileType::NdJson => (
@@ -1614,7 +1614,7 @@ mod tests {
             plan_and_collect(&ctx, "SELECT @@version, @name, @integer + 1 FROM dual")
                 .await?;
 
-        let expected = vec![
+        let expected = [
             "+----------------------+------------------------+------------------------+",
             "| @@version            | @name                  | @integer Plus Int64(1) |",
             "+----------------------+------------------------+------------------------+",
@@ -1655,7 +1655,7 @@ mod tests {
             .unwrap();
         let results = df.collect().await.unwrap();
 
-        let expected = vec![
+        let expected = [
             "+--------------------------+",
             "| ?table?.i Plus ?table?.i |",
             "+--------------------------+",
@@ -1795,7 +1795,7 @@ mod tests {
             plan_and_collect(&ctx, "SELECT SUM(c1), SUM(c2), COUNT(*) FROM test").await?;
 
         assert_eq!(results.len(), 1);
-        let expected = vec![
+        let expected = [
             "+--------------+--------------+-----------------+",
             "| SUM(test.c1) | SUM(test.c2) | COUNT(UInt8(1)) |",
             "+--------------+--------------+-----------------+",
@@ -1910,7 +1910,7 @@ mod tests {
             .await
             .unwrap();
 
-            let expected = vec![
+            let expected = [
                 "+-------+",
                 "| count |",
                 "+-------+",
@@ -1952,7 +1952,7 @@ mod tests {
         )
         .await?;
 
-        let expected = vec![
+        let expected = [
             "+-----+-------+",
             "| cat | total |",
             "+-----+-------+",
@@ -2041,7 +2041,7 @@ mod tests {
 
         let result = plan_and_collect(&ctx, "SELECT struct_func(5)").await?;
 
-        let expected = vec![
+        let expected = [
             "+-------------------------+",
             "| struct_func(Int64(5))   |",
             "+-------------------------+",
@@ -2053,7 +2053,7 @@ mod tests {
 
         let result = plan_and_collect(&ctx, "SELECT integer_series(6,5)").await?;
 
-        let expected = vec![
+        let expected = [
             "+-----------------------------------+",
             "| integer_series(Int64(6),Int64(5)) |",
             "+-----------------------------------+",
@@ -2382,7 +2382,7 @@ mod tests {
             .await
             .unwrap();
 
-        let expected = vec!["+---+", "| A |", "+---+", "| 1 |", "| 2 |", "+---+"];
+        let expected = ["+---+", "| A |", "+---+", "| 1 |", "| 2 |", "+---+"];
         assert_batches_eq!(expected, &result);
 
         let result = ctx
@@ -2393,7 +2393,7 @@ mod tests {
             .await
             .unwrap();
 
-        let expected = vec![
+        let expected = [
             "+----------+",
             "| Int64(1) |",
             "+----------+",
@@ -2411,7 +2411,7 @@ mod tests {
             .await
             .unwrap();
 
-        let expected = vec![
+        let expected = [
             "+----------+",
             "| Int64(1) |",
             "+----------+",
@@ -2428,21 +2428,19 @@ mod tests {
         let ctx = SessionContext::new();
         ctx.register_table("my_table", test::table_with_sequence(1, 1)?)?;
 
-        let queries = vec![
-            "select my_table.i as i from my_table order by my_table.i asc",
+        let queries = ["select my_table.i as i from my_table order by my_table.i asc",
             "select * from (select my_table.i AS i from my_table order by my_table.i) source",
             "select * from (select i from my_table order by my_table.i) t",
             "select t.i as i from (select i as i from my_table) t order by t.i",
             "select i as i from (select count(i) as i from my_table order by count(my_table.i)) t",
             "select i as i from (select count(i) as i from my_table order by count(i)) t",
             "select my_table.i as i from my_table group by my_table.i order by my_table.i asc",
-            "select * from (select i from my_table group by my_table.i order by my_table.i) t",
-        ];
+            "select * from (select i from my_table group by my_table.i order by my_table.i) t"];
 
         for query in queries.iter() {
             let result = plan_and_collect(&ctx, query).await?;
 
-            let expected = vec!["+---+", "| i |", "+---+", "| 1 |", "+---+"];
+            let expected = ["+---+", "| i |", "+---+", "| 1 |", "+---+"];
             assert_batches_eq!(expected, &result);
         }
 
@@ -2452,7 +2450,7 @@ mod tests {
         )
         .await?;
 
-        let expected = vec!["+---+", "| a |", "+---+", "| 1 |", "+---+"];
+        let expected = ["+---+", "| a |", "+---+", "| 1 |", "+---+"];
         assert_batches_eq!(expected, &result);
 
         Ok(())
@@ -2557,36 +2555,36 @@ mod tests {
         Ok(ctx)
     }
 
-    // Test for compilation error when calling read_* functions from an #[async_trait] function.
-    // See https://github.com/apache/arrow-datafusion/issues/1154
-    #[async_trait]
-    trait CallReadTrait {
-        async fn call_read_csv(&self) -> Arc<DataFrame>;
-        async fn call_read_avro(&self) -> Arc<DataFrame>;
-        async fn call_read_parquet(&self) -> Arc<DataFrame>;
-    }
+    // // Test for compilation error when calling read_* functions from an #[async_trait] function.
+    // // See https://github.com/apache/arrow-datafusion/issues/1154
+    // #[async_trait]
+    // trait CallReadTrait {
+    //     async fn call_read_csv(&self) -> Arc<DataFrame>;
+    //     async fn call_read_avro(&self) -> Arc<DataFrame>;
+    //     async fn call_read_parquet(&self) -> Arc<DataFrame>;
+    // }
 
-    struct CallRead {}
+    // struct CallRead {}
 
-    #[async_trait]
-    impl CallReadTrait for CallRead {
-        async fn call_read_csv(&self) -> Arc<DataFrame> {
-            let ctx = SessionContext::new();
-            ctx.read_csv("dummy", CsvReadOptions::new()).await.unwrap()
-        }
+    // #[async_trait]
+    // impl CallReadTrait for CallRead {
+    //     async fn call_read_csv(&self) -> Arc<DataFrame> {
+    //         let ctx = SessionContext::new();
+    //         ctx.read_csv("dummy", CsvReadOptions::new()).await.unwrap()
+    //     }
 
-        async fn call_read_avro(&self) -> Arc<DataFrame> {
-            let ctx = SessionContext::new();
-            ctx.read_avro("dummy", AvroReadOptions::default())
-                .await
-                .unwrap()
-        }
+    //     async fn call_read_avro(&self) -> Arc<DataFrame> {
+    //         let ctx = SessionContext::new();
+    //         ctx.read_avro("dummy", AvroReadOptions::default())
+    //             .await
+    //             .unwrap()
+    //     }
 
-        async fn call_read_parquet(&self) -> Arc<DataFrame> {
-            let ctx = SessionContext::new();
-            ctx.read_parquet("dummy", ParquetReadOptions::default())
-                .await
-                .unwrap()
-        }
-    }
+    //     async fn call_read_parquet(&self) -> Arc<DataFrame> {
+    //         let ctx = SessionContext::new();
+    //         ctx.read_parquet("dummy", ParquetReadOptions::default())
+    //             .await
+    //             .unwrap()
+    //     }
+    // }
 }

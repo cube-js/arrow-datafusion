@@ -151,7 +151,7 @@ fn optimize_plan(
                                 )?;
                                 let new_group_expr = res.0;
 
-                                rewritten_expr.extend(res.1.into_iter());
+                                rewritten_expr.extend(res.1);
 
                                 let res = rewrite_aggregate_expr(
                                     aggr_expr,
@@ -161,7 +161,7 @@ fn optimize_plan(
                                 )?;
                                 let new_aggr_expr = res.0;
 
-                                rewritten_expr.extend(res.1.into_iter());
+                                rewritten_expr.extend(res.1);
 
                                 let schema = Arc::new(DFSchema::new_with_metadata(
                                     schema
@@ -446,7 +446,7 @@ fn merge_aggregate(parent: &Aggregate, child: &Aggregate) -> Option<Aggregate> {
     let new_schema_fields = child.schema.fields()[..child.group_expr.len()]
         .iter()
         .cloned()
-        .chain(new_schema_fields.into_iter())
+        .chain(new_schema_fields)
         .chain(
             child.schema.fields()[child.group_expr.len()..]
                 .iter()
@@ -458,7 +458,7 @@ fn merge_aggregate(parent: &Aggregate, child: &Aggregate) -> Option<Aggregate> {
         .metadata()
         .clone()
         .into_iter()
-        .chain(parent.schema.metadata().clone().into_iter())
+        .chain(parent.schema.metadata().clone())
         .collect();
     let new_schema =
         DFSchema::new_with_metadata(new_schema_fields, new_schema_metadata).ok()?;

@@ -49,7 +49,7 @@ async fn information_schema_tables_no_tables() {
         .await
         .unwrap();
 
-    let expected = vec![
+    let expected = [
         "+---------------+--------------------+------------+------------+",
         "| table_catalog | table_schema       | table_name | table_type |",
         "+---------------+--------------------+------------+------------+",
@@ -73,7 +73,7 @@ async fn information_schema_tables_tables_default_catalog() {
         .await
         .unwrap();
 
-    let expected = vec![
+    let expected = [
         "+---------------+--------------------+------------+------------+",
         "| table_catalog | table_schema       | table_name | table_type |",
         "+---------------+--------------------+------------+------------+",
@@ -92,7 +92,7 @@ async fn information_schema_tables_tables_default_catalog() {
         .await
         .unwrap();
 
-    let expected = vec![
+    let expected = [
         "+---------------+--------------------+------------+------------+",
         "| table_catalog | table_schema       | table_name | table_type |",
         "+---------------+--------------------+------------+------------+",
@@ -172,6 +172,7 @@ async fn information_schema_tables_table_types() {
             unimplemented!()
         }
 
+        #[allow(clippy::diverging_sub_expression)]
         async fn scan(
             &self,
             _: &Option<Vec<usize>>,
@@ -234,7 +235,7 @@ async fn information_schema_show_tables() {
     // use show tables alias
     let result = plan_and_collect(&ctx, "SHOW TABLES").await.unwrap();
 
-    let expected = vec![
+    let expected = [
         "+---------------+--------------------+------------+------------+",
         "| table_catalog | table_schema       | table_name | table_type |",
         "+---------------+--------------------+------------+------------+",
@@ -295,13 +296,11 @@ async fn information_schema_show_columns() {
 
     let result = plan_and_collect(&ctx, "SHOW COLUMNS FROM t").await.unwrap();
 
-    let expected = vec![
-        "+---------------+--------------+------------+-------------+-----------+-------------+",
+    let expected = ["+---------------+--------------+------------+-------------+-----------+-------------+",
         "| table_catalog | table_schema | table_name | column_name | data_type | is_nullable |",
         "+---------------+--------------+------------+-------------+-----------+-------------+",
         "| datafusion    | public       | t          | i           | Int32     | YES         |",
-        "+---------------+--------------+------------+-------------+-----------+-------------+",
-    ];
+        "+---------------+--------------+------------+-------------+-----------+-------------+"];
     assert_batches_sorted_eq!(expected, &result);
 
     let result = plan_and_collect(&ctx, "SHOW columns from t").await.unwrap();
@@ -329,13 +328,11 @@ async fn information_schema_show_columns_full_extended() {
     let result = plan_and_collect(&ctx, "SHOW FULL COLUMNS FROM t")
         .await
         .unwrap();
-    let expected = vec![
-        "+---------------+--------------+------------+-------------+------------------+----------------+-------------+-----------+--------------------------+------------------------+-------------------+-------------------------+---------------+--------------------+---------------+",
+    let expected = ["+---------------+--------------+------------+-------------+------------------+----------------+-------------+-----------+--------------------------+------------------------+-------------------+-------------------------+---------------+--------------------+---------------+",
         "| table_catalog | table_schema | table_name | column_name | ordinal_position | column_default | is_nullable | data_type | character_maximum_length | character_octet_length | numeric_precision | numeric_precision_radix | numeric_scale | datetime_precision | interval_type |",
         "+---------------+--------------+------------+-------------+------------------+----------------+-------------+-----------+--------------------------+------------------------+-------------------+-------------------------+---------------+--------------------+---------------+",
         "| datafusion    | public       | t          | i           | 0                |                | YES         | Int32     |                          |                        | 32                | 2                       |               |                    |               |",
-        "+---------------+--------------+------------+-------------+------------------+----------------+-------------+-----------+--------------------------+------------------------+-------------------+-------------------------+---------------+--------------------+---------------+",
-    ];
+        "+---------------+--------------+------------+-------------+------------------+----------------+-------------+-----------+--------------------------+------------------------+-------------------+-------------------------+---------------+--------------------+---------------+"];
     assert_batches_sorted_eq!(expected, &result);
 
     let result = plan_and_collect(&ctx, "SHOW EXTENDED COLUMNS FROM t")
@@ -356,13 +353,11 @@ async fn information_schema_show_table_table_names() {
         .await
         .unwrap();
 
-    let expected = vec![
-        "+---------------+--------------+------------+-------------+-----------+-------------+",
+    let expected = ["+---------------+--------------+------------+-------------+-----------+-------------+",
         "| table_catalog | table_schema | table_name | column_name | data_type | is_nullable |",
         "+---------------+--------------+------------+-------------+-----------+-------------+",
         "| datafusion    | public       | t          | i           | Int32     | YES         |",
-        "+---------------+--------------+------------+-------------+-----------+-------------+",
-    ];
+        "+---------------+--------------+------------+-------------+-----------+-------------+"];
     assert_batches_sorted_eq!(expected, &result);
 
     let result = plan_and_collect(&ctx, "SHOW columns from datafusion.public.t")

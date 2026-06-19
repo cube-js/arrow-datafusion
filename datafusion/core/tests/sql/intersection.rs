@@ -22,7 +22,7 @@ async fn intersect_with_null_not_equal() {
     let sql = "SELECT * FROM (SELECT null AS id1, 1 AS id2) t1
             INTERSECT SELECT * FROM (SELECT null AS id1, 2 AS id2) t2";
 
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     let ctx = create_join_context_qualified("t1", "t2").unwrap();
     let actual = execute_to_batches(&ctx, sql).await;
     assert_batches_eq!(expected, &actual);
@@ -33,7 +33,7 @@ async fn intersect_with_null_equal() {
     let sql = "SELECT * FROM (SELECT null AS id1, 1 AS id2) t1
             INTERSECT SELECT * FROM (SELECT null AS id1, 1 AS id2) t2";
 
-    let expected = vec![
+    let expected = [
         "+-----+-----+",
         "| id1 | id2 |",
         "+-----+-----+",
@@ -54,7 +54,7 @@ async fn test_intersect_all() -> Result<()> {
     // execute the query
     let sql = "SELECT int_col, double_col FROM alltypes_plain where int_col > 0 INTERSECT ALL SELECT int_col, double_col FROM alltypes_plain LIMIT 4";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------+------------+",
         "| int_col | double_col |",
         "+---------+------------+",
@@ -75,7 +75,7 @@ async fn test_intersect_distinct() -> Result<()> {
     // execute the query
     let sql = "SELECT int_col, double_col FROM alltypes_plain where int_col > 0 INTERSECT SELECT int_col, double_col FROM alltypes_plain";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+---------+------------+",
         "| int_col | double_col |",
         "+---------+------------+",

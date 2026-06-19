@@ -199,7 +199,7 @@ async fn benchmark_datafusion(opt: DataFusionBenchmarkOpt) -> Result<Vec<RecordB
         let plan = create_logical_plan(&ctx, opt.query)?;
         result = execute_query(&ctx, &plan, opt.debug).await?;
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
-        millis.push(elapsed as f64);
+        millis.push(elapsed);
         let row_count = result.iter().map(|b| b.num_rows()).sum();
         println!(
             "Query {} iteration {} took {:.1} ms and returned {} rows",
@@ -542,10 +542,7 @@ impl BenchmarkRun {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .expect("current time is later than UNIX_EPOCH")
                 .as_secs(),
-            arguments: std::env::args()
-                .skip(1)
-                .into_iter()
-                .collect::<Vec<String>>(),
+            arguments: std::env::args().skip(1).collect::<Vec<String>>(),
             query,
             iterations: vec![],
         }

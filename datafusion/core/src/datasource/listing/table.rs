@@ -94,7 +94,7 @@ impl ListingTableConfig {
 
     fn infer_format(suffix: &str) -> Result<Arc<dyn FileFormat>> {
         match suffix {
-            "avro" => Ok(Arc::new(AvroFormat::default())),
+            "avro" => Ok(Arc::new(AvroFormat)),
             "csv" => Ok(Arc::new(CsvFormat::default())),
             "json" => Ok(Arc::new(JsonFormat::default())),
             "parquet" => Ok(Arc::new(ParquetFormat::default())),
@@ -176,6 +176,7 @@ pub struct ListingOptions {
     /// partitioning expected should be named "a" and "b":
     /// - If there is a third level of partitioning it will be ignored.
     /// - Files that don't follow this partitioning will be ignored.
+    ///
     /// Note that only `DEFAULT_PARTITION_COLUMN_DATATYPE` is currently
     /// supported for the column type.
     pub table_partition_cols: Vec<String>,

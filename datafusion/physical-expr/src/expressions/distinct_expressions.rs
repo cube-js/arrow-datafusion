@@ -834,17 +834,17 @@ mod tests {
     #[test]
     fn count_distinct_merge_batch() -> Result<()> {
         let state_in1 = build_list!(
-            vec![
+            [
                 Some(vec![Some(-1_i32), Some(-1_i32), Some(-2_i32), Some(-2_i32)]),
-                Some(vec![Some(-2_i32), Some(-3_i32)]),
+                Some(vec![Some(-2_i32), Some(-3_i32)])
             ],
             Int32Builder
         )?;
 
         let state_in2 = build_list!(
-            vec![
+            [
                 Some(vec![Some(5_i64), Some(6_i64), Some(5_i64), Some(7_i64)]),
-                Some(vec![Some(5_i64), Some(7_i64)]),
+                Some(vec![Some(5_i64), Some(7_i64)])
             ],
             Int64Builder
         )?;

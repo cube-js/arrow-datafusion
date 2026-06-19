@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::convert::TryFrom;
 use std::fs::File;
 use std::io::Write;
 use std::sync::Arc;
@@ -858,7 +857,8 @@ pub fn make_timestamps() -> RecordBatch {
             t.map(|t| {
                 t.parse::<chrono::NaiveDateTime>()
                     .unwrap()
-                    .timestamp_nanos()
+                    .timestamp_nanos_opt()
+                    .unwrap()
             })
         })
         .collect::<Vec<_>>();

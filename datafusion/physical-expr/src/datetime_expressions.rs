@@ -312,7 +312,7 @@ fn to_interval_single(interval_period: i64, interval_unit: &str) -> Result<Scala
                 * SECONDS_PER_HOUR
                 * MILLIS_PER_SECOND;
 
-            (month_part as i32, day_part as i64, millis_part)
+            (month_part as i32, day_part, millis_part)
         };
 
     let (result_month, result_days, result_millis) =
@@ -334,7 +334,7 @@ fn to_interval_single(interval_period: i64, interval_unit: &str) -> Result<Scala
         }?;
 
     if result_month != 0 {
-        return Ok(ScalarValue::IntervalYearMonth(Some(result_month as i32)));
+        return Ok(ScalarValue::IntervalYearMonth(Some(result_month)));
     }
 
     // TODO simplify code above to get rid of these casts
@@ -357,7 +357,7 @@ fn to_interval_single(interval_period: i64, interval_unit: &str) -> Result<Scala
 pub fn make_now(
     now_ts: DateTime<Utc>,
 ) -> impl Fn(&[ColumnarValue]) -> Result<ColumnarValue> {
-    let now_ts = Some(now_ts.timestamp_nanos());
+    let now_ts = now_ts.timestamp_nanos_opt();
     move |_arg| {
         Ok(ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
             now_ts,
@@ -395,7 +395,7 @@ fn quarter_month(date: &NaiveDateTime) -> u32 {
 pub fn make_utc_timestamp(
     now_ts: DateTime<Utc>,
 ) -> impl Fn(&[ColumnarValue]) -> Result<ColumnarValue> {
-    let now_ts = Some(now_ts.timestamp_nanos());
+    let now_ts = now_ts.timestamp_nanos_opt();
     move |_arg| {
         Ok(ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
             now_ts, None,
@@ -445,7 +445,7 @@ fn date_trunc_single(granularity: &str, value: i64) -> Result<i64> {
         }
     };
     // `with_x(0)` are infalible because `0` are always a valid
-    Ok(value.unwrap().timestamp_nanos())
+    Ok(value.unwrap().and_utc().timestamp_nanos_opt().unwrap())
 }
 
 /// date_trunc SQL function

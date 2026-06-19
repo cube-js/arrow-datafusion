@@ -144,7 +144,7 @@ impl<F: FormatReaderOpener> Stream for FileStream<F> {
     ) -> Poll<Option<Self::Item>> {
         // check if finished or no limit
         match self.remain {
-            Some(r) if r == 0 => return Poll::Ready(None),
+            Some(0) => return Poll::Ready(None),
             None => return Poll::Ready(self.get_mut().next_batch()),
             Some(r) => r,
         };

@@ -262,7 +262,7 @@ pub trait ExecutionPlan: Debug + Send + Sync {
 /// The size of `children` must be equal to the size of `ExecutionPlan::children()`.
 /// Allow the vtable address comparisons for ExecutionPlan Trait Objects，it is harmless even
 /// in the case of 'false-native'.
-#[allow(clippy::vtable_address_comparisons)]
+#[allow(ambiguous_wide_pointer_comparisons)]
 pub fn with_new_children_if_necessary(
     plan: Arc<dyn ExecutionPlan>,
     children: Vec<Arc<dyn ExecutionPlan>>,
@@ -346,7 +346,7 @@ pub fn accept<V: ExecutionPlanVisitor>(
 /// depth first walk of `ExecutionPlan` nodes. `pre_visit` is called
 /// before any children are visited, and then `post_visit` is called
 /// after all children have been visited.
-////
+///
 /// To use, define a struct that implements this trait and then invoke
 /// ['accept'].
 ///

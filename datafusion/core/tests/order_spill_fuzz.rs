@@ -103,7 +103,7 @@ fn make_staggered_batches(len: usize) -> Vec<RecordBatch> {
     let mut rng = rand::thread_rng();
     let mut input: Vec<i32> = vec![0; len];
     rng.fill(&mut input[..]);
-    let input = Int32Array::from_iter_values(input.into_iter());
+    let input = Int32Array::from_iter_values(input);
 
     // split into several record batches
     let mut remainder =

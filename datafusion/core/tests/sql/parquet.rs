@@ -142,7 +142,7 @@ async fn parquet_list_columns() {
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap(),
-        &StringArray::try_from(vec![Some("abc"), Some("efg"), Some("hij"),]).unwrap()
+        &StringArray::from(vec![Some("abc"), Some("efg"), Some("hij"),])
     );
 
     assert_eq!(
@@ -188,7 +188,7 @@ async fn schema_merge_ignores_metadata() {
         Field::new("id", DataType::Int32, true),
         Field::new("name", DataType::Utf8, true),
     ];
-    let schemas = vec![
+    let schemas = [
         Arc::new(Schema::new_with_metadata(
             fields.clone(),
             non_empty_metadata.clone(),

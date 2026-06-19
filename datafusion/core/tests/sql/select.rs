@@ -30,7 +30,7 @@ async fn all_where_empty() -> Result<()> {
                FROM aggregate_test_100
                WHERE 1=2";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -41,7 +41,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (1)";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+",
             "| column1 |",
             "+---------+",
@@ -53,7 +53,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (-1)";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+",
             "| column1 |",
             "+---------+",
@@ -65,7 +65,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (2+1,2-1,2>1)";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+---------+---------+",
             "| column1 | column2 | column3 |",
             "+---------+---------+---------+",
@@ -87,7 +87,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (1),(2)";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+",
             "| column1 |",
             "+---------+",
@@ -105,7 +105,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (1,'a'),(2,'b')";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+---------+",
             "| column1 | column2 |",
             "+---------+---------+",
@@ -138,7 +138,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (1,'a'),(NULL,'b'),(3,'c')";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+---------+",
             "| column1 | column2 |",
             "+---------+---------+",
@@ -152,7 +152,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (NULL,'a'),(NULL,'b'),(3,'c')";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+---------+",
             "| column1 | column2 |",
             "+---------+---------+",
@@ -166,7 +166,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (NULL,'a'),(NULL,'b'),(NULL,'c')";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+---------+",
             "| column1 | column2 |",
             "+---------+---------+",
@@ -180,7 +180,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (1,'a'),(2,NULL),(3,'c')";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+---------+",
             "| column1 | column2 |",
             "+---------+---------+",
@@ -194,7 +194,7 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (1,NULL),(2,NULL),(3,'c')";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+---------+---------+",
             "| column1 | column2 |",
             "+---------+---------+",
@@ -208,19 +208,17 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "VALUES (1,2,3,4,5,6,7,8,9,10,11,12,13,NULL,'F',3.5)";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
-            "+---------+---------+---------+---------+---------+---------+---------+---------+---------+----------+----------+----------+----------+----------+----------+----------+",
+        let expected = ["+---------+---------+---------+---------+---------+---------+---------+---------+---------+----------+----------+----------+----------+----------+----------+----------+",
             "| column1 | column2 | column3 | column4 | column5 | column6 | column7 | column8 | column9 | column10 | column11 | column12 | column13 | column14 | column15 | column16 |",
             "+---------+---------+---------+---------+---------+---------+---------+---------+---------+----------+----------+----------+----------+----------+----------+----------+",
             "| 1       | 2       | 3       | 4       | 5       | 6       | 7       | 8       | 9       | 10       | 11       | 12       | 13       |          | F        | 3.5      |",
-            "+---------+---------+---------+---------+---------+---------+---------+---------+---------+----------+----------+----------+----------+----------+----------+----------+",
-        ];
+            "+---------+---------+---------+---------+---------+---------+---------+---------+---------+----------+----------+----------+----------+----------+----------+----------+"];
         assert_batches_eq!(expected, &actual);
     }
     {
         let sql = "SELECT * FROM (VALUES (1,'a'),(2,NULL)) AS t(c1, c2)";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
+        let expected = [
             "+----+----+",
             "| c1 | c2 |",
             "+----+----+",
@@ -233,15 +231,13 @@ async fn select_values_list() -> Result<()> {
     {
         let sql = "EXPLAIN VALUES (1, 'a', -1, 1.1),(NULL, 'b', -3, 0.5)";
         let actual = execute_to_batches(&ctx, sql).await;
-        let expected = vec![
-            "+---------------+-----------------------------------------------------------------------------------------------------------+",
+        let expected = ["+---------------+-----------------------------------------------------------------------------------------------------------+",
             "| plan_type     | plan                                                                                                      |",
             "+---------------+-----------------------------------------------------------------------------------------------------------+",
             "| logical_plan  | Values: (Int64(1), Utf8(\"a\"), Int64(-1), Float64(1.1)), (Int64(NULL), Utf8(\"b\"), Int64(-3), Float64(0.5)) |",
             "| physical_plan | ValuesExec                                                                                                |",
             "|               |                                                                                                           |",
-            "+---------------+-----------------------------------------------------------------------------------------------------------+",
-        ];
+            "+---------------+-----------------------------------------------------------------------------------------------------------+"];
         assert_batches_eq!(expected, &actual);
     }
     Ok(())
@@ -355,7 +351,7 @@ async fn select_distinct_simple_3() {
     let sql = "SELECT distinct c3 FROM aggregate_simple order by c3";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| c3    |",
         "+-------+",
@@ -403,7 +399,7 @@ async fn select_distinct_from() {
         NULL is NOT DISTINCT FROM 1 as h
     ";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+------+-------+-------+------+-------+------+------+-------+",
         "| a    | b     | c     | d    | e     | f    | g    | h     |",
         "+------+-------+-------+------+-------+------+------+-------+",
@@ -423,7 +419,7 @@ async fn select_distinct_from() {
         1 IS NOT DISTINCT FROM 1 as h
     ";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+------+------+-------+------+-------+-------+------+",
         "| a     | b    | c    | d     | e    | f     | g     | h    |",
         "+-------+------+------+-------+------+-------+-------+------+",
@@ -444,7 +440,7 @@ async fn select_distinct_from_utf8() {
         'x' IS NOT DISTINCT FROM 'x' as d
     ";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+------+-------+-------+------+",
         "| a    | b     | c     | d    |",
         "+------+-------+-------+------+",
@@ -491,7 +487,7 @@ async fn use_between_expression_in_select_query() -> Result<()> {
 
     let sql = "SELECT 1 NOT BETWEEN 3 AND 5";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+--------------------------------------------+",
         "| Int64(1) NOT BETWEEN Int64(3) AND Int64(5) |",
         "+--------------------------------------------+",
@@ -508,7 +504,7 @@ async fn use_between_expression_in_select_query() -> Result<()> {
     let sql = "SELECT abs(c1) BETWEEN 0 AND LoG(c1 * 100 ) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
     // Expect field name to be correctly converted for expr, low and high.
-    let expected = vec![
+    let expected = [
         "+--------------------------------------------------------------------+",
         "| abs(test.c1) BETWEEN Int64(0) AND log(test.c1 Multiply Int64(100)) |",
         "+--------------------------------------------------------------------+",
@@ -545,7 +541,7 @@ async fn query_get_indexed_field() -> Result<()> {
     )]));
     let builder = PrimitiveBuilder::<Int64Type>::new(3);
     let mut lb = ListBuilder::new(builder);
-    for int_vec in vec![vec![0, 1, 2], vec![4, 5, 6], vec![7, 8, 9]] {
+    for int_vec in [vec![0, 1, 2], vec![4, 5, 6], vec![7, 8, 9]] {
         let builder = lb.values();
         for int in int_vec {
             builder.append_value(int).unwrap();
@@ -563,15 +559,13 @@ async fn query_get_indexed_field() -> Result<()> {
     let sql = "SELECT some_list[1] as i0 FROM ints LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+----+",
+    let expected = ["+----+",
         "| i0 |",
         "+----+",
         "| 0  |",
         "| 4  |",
         "| 7  |",
-        "+----+",
-    ];
+        "+----+"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -590,7 +584,7 @@ async fn query_nested_get_indexed_field() -> Result<()> {
     let builder = PrimitiveBuilder::<Int64Type>::new(3);
     let nested_lb = ListBuilder::new(builder);
     let mut lb = ListBuilder::new(nested_lb);
-    for int_vec_vec in vec![
+    for int_vec_vec in [
         vec![vec![0, 1], vec![2, 3], vec![3, 4]],
         vec![vec![5, 6], vec![7, 8], vec![9, 10]],
         vec![vec![11, 12], vec![13, 14], vec![15, 16]],
@@ -615,7 +609,7 @@ async fn query_nested_get_indexed_field() -> Result<()> {
     // Original column is micros, convert to millis and check timestamp
     let sql = "SELECT some_list[1] as i0 FROM ints LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------+",
         "| i0       |",
         "+----------+",
@@ -629,7 +623,7 @@ async fn query_nested_get_indexed_field() -> Result<()> {
     // nested with scalar values
     let sql = "SELECT some_list[1][1] as i0 FROM ints LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----+", "| i0 |", "+----+", "| 0  |", "| 5  |", "| 11 |", "+----+",
     ];
     assert_batches_eq!(expected, &actual);
@@ -639,15 +633,13 @@ async fn query_nested_get_indexed_field() -> Result<()> {
     let sql = "SELECT some_list[2 - 1][2 - 1] as i0 FROM ints LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+----+",
+    let expected = ["+----+",
         "| i0 |",
         "+----+",
         "| 0  |",
         "| 5  |",
         "| 11 |",
-        "+----+",
-    ];
+        "+----+"];
     assert_batches_eq!(expected, &actual);
 
     Ok(())
@@ -667,7 +659,7 @@ async fn query_get_indexed_array_dynamic_key() -> Result<()> {
     let mut arr_builder = ListBuilder::new(array_ints_builder);
     let mut key_builder = PrimitiveBuilder::<Int64Type>::new(3);
 
-    for (int_vec, key) in vec![
+    for (int_vec, key) in [
         (vec![0, 1, 2, 3], 1),
         (vec![4, 5, 6, 7], 2),
         (vec![8, 9, 10, 11], 3),
@@ -694,7 +686,7 @@ async fn query_get_indexed_array_dynamic_key() -> Result<()> {
 
     let sql = "SELECT arr[key], key FROM array_and_keys";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------------------------------+-----+",
         "| array_and_keys.arr[array_and_keys.key] | key |",
         "+----------------------------------------+-----+",
@@ -708,7 +700,7 @@ async fn query_get_indexed_array_dynamic_key() -> Result<()> {
     // All dynamic
     let sql = "SELECT r.value[r.key] FROM (SELECT array[1,2,3] as value, 1 as key UNION ALL SELECT array[4,5,6] as value, 2 as key) as r";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------+",
         "| r.value[r.key] |",
         "+----------------+",
@@ -736,7 +728,7 @@ async fn query_nested_get_indexed_field_on_struct() -> Result<()> {
     let builder = PrimitiveBuilder::<Int64Type>::new(3);
     let nested_lb = ListBuilder::new(builder);
     let mut sb = StructBuilder::new(struct_fields, vec![Box::new(nested_lb)]);
-    for int_vec in vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]] {
+    for int_vec in [vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]] {
         let lb = sb.field_builder::<ListBuilder<Int64Builder>>(0).unwrap();
         for int in int_vec {
             lb.values().append_value(int).unwrap();
@@ -752,7 +744,7 @@ async fn query_nested_get_indexed_field_on_struct() -> Result<()> {
     // Original column is micros, convert to millis and check timestamp
     let sql = "SELECT some_struct['bar'] as l0 FROM structs LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------+",
         "| l0             |",
         "+----------------+",
@@ -766,7 +758,7 @@ async fn query_nested_get_indexed_field_on_struct() -> Result<()> {
     // Access to field of struct by CompoundIdentifier
     let sql = "SELECT some_struct.bar as l0 FROM structs LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------+",
         "| l0             |",
         "+----------------+",
@@ -780,15 +772,13 @@ async fn query_nested_get_indexed_field_on_struct() -> Result<()> {
     let sql = "SELECT some_struct['bar'][1] as i0 FROM structs LIMIT 3";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+----+",
+    let expected = ["+----+",
         "| i0 |",
         "+----+",
         "| 0  |",
         "| 4  |",
         "| 8  |",
-        "+----+",
-    ];
+        "+----+"];
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
@@ -798,7 +788,7 @@ async fn not_indexed_expr() -> Result<()> {
     let ctx = SessionContext::new();
     let sql = "SELECT r.t FROM (SELECT 1 as t) AS r";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec!["+---+", "| t |", "+---+", "| 1 |", "+---+"];
+    let expected = ["+---+", "| t |", "+---+", "| 1 |", "+---+"];
     assert_batches_eq!(expected, &actual);
 
     Ok(())
@@ -831,7 +821,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // Basic SELECT
     let sql = "SELECT d1 FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| d1    |",
         "+-------+",
@@ -845,7 +835,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // basic filtering
     let sql = "SELECT d1 FROM test WHERE d1 IS NOT NULL";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| d1    |",
         "+-------+",
@@ -858,7 +848,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // comparison with constant
     let sql = "SELECT d1 FROM test WHERE d1 = 'three'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| d1    |",
         "+-------+",
@@ -870,7 +860,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // comparison with another dictionary column
     let sql = "SELECT d1 FROM test WHERE d1 = d2";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| d1    |",
         "+-------+",
@@ -882,7 +872,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // order comparison with another dictionary column
     let sql = "SELECT d1 FROM test WHERE d1 <= d2";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| d1    |",
         "+-------+",
@@ -894,7 +884,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // comparison with a non dictionary column
     let sql = "SELECT d1 FROM test WHERE d1 = d3";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| d1    |",
         "+-------+",
@@ -906,7 +896,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // filtering with constant
     let sql = "SELECT d1 FROM test WHERE d1 = 'three'";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+",
         "| d1    |",
         "+-------+",
@@ -918,7 +908,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // Expression evaluation
     let sql = "SELECT concat(d1, '-foo') FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+------------------------------+",
         "| concat(test.d1,Utf8(\"-foo\")) |",
         "+------------------------------+",
@@ -932,7 +922,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // Expression evaluation with two dictionaries
     let sql = "SELECT concat(d1, d2) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------------------------+",
         "| concat(test.d1,test.d2) |",
         "+-------------------------+",
@@ -946,7 +936,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // aggregation
     let sql = "SELECT COUNT(d1) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------------+",
         "| COUNT(test.d1) |",
         "+----------------+",
@@ -958,7 +948,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // aggregation min
     let sql = "SELECT MIN(d1) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+--------------+",
         "| MIN(test.d1) |",
         "+--------------+",
@@ -970,7 +960,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // aggregation max
     let sql = "SELECT MAX(d1) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+--------------+",
         "| MAX(test.d1) |",
         "+--------------+",
@@ -982,7 +972,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // grouping
     let sql = "SELECT d1, COUNT(*) FROM test group by d1";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+-----------------+",
         "| d1    | COUNT(UInt8(1)) |",
         "+-------+-----------------+",
@@ -996,7 +986,7 @@ async fn query_on_string_dictionary() -> Result<()> {
     // window functions
     let sql = "SELECT d1, row_number() OVER (partition by d1) FROM test";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+-------+--------------+",
         "| d1    | ROW_NUMBER() |",
         "+-------+--------------+",
@@ -1019,7 +1009,7 @@ async fn query_cte() -> Result<()> {
     // simple with
     let sql = "WITH t AS (SELECT 1) SELECT * FROM t";
     let actual = execute_to_batches(&ctx, sql).await;
-    let expected = vec![
+    let expected = [
         "+----------+",
         "| Int64(1) |",
         "+----------+",
@@ -1033,40 +1023,34 @@ async fn query_cte() -> Result<()> {
         "WITH t AS (SELECT 1 AS a), u AS (SELECT 2 AS a) SELECT * FROM t UNION ALL SELECT * FROM u";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+---+",
+    let expected = ["+---+",
         "| a |",
         "+---+",
         "| 1 |",
         "| 2 |",
-        "+---+"
-    ];
+        "+---+"];
     assert_batches_eq!(expected, &actual);
 
     // with + join
     let sql = "WITH t AS (SELECT 1 AS id1), u AS (SELECT 1 AS id2, 5 as x) SELECT x FROM t JOIN u ON (id1 = id2)";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+---+",
+    let expected = ["+---+",
         "| x |",
         "+---+",
         "| 5 |",
-        "+---+"
-    ];
+        "+---+"];
     assert_batches_eq!(expected, &actual);
 
     // backward reference
     let sql = "WITH t AS (SELECT 1 AS id1), u AS (SELECT * FROM t) SELECT * from u";
     let actual = execute_to_batches(&ctx, sql).await;
     #[rustfmt::skip]
-    let expected = vec![
-        "+-----+",
+    let expected = ["+-----+",
         "| id1 |",
         "+-----+",
         "| 1   |",
-        "+-----+"
-    ];
+        "+-----+"];
     assert_batches_eq!(expected, &actual);
 
     Ok(())
@@ -1169,7 +1153,7 @@ async fn query_empty_table() {
     let result = plan_and_collect(&ctx, sql)
         .await
         .expect("Query empty table");
-    let expected = vec!["++", "++"];
+    let expected = ["++", "++"];
     assert_batches_sorted_eq!(expected, &result);
 }
 
@@ -1279,15 +1263,13 @@ async fn count_distinct_integers_aggregated_single_partition() -> Result<()> {
 
     let results = run_count_distinct_integers_aggregated_scenario(partitions).await?;
 
-    let expected = vec![
-        "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
+    let expected = ["+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
         "| c_group | COUNT(test.c_uint64) | COUNT(DISTINCT test.c_int8) | COUNT(DISTINCT test.c_int16) | COUNT(DISTINCT test.c_int32) | COUNT(DISTINCT test.c_int64) | COUNT(DISTINCT test.c_uint8) | COUNT(DISTINCT test.c_uint16) | COUNT(DISTINCT test.c_uint32) | COUNT(DISTINCT test.c_uint64) |",
         "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
         "| a       | 3                    | 2                           | 2                            | 2                            | 2                            | 2                            | 2                             | 2                             | 2                             |",
         "| b       | 1                    | 1                           | 1                            | 1                            | 1                            | 1                            | 1                             | 1                             | 1                             |",
         "| c       | 3                    | 2                           | 2                            | 2                            | 2                            | 2                            | 2                             | 2                             | 2                             |",
-        "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
-    ];
+        "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+"];
     assert_batches_sorted_eq!(expected, &results);
 
     Ok(())
@@ -1305,15 +1287,13 @@ async fn count_distinct_integers_aggregated_multiple_partitions() -> Result<()> 
 
     let results = run_count_distinct_integers_aggregated_scenario(partitions).await?;
 
-    let expected = vec![
-        "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
+    let expected = ["+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
         "| c_group | COUNT(test.c_uint64) | COUNT(DISTINCT test.c_int8) | COUNT(DISTINCT test.c_int16) | COUNT(DISTINCT test.c_int32) | COUNT(DISTINCT test.c_int64) | COUNT(DISTINCT test.c_uint8) | COUNT(DISTINCT test.c_uint16) | COUNT(DISTINCT test.c_uint32) | COUNT(DISTINCT test.c_uint64) |",
         "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
         "| a       | 5                    | 3                           | 3                            | 3                            | 3                            | 3                            | 3                             | 3                             | 3                             |",
         "| b       | 5                    | 4                           | 4                            | 4                            | 4                            | 4                            | 4                             | 4                             | 4                             |",
         "| c       | 1                    | 1                           | 1                            | 1                            | 1                            | 1                            | 1                             | 1                             | 1                             |",
-        "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+",
-    ];
+        "+---------+----------------------+-----------------------------+------------------------------+------------------------------+------------------------------+------------------------------+-------------------------------+-------------------------------+-------------------------------+"];
     assert_batches_sorted_eq!(expected, &results);
 
     Ok(())

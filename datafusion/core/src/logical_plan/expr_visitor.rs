@@ -107,17 +107,15 @@ impl ExprVisitable for Expr {
                 let visitor = expr.accept(visitor)?;
                 key.accept(visitor)
             }
-            Expr::GroupingSet(GroupingSet::Rollup(exprs)) => exprs
-                .iter()
-                .fold(Ok(visitor), |v, e| v.and_then(|v| e.accept(v))),
-            Expr::GroupingSet(GroupingSet::Cube(exprs)) => exprs
-                .iter()
-                .fold(Ok(visitor), |v, e| v.and_then(|v| e.accept(v))),
+            Expr::GroupingSet(GroupingSet::Rollup(exprs)) => {
+                exprs.iter().try_fold(visitor, |v, e| e.accept(v))
+            }
+            Expr::GroupingSet(GroupingSet::Cube(exprs)) => {
+                exprs.iter().try_fold(visitor, |v, e| e.accept(v))
+            }
             Expr::GroupingSet(GroupingSet::GroupingSets(lists_of_exprs)) => {
-                lists_of_exprs.iter().fold(Ok(visitor), |v, exprs| {
-                    v.and_then(|v| {
-                        exprs.iter().fold(Ok(v), |v, e| v.and_then(|v| e.accept(v)))
-                    })
+                lists_of_exprs.iter().try_fold(visitor, |v, exprs| {
+                    exprs.iter().try_fold(v, |v, e| e.accept(v))
                 })
             }
             Expr::Column(_)

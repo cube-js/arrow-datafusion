@@ -208,6 +208,7 @@ mod tests {
         let values = vec![arr];
         let schema = Schema::new(vec![Field::new("arr", DataType::Int32, false)]);
         let batch = RecordBatch::try_new(Arc::new(schema), values.clone())?;
+        #[allow(clippy::single_range_in_vec_init)]
         let result = expr
             .create_evaluator(&batch)?
             .evaluate_with_rank(vec![0..8], vec![0..8])?;

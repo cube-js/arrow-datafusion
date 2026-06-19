@@ -176,7 +176,6 @@ impl ExecutionPlan for SortPreservingMergeExec {
             }
             _ => {
                 let (receivers, join_handles) = (0..input_partitions)
-                    .into_iter()
                     .map(|part_i| {
                         let (sender, receiver) = mpsc::channel(1);
                         let join_handle = spawn_execution(
@@ -300,10 +299,7 @@ impl SortPreservingMergeStream {
         batch_size: usize,
     ) -> Self {
         let stream_count = receivers.len();
-        let batches = (0..stream_count)
-            .into_iter()
-            .map(|_| VecDeque::new())
-            .collect();
+        let batches = (0..stream_count).map(|_| VecDeque::new()).collect();
         let wrappers = receivers.into_iter().map(StreamWrapper::Receiver).collect();
 
         SortPreservingMergeStream {
@@ -331,10 +327,7 @@ impl SortPreservingMergeStream {
         batch_size: usize,
     ) -> Self {
         let stream_count = streams.len();
-        let batches = (0..stream_count)
-            .into_iter()
-            .map(|_| VecDeque::new())
-            .collect();
+        let batches = (0..stream_count).map(|_| VecDeque::new()).collect();
         tracking_metrics.init_mem_used(streams.iter().map(|s| s.mem_used).sum());
         let wrappers = streams
             .into_iter()
@@ -960,7 +953,6 @@ mod tests {
 
         // Split the sorted RecordBatch into multiple
         (0..batches)
-            .into_iter()
             .map(|batch_idx| {
                 let columns = (0..sorted.num_columns())
                     .map(|column_idx| {
@@ -1271,7 +1263,7 @@ mod tests {
         let merge = Arc::new(SortPreservingMergeExec::new(sort, Arc::new(exec)));
 
         let collected = collect(merge.clone(), task_ctx).await.unwrap();
-        let expected = vec![
+        let expected = [
             "+----+---+",
             "| a  | b |",
             "+----+---+",
@@ -1294,11 +1286,11 @@ mod tests {
         metrics.iter().for_each(|m| match m.value() {
             MetricValue::StartTimestamp(ts) => {
                 saw_start = true;
-                assert!(ts.value().unwrap().timestamp_nanos() > 0);
+                assert!(ts.value().unwrap().timestamp_nanos_opt().unwrap() > 0);
             }
             MetricValue::EndTimestamp(ts) => {
                 saw_end = true;
-                assert!(ts.value().unwrap().timestamp_nanos() > 0);
+                assert!(ts.value().unwrap().timestamp_nanos_opt().unwrap() > 0);
             }
             _ => {}
         });

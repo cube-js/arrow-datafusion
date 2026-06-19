@@ -161,10 +161,7 @@ impl ObjectStoreSchemaProvider {
         &self,
         uri: &'a str,
     ) -> Result<(Arc<dyn ObjectStore>, &'a str)> {
-        self.object_store_registry
-            .lock()
-            .get_by_uri(uri)
-            .map_err(DataFusionError::from)
+        self.object_store_registry.lock().get_by_uri(uri)
     }
 
     /// If supported by the implementation, adds a new table to this schema by creating a

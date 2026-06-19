@@ -31,6 +31,7 @@ use crate::optimizer::utils;
 use arrow::datatypes::DataType;
 use datafusion_expr::expr::GroupingSet;
 use std::collections::{HashMap, HashSet};
+use std::slice;
 use std::sync::Arc;
 
 /// A map from expression's identifier to tuple including
@@ -155,7 +156,7 @@ fn optimize(
             expr_to_identifier(predicate, &mut expr_set, &mut id_array, data_type)?;
 
             let (mut new_expr, new_input) = rewrite_expr(
-                &[&[predicate.clone()]],
+                &[slice::from_ref(predicate)],
                 &[&[id_array]],
                 input,
                 &mut expr_set,

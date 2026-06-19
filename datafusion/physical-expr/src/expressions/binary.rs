@@ -660,7 +660,6 @@ fn string_concat(left: ArrayRef, right: ArrayRef) -> Result<ArrayRef> {
     };
     let ignore_null_array = ignore_null.as_any().downcast_ref::<StringArray>().unwrap();
     let result = (0..ignore_null_array.len())
-        .into_iter()
         .map(|index| {
             if left.is_null(index) || right.is_null(index) {
                 None
@@ -1383,7 +1382,7 @@ impl PhysicalExpr for BinaryExpr {
         };
 
         if let Some(result) = scalar_result {
-            return result.map(|a| ColumnarValue::Array(a));
+            return result.map(ColumnarValue::Array);
         }
 
         // if both arrays or both literals - extract arrays and continue execution
@@ -1392,7 +1391,7 @@ impl PhysicalExpr for BinaryExpr {
             right_value.into_array(batch.num_rows()),
         );
         self.evaluate_with_resolved_args(left, &left_data_type, right, &right_data_type)
-            .map(|a| ColumnarValue::Array(a))
+            .map(ColumnarValue::Array)
     }
 }
 
@@ -1692,11 +1691,11 @@ fn is_not_distinct_from_null(
 }
 
 pub fn eq_null(left: &NullArray, _right: &NullArray) -> Result<BooleanArray> {
-    Ok((0..left.len()).into_iter().map(|_| None).collect())
+    Ok((0..left.len()).map(|_| None).collect())
 }
 
 fn make_boolean_array(length: usize, value: bool) -> Result<BooleanArray> {
-    Ok((0..length).into_iter().map(|_| Some(value)).collect())
+    Ok((0..length).map(|_| Some(value)).collect())
 }
 
 fn is_not_distinct_from<T>(
@@ -1808,7 +1807,7 @@ mod tests {
         let result = lt.evaluate(&batch)?.into_array(batch.num_rows());
         assert_eq!(result.len(), 5);
 
-        let expected = vec![false, false, true, true, true];
+        let expected = [false, false, true, true, true];
         let result = result
             .as_any()
             .downcast_ref::<BooleanArray>()
@@ -1854,7 +1853,7 @@ mod tests {
         let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
         assert_eq!(result.len(), 5);
 
-        let expected = vec![true, true, false, true, false];
+        let expected = [true, true, false, true, false];
         let result = result
             .as_any()
             .downcast_ref::<BooleanArray>()
@@ -1923,7 +1922,7 @@ mod tests {
             Operator::Plus,
             Int32Array,
             DataType::Int32,
-            vec![2i32, 4i32]
+            [2i32, 4i32]
         );
         test_coercion!(
             Int32Array,
@@ -1935,7 +1934,7 @@ mod tests {
             Operator::Plus,
             Int32Array,
             DataType::Int32,
-            vec![2i32]
+            [2i32]
         );
         test_coercion!(
             Float32Array,
@@ -1947,7 +1946,7 @@ mod tests {
             Operator::Plus,
             Float32Array,
             DataType::Float32,
-            vec![2f32]
+            [2f32]
         );
         test_coercion!(
             Float32Array,
@@ -1959,7 +1958,7 @@ mod tests {
             Operator::Multiply,
             Float32Array,
             DataType::Float32,
-            vec![2f32]
+            [2f32]
         );
         test_coercion!(
             Int64Array,
@@ -1971,7 +1970,7 @@ mod tests {
             Operator::Exponentiate,
             Float64Array,
             DataType::Float64,
-            vec![8f64]
+            [8f64]
         );
         test_coercion!(
             StringArray,
@@ -1983,7 +1982,7 @@ mod tests {
             Operator::Like,
             BooleanArray,
             DataType::Boolean,
-            vec![true, false]
+            [true, false]
         );
         test_coercion!(
             StringArray,
@@ -1995,7 +1994,7 @@ mod tests {
             Operator::NotLike,
             BooleanArray,
             DataType::Boolean,
-            vec![false, true]
+            [false, true]
         );
         test_coercion!(
             StringArray,
@@ -2007,7 +2006,7 @@ mod tests {
             Operator::Eq,
             BooleanArray,
             DataType::Boolean,
-            vec![true, true]
+            [true, true]
         );
         test_coercion!(
             StringArray,
@@ -2019,7 +2018,7 @@ mod tests {
             Operator::Lt,
             BooleanArray,
             DataType::Boolean,
-            vec![true, false]
+            [true, false]
         );
         test_coercion!(
             StringArray,
@@ -2031,7 +2030,7 @@ mod tests {
             Operator::Eq,
             BooleanArray,
             DataType::Boolean,
-            vec![true, true]
+            [true, true]
         );
         test_coercion!(
             StringArray,
@@ -2043,7 +2042,7 @@ mod tests {
             Operator::Lt,
             BooleanArray,
             DataType::Boolean,
-            vec![true, false]
+            [true, false]
         );
         test_coercion!(
             StringArray,
@@ -2055,7 +2054,7 @@ mod tests {
             Operator::RegexMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![true, false, true, false, false]
+            [true, false, true, false, false]
         );
         test_coercion!(
             StringArray,
@@ -2067,7 +2066,7 @@ mod tests {
             Operator::RegexIMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![true, true, true, true, false]
+            [true, true, true, true, false]
         );
         test_coercion!(
             StringArray,
@@ -2079,7 +2078,7 @@ mod tests {
             Operator::RegexNotMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![false, true, false, true, true]
+            [false, true, false, true, true]
         );
         test_coercion!(
             StringArray,
@@ -2091,7 +2090,7 @@ mod tests {
             Operator::RegexNotIMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![false, false, false, false, true]
+            [false, false, false, false, true]
         );
         test_coercion!(
             LargeStringArray,
@@ -2103,7 +2102,7 @@ mod tests {
             Operator::RegexMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![true, false, true, false, false]
+            [true, false, true, false, false]
         );
         test_coercion!(
             LargeStringArray,
@@ -2115,7 +2114,7 @@ mod tests {
             Operator::RegexIMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![true, true, true, true, false]
+            [true, true, true, true, false]
         );
         test_coercion!(
             LargeStringArray,
@@ -2127,7 +2126,7 @@ mod tests {
             Operator::RegexNotMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![false, true, false, true, true]
+            [false, true, false, true, true]
         );
         test_coercion!(
             LargeStringArray,
@@ -2139,7 +2138,7 @@ mod tests {
             Operator::RegexNotIMatch,
             BooleanArray,
             DataType::Boolean,
-            vec![false, false, false, false, true]
+            [false, false, false, false, true]
         );
         test_coercion!(
             Int16Array,
@@ -2151,7 +2150,7 @@ mod tests {
             Operator::BitwiseAnd,
             Int64Array,
             DataType::Int64,
-            vec![0i64, 0i64, 1i64]
+            [0i64, 0i64, 1i64]
         );
         test_coercion!(
             Int16Array,
@@ -2163,7 +2162,7 @@ mod tests {
             Operator::BitwiseOr,
             Int64Array,
             DataType::Int64,
-            vec![11i64, 6i64, 7i64]
+            [11i64, 6i64, 7i64]
         );
         Ok(())
     }
@@ -2576,14 +2575,14 @@ mod tests {
     /// Returns (schema, BooleanArray) with [true, NULL, false]
     fn scalar_bool_test_array() -> (SchemaRef, ArrayRef) {
         let schema = Schema::new(vec![Field::new("a", DataType::Boolean, false)]);
-        let a: BooleanArray = vec![Some(true), None, Some(false)].iter().collect();
+        let a: BooleanArray = [Some(true), None, Some(false)].iter().collect();
         (Arc::new(schema), Arc::new(a))
     }
 
     #[test]
     fn eq_op_bool() {
         let (schema, a, b) = bool_test_arrays();
-        let expected = vec![
+        let expected = [
             Some(true),
             None,
             Some(false),
@@ -3004,7 +3003,6 @@ mod tests {
         // build a left deep tree ((((a + a) + a) + a ....
         let tree_depth: i32 = 100;
         let expr = (0..tree_depth)
-            .into_iter()
             .map(|_| col("a", schema.as_ref()).unwrap())
             .reduce(|l, r| binary_simple(l, Operator::Plus, r, &schema))
             .unwrap();
@@ -3292,10 +3290,10 @@ mod tests {
         let value: i128 = 123;
         let decimal_array = Arc::new(create_decimal_array(
             &[
-                Some(value as i128), // 1.23
+                Some(value), // 1.23
                 None,
-                Some((value - 1) as i128), // 1.22
-                Some((value + 1) as i128), // 1.24
+                Some(value - 1), // 1.22
+                Some(value + 1), // 1.24
             ],
             10,
             2,
@@ -3451,10 +3449,10 @@ mod tests {
         let value: i128 = 123;
         let decimal_array = Arc::new(create_decimal_array(
             &[
-                Some(value as i128), // 1.23
+                Some(value), // 1.23
                 None,
-                Some((value - 1) as i128), // 1.22
-                Some((value + 1) as i128), // 1.24
+                Some(value - 1), // 1.22
+                Some(value + 1), // 1.24
             ],
             10,
             2,

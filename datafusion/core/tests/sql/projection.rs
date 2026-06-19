@@ -28,13 +28,11 @@ async fn projection_same_fields() -> Result<()> {
     let actual = execute_to_batches(&ctx, sql).await;
 
     #[rustfmt::skip]
-    let expected = vec![
-        "+---+",
+    let expected = ["+---+",
         "| a |",
         "+---+",
         "| 2 |",
-        "+---+"
-    ];
+        "+---+"];
     assert_batches_eq!(expected, &actual);
 
     Ok(())
@@ -50,7 +48,7 @@ async fn projection_type_alias() -> Result<()> {
     let sql = "SELECT c1 as c3 FROM aggregate_simple ORDER BY c3 LIMIT 2";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec![
+    let expected = [
         "+---------+",
         "| c3      |",
         "+---------+",
@@ -279,7 +277,7 @@ async fn paralleproject_column_with_same_name_as_relationl() -> Result<()> {
     let sql = "select a.a from (select 1 as a) as a;";
     let actual = execute_to_batches(&ctx, sql).await;
 
-    let expected = vec!["+---+", "| a |", "+---+", "| 1 |", "+---+"];
+    let expected = ["+---+", "| a |", "+---+", "| 1 |", "+---+"];
     assert_batches_sorted_eq!(expected, &actual);
 
     Ok(())

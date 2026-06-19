@@ -137,7 +137,7 @@ mod tests {
         // Cast the raw pointer to a typed function pointer. This is unsafe, because
         // this is the critical point where you have to trust that the generated code
         // is safe to be called.
-        let code_fn = core::mem::transmute::<_, fn(I) -> O>(code_ptr);
+        let code_fn = core::mem::transmute::<*const u8, fn(I) -> O>(code_ptr);
         // And now we can call it!
         Ok(code_fn(input))
     }

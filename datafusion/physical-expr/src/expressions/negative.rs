@@ -111,7 +111,7 @@ impl PhysicalExpr for NegativeExpr {
                         array.data_type(),
                     ))),
                 };
-                result.map(|a| ColumnarValue::Array(a))
+                result.map(ColumnarValue::Array)
             }
             ColumnarValue::Scalar(scalar) => {
                 Ok(ColumnarValue::Scalar(scalar.arithmetic_negate()))
