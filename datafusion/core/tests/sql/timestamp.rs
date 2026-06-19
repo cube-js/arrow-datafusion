@@ -353,6 +353,57 @@ async fn to_timestamp_offset_variants() -> Result<()> {
 }
 
 #[tokio::test]
+async fn to_timestamp_named_timezone() -> Result<()> {
+    // Trailing IANA timezone name, e.g. `America/Los_Angeles`, which
+    // PostgreSQL accepts. The wall-clock time is interpreted in that zone
+    // and converted to a UTC instant (UTC-7 / PDT in June, so 00:00:00 local
+    // is 07:00:00 UTC). Both `to_timestamp` and the timezone-naive
+    // `CAST(... AS TIMESTAMP)` convert, treating the value as if it carried a
+    // UTC zone, which is close enough to PostgreSQL `TIMESTAMPTZ`.
+    let ctx = SessionContext::new();
+
+    let cases = vec![
+        // Each row: (sql_expr, expected_value)
+        (
+            "to_timestamp('2026-06-15 00:00:00 America/Los_Angeles')",
+            "2026-06-15 07:00:00",
+        ),
+        (
+            "to_timestamp('2026-06-15T00:00:00 America/Los_Angeles')",
+            "2026-06-15 07:00:00",
+        ),
+        (
+            "to_timestamp('2026-06-15 00:00:00 UTC')",
+            "2026-06-15 00:00:00",
+        ),
+        (
+            "CAST('2026-06-15 00:00:00 America/Los_Angeles' AS TIMESTAMP)",
+            "2026-06-15 07:00:00",
+        ),
+        (
+            "CAST('2026-06-15 00:00:00 UTC' AS TIMESTAMP)",
+            "2026-06-15 00:00:00",
+        ),
+    ];
+
+    for (expr, expected_value) in cases {
+        let sql = format!("SELECT {} AS ts", expr);
+        let actual = execute_to_batches(&ctx, &sql).await;
+        let actual_str = arrow::util::pretty::pretty_format_batches(&actual)
+            .unwrap()
+            .to_string();
+        assert!(
+            actual_str.contains(expected_value),
+            "expected '{}' to contain '{}'; got:\n{}",
+            expr,
+            expected_value,
+            actual_str
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn to_timestamp_millis() -> Result<()> {
     let ctx = SessionContext::new();
     ctx.register_table(
