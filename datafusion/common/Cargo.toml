@@ -40,10 +40,10 @@ pyarrow = ["pyo3"]
 parquet-all-compressions = ["parquet/snap", "parquet/brotli", "parquet/flate2", "parquet/lz4", "parquet/zstd"]
 
 [dependencies]
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "64899e4bbf07a111a94ac2084a6b70ae2374e421", features = ["prettyprint"] }
+arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "de57e9799dcfde7bdd02885e63b65e3499f192e5", features = ["prettyprint", "chrono-tz"] }
 avro-rs = { version = "0.13", features = ["snappy"], optional = true }
 cranelift-module = { version = "0.82.0", optional = true }
 ordered-float = "2.10"
-parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "64899e4bbf07a111a94ac2084a6b70ae2374e421", features = ["arrow", "base64"], default-features = false, optional = true }
+parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "de57e9799dcfde7bdd02885e63b65e3499f192e5", features = ["arrow", "base64"], default-features = false, optional = true }
 pyo3 = { version = "0.16", optional = true }
 sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "33cf41ae4ddd0c409f52fd72fb5101ae000aad53" }
