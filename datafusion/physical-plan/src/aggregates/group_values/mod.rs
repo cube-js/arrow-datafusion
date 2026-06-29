@@ -127,7 +127,7 @@ pub trait GroupValues: Send {
 ///
 /// [`GroupColumn`]:  crate::aggregates::group_values::multi_group_by::GroupColumn
 ///
-pub(crate) fn new_group_values(
+pub fn new_group_values(
     schema: SchemaRef,
     group_ordering: &GroupOrdering,
 ) -> Result<Box<dyn GroupValues>> {
