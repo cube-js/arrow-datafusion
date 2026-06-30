@@ -2718,9 +2718,24 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         extended_schema: Option<&DFSchema>,
     ) -> Result<Box<Expr>> {
         let name = if function.name.0.len() > 1 {
-            // DF doesn't handle compound identifiers
-            // (e.g. "foo.bar") for function names yet
-            function.name.to_string().to_ascii_lowercase()
+            // Postgres allows catalog functions to be called with an explicit schema
+            // qualifier (e.g. `pg_catalog.array_agg(...)`, `pg_catalog.pg_get_expr(...)`).
+            // DataFusion resolves functions by their bare name, so drop a leading
+            // `pg_catalog`/`public` qualifier and dispatch on the final identifier.
+            // (sqlparser used to special-case `pg_catalog.array_agg` into a dedicated
+            // `ArrayAgg` node; since that node was removed it now arrives as a regular
+            // compound-named function and must be normalized here.)
+            let qualifier =
+                object_name_part_to_string(&function.name.0[0]).to_ascii_lowercase();
+            if function.name.0.len() == 2
+                && (qualifier == "pg_catalog" || qualifier == "public")
+            {
+                object_name_part_to_string(&function.name.0[1]).to_ascii_lowercase()
+            } else {
+                // DF doesn't handle compound identifiers
+                // (e.g. "foo.bar") for function names yet
+                function.name.to_string().to_ascii_lowercase()
+            }
         } else {
             object_name_part_to_string(&function.name.0[0]).to_ascii_lowercase()
         };
