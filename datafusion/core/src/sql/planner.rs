@@ -4009,6 +4009,21 @@ mod tests {
     }
 
     #[test]
+    fn select_aggregate_with_group_by_having_and_order_by_aggregate() {
+        let sql = "SELECT first_name, MAX(age)
+                   FROM person
+                   GROUP BY first_name
+                   HAVING MAX(age) < 30
+                   ORDER BY MAX(age) DESC";
+        let expected = "Sort: #MAX(person.age) DESC NULLS FIRST\
+                        \n  Projection: #person.first_name, #MAX(person.age)\
+                        \n    Filter: #MAX(person.age) < Int64(30)\
+                        \n      Aggregate: groupBy=[[#person.first_name]], aggr=[[MAX(#person.age)]]\
+                        \n        TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
     fn select_aggregate_with_having_with_aggregate_not_in_select() {
         let sql = "SELECT MAX(age)
                    FROM person

@@ -18,7 +18,7 @@
 //! Expression rewriter
 
 use super::{Expr, ExprSchemable, Like};
-use crate::logical_plan::plan::{Aggregate, Projection};
+use crate::logical_plan::plan::{Aggregate, Filter, Projection};
 use crate::logical_plan::DFSchema;
 use crate::logical_plan::LogicalPlan;
 use crate::optimizer::utils::from_plan;
@@ -415,12 +415,17 @@ fn rewrite_sort_col_by_aggs(expr: Expr, plan: &LogicalPlan) -> Result<Expr> {
                 let res = resolve_exprs_to_aliases(&expr, &alias_map, input.schema())?;
                 let res = rebase_expr(&res, projection_expr.as_slice(), input)?;
 
-                Ok(if let LogicalPlan::Aggregate(_) = **input {
-                    rewrite_sort_col(res, input)?
-                } else {
-                    res
+                Ok(match **input {
+                    LogicalPlan::Aggregate(_) | LogicalPlan::Filter(_) => {
+                        rewrite_sort_col(res, input)?
+                    }
+                    _ => res,
                 })
             }
+            // A HAVING clause plans a Filter between the final Projection and
+            // the Aggregate; it doesn't change the schema, so look through it
+            // to rewrite sort expressions against the Aggregate below.
+            LogicalPlan::Filter(Filter { input, .. }) => rewrite_sort_col(expr, input),
             _ => Ok(expr),
         }
     }
