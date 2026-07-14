@@ -4870,6 +4870,48 @@ mod tests {
     }
 
     #[test]
+    fn select_order_by_ungrouped_column() {
+        let sql = "SELECT state FROM person GROUP BY state ORDER BY age";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert!(matches!(
+            err,
+            DataFusionError::Plan(msg) if msg.contains(
+                "column \"person.age\" must appear in the GROUP BY clause or be used in an aggregate function"
+            ),
+        ));
+    }
+
+    #[test]
+    fn select_order_by_case_over_ungrouped_column() {
+        // ORDER BY expression references a column consumed by the Aggregate, even
+        // though its CASE conditions match the GROUP BY expression
+        let sql = "SELECT CASE WHEN age > 30 THEN 'old' ELSE 'young' END, COUNT(*) \
+            FROM person \
+            GROUP BY 1 \
+            ORDER BY CASE WHEN age > 30 THEN 1 ELSE 2 END";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert!(matches!(
+            err,
+            DataFusionError::Plan(msg) if msg.contains(
+                "column \"person.age\" must appear in the GROUP BY clause or be used in an aggregate function"
+            ),
+        ));
+    }
+
+    #[test]
+    fn select_order_by_ungrouped_column_no_group_by() {
+        // Implicit aggregation without GROUP BY: ORDER BY cannot reference a raw column
+        let sql = "SELECT COUNT(*) FROM person ORDER BY age";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert!(matches!(
+            err,
+            DataFusionError::Plan(msg) if msg.contains(
+                "column \"person.age\" must appear in the GROUP BY clause or be used in an aggregate function"
+            ),
+        ));
+    }
+
+    #[test]
     fn select_group_by() {
         let sql = "SELECT state FROM person GROUP BY state";
         let expected = "Projection: #person.state\

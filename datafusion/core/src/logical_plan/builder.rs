@@ -838,6 +838,24 @@ impl LogicalPlanBuilder {
                 .collect::<Result<Vec<_>>>()?
         };
 
+        // Adding missing columns or aggregate expressions may have failed to provide
+        // some of the columns, e.g. when a sort expression references a column
+        // consumed by an Aggregate below and not present in GROUP BY. Such a query
+        // is invalid and must be rejected during planning rather than produce a plan
+        // with unresolvable columns.
+        let mut sort_columns: HashSet<Column> = HashSet::new();
+        exprs
+            .iter()
+            .try_for_each(|expr| utils::expr_to_columns(expr, &mut sort_columns))?;
+        for column in sort_columns {
+            if plan.schema().field_from_column(&column).is_err() {
+                return Err(DataFusionError::Plan(format!(
+                    "column \"{}\" must appear in the GROUP BY clause or be used in an aggregate function",
+                    column.flat_name(),
+                )));
+            }
+        }
+
         let sort_plan = LogicalPlan::Sort(Sort {
             expr: normalize_cols(exprs, &plan)?,
             input: Arc::new(plan.clone()),
