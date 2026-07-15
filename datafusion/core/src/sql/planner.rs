@@ -51,7 +51,10 @@ use crate::{
     sql::parser::{CreateExternalTable, FileType, Statement as DFStatement},
 };
 use arrow::datatypes::*;
-use datafusion_expr::{window_function::WindowFunction, BuiltinScalarFunction};
+use datafusion_expr::{
+    window_function::{BuiltInWindowFunction, WindowFunction},
+    BuiltinScalarFunction,
+};
 use hashbrown::HashMap;
 
 use datafusion_expr::expr::GroupingSet;
@@ -340,7 +343,6 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             }
         }
         let with_cte_context = self.with_context(|c| c.ctes = ctes);
-        let plan = with_cte_context.set_expr_to_plan(set_expr, alias)?;
 
         let order_by_exprs = match query.order_by {
             Some(OrderBy {
@@ -349,6 +351,9 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             }) => exprs,
             _ => vec![],
         };
+        // ORDER BY expressions are passed down because `SELECT DISTINCT ON`
+        // dedupes by the first row per group as defined by the query's ORDER BY
+        let plan = with_cte_context.set_expr_to_plan(set_expr, alias, &order_by_exprs)?;
         let plan = with_cte_context.order_by(plan, order_by_exprs)?;
 
         let (skip, limit) = match query.limit_clause {
@@ -367,9 +372,10 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
         &self,
         set_expr: SetExpr,
         alias: Option<String>,
+        order_by: &[OrderByExpr],
     ) -> Result<LogicalPlan> {
         match set_expr {
-            SetExpr::Select(s) => self.select_to_plan(*s, alias),
+            SetExpr::Select(s) => self.select_to_plan(*s, alias, order_by),
             SetExpr::Values(v) => self.sql_values_to_plan(v),
             SetExpr::SetOperation {
                 op,
@@ -377,8 +383,8 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 right,
                 set_quantifier,
             } => {
-                let left_plan = self.set_expr_to_plan(*left, None)?;
-                let right_plan = self.set_expr_to_plan(*right, None)?;
+                let left_plan = self.set_expr_to_plan(*left, None, &[])?;
+                let right_plan = self.set_expr_to_plan(*right, None, &[])?;
                 let all = matches!(
                     set_quantifier,
                     SetQuantifier::All | SetQuantifier::AllByName
@@ -1015,10 +1021,15 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
     }
 
     /// Generate a logic plan from an SQL select
+    ///
+    /// `order_by` is the enclosing query's ORDER BY clause; it only affects
+    /// `SELECT DISTINCT ON`, which keeps the first row per group as defined
+    /// by the query's ORDER BY. The actual sort is still applied by the caller.
     fn select_to_plan(
         &self,
         select: Select,
         alias: Option<String>,
+        order_by: &[OrderByExpr],
     ) -> Result<LogicalPlan> {
         // process `from` clause
         let plans = self.plan_from_tables(select.from)?;
@@ -1207,6 +1218,81 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 LogicalPlanBuilder::window_plan(plan, window_func_exprs)?,
                 select_exprs_post_aggr_and_window,
             )
+        };
+
+        // process `DISTINCT ON (...)` (Postgres extension): keep only the first
+        // row of each set of rows sharing the ON expression values. "First" is
+        // defined by the query's ORDER BY (arbitrary when there's no ORDER BY).
+        // Planned as a `ROW_NUMBER()` window partitioned by the ON expressions
+        // and ordered by the ORDER BY expressions, followed by a filter keeping
+        // the first row of each partition. The enclosing query's ORDER BY is
+        // applied on top by the caller, reordering already-deduplicated rows.
+        let plan = if let Some(Distinct::On(on_sql_exprs)) = select.distinct.clone() {
+            let plan_distinct_expr = |e: SQLExpr| -> Result<Expr> {
+                let expr = *self.sql_expr_to_logical_expr(e, &combined_schema, None)?;
+                let expr = resolve_aliases_to_exprs(&expr, &alias_map)?;
+                let expr = resolve_positions_to_exprs(&expr, &select_exprs_post_aggr)
+                    .unwrap_or(expr);
+                normalize_col(expr, &plan)
+            };
+
+            let on_exprs = on_sql_exprs
+                .into_iter()
+                .map(plan_distinct_expr)
+                .collect::<Result<Vec<Expr>>>()?;
+
+            let sort_exprs = order_by
+                .iter()
+                .map(|e| {
+                    let OrderByExpr {
+                        expr,
+                        options: OrderByOptions { asc, nulls_first },
+                        ..
+                    } = e.clone();
+                    let expr = plan_distinct_expr(expr)?;
+                    let asc = asc.unwrap_or(true);
+                    Ok(Expr::Sort {
+                        expr: Box::new(expr),
+                        asc,
+                        nulls_first: nulls_first.unwrap_or(!asc),
+                    })
+                })
+                .collect::<Result<Vec<Expr>>>()?;
+
+            // Postgres rule: ORDER BY (if present) must start with a run of
+            // expressions from the ON list, and no ON expression may appear in
+            // ORDER BY after that run.
+            let is_on_expr = |s: &Expr| match s {
+                Expr::Sort { expr, .. } => on_exprs.contains(expr.as_ref()),
+                _ => false,
+            };
+            let leading = sort_exprs.iter().take_while(|s| is_on_expr(s)).count();
+            if !sort_exprs.is_empty()
+                && (leading == 0 || sort_exprs[leading..].iter().any(is_on_expr))
+            {
+                return Err(DataFusionError::Plan(
+                    "SELECT DISTINCT ON expressions must match initial ORDER BY expressions"
+                        .to_string(),
+                ));
+            }
+
+            let row_number = Expr::WindowFunction {
+                fun: WindowFunction::BuiltInWindowFunction(
+                    BuiltInWindowFunction::RowNumber,
+                ),
+                args: vec![],
+                partition_by: on_exprs,
+                order_by: sort_exprs,
+                window_frame: None,
+            };
+            let plan = LogicalPlanBuilder::window_plan(plan, vec![row_number.clone()])?;
+            let row_number_col =
+                Expr::Column(Column::from_name(row_number.name(plan.schema())?));
+            LogicalPlanBuilder::from(plan)
+                .filter(row_number_col.eq(lit(1_u64)))?
+                .build()?
+        } else {
+            plan
         };
 
         // final projection
@@ -5724,6 +5810,63 @@ mod tests {
             \n        Projection: #person.state, #person.age, #COUNT(UInt8(1)) AS cnt, alias=t1\
             \n          Aggregate: groupBy=[[#person.state, #person.age]], aggr=[[COUNT(UInt8(1))]]\
             \n            TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn distinct_on() {
+        // DISTINCT ON plans into a ROW_NUMBER() window partitioned by the ON
+        // expressions and ordered by the ORDER BY expressions, plus a filter
+        // keeping the first row per partition
+        let sql =
+            "SELECT DISTINCT ON (state) state, age FROM person ORDER BY state, age DESC";
+        let expected = "Sort: #person.state ASC NULLS LAST, #person.age DESC NULLS FIRST\
+            \n  Projection: #person.state, #person.age\
+            \n    Filter: #row_number PARTITION BY [#person.state] ORDER BY [#person.state ASC NULLS LAST, #person.age DESC NULLS FIRST] = UInt64(1)\
+            \n      WindowAggr: windowExpr=[[ROW_NUMBER() PARTITION BY [#person.state] ORDER BY [#person.state ASC NULLS LAST, #person.age DESC NULLS FIRST]]]\
+            \n        TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn cte_distinct_on() {
+        // DISTINCT ON inside a CTE: dedupe happens below the CTE's aliased
+        // projection, before the outer query consumes it
+        let sql = "WITH t1 AS (SELECT state, age, COUNT(*) AS cnt FROM person GROUP BY 1, 2), \
+            t2 AS (SELECT DISTINCT ON (state) state, cnt FROM t1 ORDER BY state, cnt DESC) \
+            SELECT * FROM t2";
+        let expected = "Projection: #t2.state, #t2.cnt\
+            \n  Sort: #t2.state ASC NULLS LAST, #t2.cnt DESC NULLS FIRST\
+            \n    Projection: #t1.state, #t1.cnt, alias=t2\
+            \n      Filter: #row_number PARTITION BY [#t1.state] ORDER BY [#t1.state ASC NULLS LAST, #t1.cnt DESC NULLS FIRST] = UInt64(1)\
+            \n        WindowAggr: windowExpr=[[ROW_NUMBER() PARTITION BY [#t1.state] ORDER BY [#t1.state ASC NULLS LAST, #t1.cnt DESC NULLS FIRST]]]\
+            \n          Projection: #person.state, #person.age, #COUNT(UInt8(1)) AS cnt, alias=t1\
+            \n            Aggregate: groupBy=[[#person.state, #person.age]], aggr=[[COUNT(UInt8(1))]]\
+            \n              TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn distinct_on_order_by_mismatch() {
+        let sql = "SELECT DISTINCT ON (state) state, age FROM person ORDER BY age";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert!(matches!(
+            err,
+            DataFusionError::Plan(msg) if msg.contains(
+                "SELECT DISTINCT ON expressions must match initial ORDER BY expressions"
+            ),
+        ));
+    }
+
+    #[test]
+    fn distinct_on_without_order_by() {
+        // Postgres allows DISTINCT ON with no ORDER BY: an arbitrary row is kept
+        // per group
+        let sql = "SELECT DISTINCT ON (state) state, age FROM person";
+        let expected = "Projection: #person.state, #person.age\
+            \n  Filter: #row_number PARTITION BY [#person.state] = UInt64(1)\
+            \n    WindowAggr: windowExpr=[[ROW_NUMBER() PARTITION BY [#person.state]]]\
+            \n      TableScan: person projection=None";
         quick_test(sql, expected);
     }
 

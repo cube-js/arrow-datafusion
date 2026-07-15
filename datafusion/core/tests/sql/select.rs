@@ -1340,3 +1340,68 @@ async fn select_cte_order_by_unprojected_column() -> Result<()> {
 
     Ok(())
 }
+
+async fn distinct_on_test_ctx() -> Result<SessionContext> {
+    let ctx = SessionContext::new();
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("c1", DataType::Utf8, false),
+        Field::new("c2", DataType::Int64, false),
+        Field::new("c3", DataType::Int64, false),
+    ]));
+    let data = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec!["a", "a", "b", "b", "c"])),
+            Arc::new(Int64Array::from_slice([5, 10, 7, 3, 42])),
+            Arc::new(Int64Array::from_slice([1, 3, 2, 1, 9])),
+        ],
+    )?;
+    let table = MemTable::try_new(schema, vec![vec![data]])?;
+    ctx.register_table("test", Arc::new(table))?;
+    Ok(ctx)
+}
+
+#[tokio::test]
+async fn select_distinct_on() -> Result<()> {
+    let ctx = distinct_on_test_ctx().await?;
+
+    // The first row per `c1` group ordered by `c3` descending is kept
+    let sql = "SELECT DISTINCT ON (c1) c1, c2 FROM test ORDER BY c1, c3 DESC";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = [
+        "+----+----+",
+        "| c1 | c2 |",
+        "+----+----+",
+        "| a  | 10 |",
+        "| b  | 7  |",
+        "| c  | 42 |",
+        "+----+----+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn select_distinct_on_in_cte() -> Result<()> {
+    let ctx = distinct_on_test_ctx().await?;
+
+    // The dedupe happens inside the CTE, below its aliased projection, before
+    // the outer query consumes it
+    let sql = "WITH t1 AS (SELECT c1, c2, SUM(c3) AS total FROM test GROUP BY 1, 2), \
+        t2 AS (SELECT DISTINCT ON (c1) c1, total FROM t1 ORDER BY c1, total DESC) \
+        SELECT * FROM t2 ORDER BY c1";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = [
+        "+----+-------+",
+        "| c1 | total |",
+        "+----+-------+",
+        "| a  | 3     |",
+        "| b  | 2     |",
+        "| c  | 9     |",
+        "+----+-------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
