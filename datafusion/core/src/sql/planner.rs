@@ -5708,6 +5708,25 @@ mod tests {
         quick_test(sql, expected);
     }
 
+    #[test]
+    fn cte_order_by_unprojected_column_in_aliased_projection() {
+        // The ORDER BY references `cnt`, which is not in the CTE's projection; the
+        // sort machinery must push it into the aliased projection and reference it
+        // through the projection alias
+        let sql =
+            "WITH t1 AS (SELECT state, age, COUNT(*) AS cnt FROM person GROUP BY 1, 2), \
+            t2 AS (SELECT state, age FROM t1 ORDER BY state, cnt DESC) \
+            SELECT * FROM t2";
+        let expected = "Projection: #t2.state, #t2.age\
+            \n  Projection: #t2.state, #t2.age\
+            \n    Sort: #t2.state ASC NULLS LAST, #t2.t1.cnt DESC NULLS FIRST\
+            \n      Projection: #t1.state, #t1.age, #t1.cnt AS t1.cnt, alias=t2\
+            \n        Projection: #person.state, #person.age, #COUNT(UInt8(1)) AS cnt, alias=t1\
+            \n          Aggregate: groupBy=[[#person.state, #person.age]], aggr=[[COUNT(UInt8(1))]]\
+            \n            TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
     fn logical_plan(sql: &str) -> Result<LogicalPlan> {
         let planner = SqlToRel::new(&MockContextProvider {});
         let result = DFParser::parse_sql(sql);

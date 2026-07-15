@@ -1298,3 +1298,45 @@ async fn count_distinct_integers_aggregated_multiple_partitions() -> Result<()> 
 
     Ok(())
 }
+
+#[tokio::test]
+async fn select_cte_order_by_unprojected_column() -> Result<()> {
+    let ctx = SessionContext::new();
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("c1", DataType::Utf8, false),
+        Field::new("c2", DataType::Int64, false),
+        Field::new("c3", DataType::Int64, false),
+    ]));
+    let data = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec!["a", "a", "b", "b", "c"])),
+            Arc::new(Int64Array::from_slice([5, 10, 7, 3, 42])),
+            Arc::new(Int64Array::from_slice([1, 3, 2, 1, 9])),
+        ],
+    )?;
+    let table = MemTable::try_new(schema, vec![vec![data]])?;
+    ctx.register_table("test", Arc::new(table))?;
+
+    // The CTE's ORDER BY references `total`, which is not in the CTE's
+    // projection; the sort column must be resolved through the aliased
+    // projection
+    let sql = "WITH t1 AS (SELECT c1, c2, SUM(c3) AS total FROM test GROUP BY 1, 2), \
+        t2 AS (SELECT c1, c2 AS v FROM t1 ORDER BY c1, total DESC) \
+        SELECT * FROM t2";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = vec![
+        "+----+----+",
+        "| c1 | v  |",
+        "+----+----+",
+        "| a  | 10 |",
+        "| a  | 5  |",
+        "| b  | 7  |",
+        "| b  | 3  |",
+        "| c  | 42 |",
+        "+----+----+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
