@@ -570,15 +570,22 @@ impl LogicalPlanBuilder {
                 for missing_col in missing_cols {
                     let mut normalized_col =
                         normalize_col(Expr::Column(missing_col.clone()), &input)?;
-                    if let Ok(old_field) =
-                        schema.field_with_unqualified_name(&missing_col.name)
-                    {
-                        if old_field.qualifier().is_none() {
-                            let expr_name = normalized_col.name(input_schema)?;
-                            let alias = missing_col.flat_name();
-                            normalized_col = normalized_col.alias(&alias);
-                            alias_map.insert(expr_name, alias);
-                        }
+                    // Alias the added column and remember the mapping whenever the
+                    // added field wouldn't be found by the sort expression that
+                    // requested it: either the name collides with an existing
+                    // unqualified projection column, or the projection is aliased
+                    // and `replace_qualifier` below will replace the added column's
+                    // qualifier with the projection alias, breaking qualified
+                    // references to the original relation.
+                    let collides_with_unqualified = schema
+                        .field_with_unqualified_name(&missing_col.name)
+                        .map(|f| f.qualifier().is_none())
+                        .unwrap_or(false);
+                    if collides_with_unqualified || alias.is_some() {
+                        let expr_name = normalized_col.name(input_schema)?;
+                        let col_alias = missing_col.flat_name();
+                        normalized_col = normalized_col.alias(&col_alias);
+                        alias_map.insert(expr_name, col_alias);
                     }
                     missing_exprs.push(normalized_col);
                 }
