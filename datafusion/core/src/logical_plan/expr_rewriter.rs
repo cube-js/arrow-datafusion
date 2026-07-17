@@ -619,6 +619,13 @@ pub fn coerce_plan_expr_for_schema(
                         Box::new(e.clone().cast_to(new_type, input.schema())?),
                         alias.clone(),
                     )),
+                    // Projection expressions must be resolved against the input schema:
+                    // the projection's own schema may have had its qualifiers replaced
+                    // (e.g. by `project_with_column_index_alias` during UNION planning),
+                    // so qualified columns in `expr` would no longer resolve against it
+                    (LogicalPlan::Projection(Projection { input, .. }), _) => {
+                        expr.cast_to(new_type, input.schema())
+                    }
                     _ => expr.cast_to(new_type, plan.schema()),
                 }
             } else {

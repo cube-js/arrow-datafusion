@@ -75,3 +75,34 @@ async fn union_all_with_aggregate() -> Result<()> {
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
+
+#[tokio::test]
+async fn union_all_ctes_with_type_coercion() -> Result<()> {
+    let ctx = SessionContext::new();
+    // Type mismatch must enter at the second UNION level: the first UNION
+    // replaces its input projections' schemas with the unqualified union
+    // schema, and the second UNION's coercion used to fail resolving the
+    // still-qualified columns against them
+    let sql = "WITH \
+        a AS (SELECT CAST(1 AS bigint) AS t), \
+        b AS (SELECT CAST(2 AS bigint) AS t), \
+        c AS (SELECT 3.5 AS t) \
+        SELECT 'A' AS l, t FROM a \
+        UNION ALL \
+        SELECT 'B' AS l, t FROM b \
+        UNION ALL \
+        SELECT 'C' AS l, t FROM c";
+    let actual = execute_to_batches(&ctx, sql).await;
+    #[rustfmt::skip]
+    let expected = [
+        "+---+-----+",
+        "| l | t   |",
+        "+---+-----+",
+        "| A | 1   |",
+        "| B | 2   |",
+        "| C | 3.5 |",
+        "+---+-----+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
