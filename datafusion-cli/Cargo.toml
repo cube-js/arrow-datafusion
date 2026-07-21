@@ -28,7 +28,7 @@ repository = "https://github.com/apache/arrow-datafusion"
 rust-version = "1.59"
 
 [dependencies]
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "de57e9799dcfde7bdd02885e63b65e3499f192e5", features = ["chrono-tz"] }
+arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "837ddde06037034056b9faced3d8ea7073529cfc", features = ["chrono-tz"] }
 clap = { version = "3", features = ["derive", "cargo"] }
 datafusion = { path = "../datafusion/core", version = "7.0.0", features = ["parquet-all-compressions"] }
 dirs = "4.0.0"

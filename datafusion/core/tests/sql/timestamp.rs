@@ -404,6 +404,39 @@ async fn to_timestamp_named_timezone() -> Result<()> {
 }
 
 #[tokio::test]
+async fn to_timestamp_date_only() -> Result<()> {
+    // A date-only string parses as midnight local time, matching
+    // PostgreSQL's behavior for date-only timestamp input. Midnight local
+    // time converts to a machine-timezone-dependent UTC instant, so instead
+    // of asserting a literal value, assert equivalence with the explicit
+    // `00:00:00` form, which follows the same local-time convention.
+    let ctx = SessionContext::new();
+
+    let cases = vec![
+        (
+            "to_timestamp('2026-06-24')",
+            "to_timestamp('2026-06-24 00:00:00')",
+        ),
+        (
+            "CAST('2026-06-24' AS TIMESTAMP)",
+            "CAST('2026-06-24 00:00:00' AS TIMESTAMP)",
+        ),
+    ];
+
+    for (expr, equivalent_expr) in cases {
+        let sql = format!(
+            "SELECT {} IS NOT NULL AND {} = {} AS eq",
+            expr, expr, equivalent_expr
+        );
+        let actual = execute_to_batches(&ctx, &sql).await;
+
+        let expected = ["+------+", "| eq   |", "+------+", "| true |", "+------+"];
+        assert_batches_eq!(expected, &actual);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn to_timestamp_millis() -> Result<()> {
     let ctx = SessionContext::new();
     ctx.register_table(
