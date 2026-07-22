@@ -1141,6 +1141,22 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 ))
             }
         };
+        // PostgreSQL treats a parenthesized list in GROUP BY as a sublist of grouping
+        // columns: `GROUP BY (a, b)` is equivalent to `GROUP BY a, b`, and `GROUP BY ()`
+        // is an empty grouping set producing a single grand-total group.
+        let mut group_by_has_empty_grouping_set = false;
+        let group_by_sql_exprs = group_by_sql_exprs
+            .into_iter()
+            .flat_map(|e| match e {
+                SQLExpr::Tuple(exprs) => {
+                    if exprs.is_empty() {
+                        group_by_has_empty_grouping_set = true;
+                    }
+                    exprs
+                }
+                e => vec![e],
+            })
+            .collect::<Vec<_>>();
         let group_by_exprs = group_by_sql_exprs
             .into_iter()
             .map(|e| {
@@ -1164,37 +1180,40 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             .collect::<Result<Vec<Expr>>>()?;
 
         // process group by, aggregation or having
-        let (plan, select_exprs_post_aggr, having_expr_post_aggr_opt) =
-            if !group_by_exprs.is_empty() || !aggr_exprs.is_empty() {
-                self.aggregate(
-                    plan,
-                    &select_exprs,
-                    &having_expr_opt,
-                    group_by_exprs,
-                    aggr_exprs,
-                )?
-            } else {
-                if let Some(having_expr) = &having_expr_opt {
-                    let available_columns = select_exprs
-                        .iter()
-                        .map(|expr| expr_as_column_expr(expr, &plan))
-                        .collect::<Result<Vec<Expr>>>()?;
+        let (plan, select_exprs_post_aggr, having_expr_post_aggr_opt) = if !group_by_exprs
+            .is_empty()
+            || !aggr_exprs.is_empty()
+            || group_by_has_empty_grouping_set
+        {
+            self.aggregate(
+                plan,
+                &select_exprs,
+                &having_expr_opt,
+                group_by_exprs,
+                aggr_exprs,
+            )?
+        } else {
+            if let Some(having_expr) = &having_expr_opt {
+                let available_columns = select_exprs
+                    .iter()
+                    .map(|expr| expr_as_column_expr(expr, &plan))
+                    .collect::<Result<Vec<Expr>>>()?;
 
-                    // Ensure the HAVING expression is using only columns
-                    // provided by the SELECT.
-                    if !can_columns_satisfy_exprs(
-                        &available_columns,
-                        slice::from_ref(having_expr),
-                    )? {
-                        return Err(DataFusionError::Plan(
-                            "Having references column(s) not provided by the select"
-                                .to_owned(),
-                        ));
-                    }
+                // Ensure the HAVING expression is using only columns
+                // provided by the SELECT.
+                if !can_columns_satisfy_exprs(
+                    &available_columns,
+                    slice::from_ref(having_expr),
+                )? {
+                    return Err(DataFusionError::Plan(
+                        "Having references column(s) not provided by the select"
+                            .to_owned(),
+                    ));
                 }
+            }
 
-                (plan, select_exprs, having_expr_opt)
-            };
+            (plan, select_exprs, having_expr_opt)
+        };
 
         let plan = if let Some(having_expr_post_aggr) = having_expr_post_aggr_opt {
             LogicalPlanBuilder::from(plan)
@@ -4091,6 +4110,33 @@ mod tests {
                         \n  Filter: #MAX(person.age) < Int64(30)\
                         \n    Aggregate: groupBy=[[]], aggr=[[MAX(#person.age)]]\
                         \n      TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn select_aggregate_with_empty_group_by_grouping_set() {
+        let sql = "SELECT MAX(age) FROM person GROUP BY ()";
+        let expected = "Projection: #MAX(person.age)\
+                        \n  Aggregate: groupBy=[[]], aggr=[[MAX(#person.age)]]\
+                        \n    TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn select_no_aggregate_with_empty_group_by_grouping_set() {
+        let sql = "SELECT 1 FROM person GROUP BY ()";
+        let expected = "Projection: Int64(1)\
+                        \n  Aggregate: groupBy=[[]], aggr=[[]]\
+                        \n    TableScan: person projection=None";
+        quick_test(sql, expected);
+    }
+
+    #[test]
+    fn select_aggregate_with_group_by_tuple() {
+        let sql = "SELECT state, age, MAX(salary) FROM person GROUP BY (state, age)";
+        let expected = "Projection: #person.state, #person.age, #MAX(person.salary)\
+                        \n  Aggregate: groupBy=[[#person.state, #person.age]], aggr=[[MAX(#person.salary)]]\
+                        \n    TableScan: person projection=None";
         quick_test(sql, expected);
     }
 
