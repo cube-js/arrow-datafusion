@@ -24,7 +24,10 @@ use arrow::compute::{and, cast, eq_dyn, is_null, not, or, or_kleene};
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DataFusionError, Result};
-use datafusion_expr::{binary_rule::coerce_types, ColumnarValue, Operator};
+use datafusion_expr::{
+    binary_rule::{case_expression_coercion, coerce_types},
+    ColumnarValue, Operator,
+};
 
 type WhenThen = (Arc<dyn PhysicalExpr>, Arc<dyn PhysicalExpr>);
 
@@ -110,32 +113,38 @@ impl CaseExpr {
 macro_rules! if_then_else {
     ($BUILDER_TYPE:ty, $ARRAY_TYPE:ty, $BOOLS:expr, $TRUE:expr, $FALSE:expr) => {{
         let true_values = if $TRUE.data_type() == &DataType::Null {
-            Arc::new(<$ARRAY_TYPE>::from(vec![None; $TRUE.len()]))
+            Arc::new(<$ARRAY_TYPE>::from(vec![None; $TRUE.len()])) as ArrayRef
         } else {
             $TRUE
         };
-        let true_values = true_values
-            .as_ref()
+        let true_values_ref = true_values.as_ref();
+        let true_values = true_values_ref
             .as_any()
             .downcast_ref::<$ARRAY_TYPE>()
-            .expect(&format!(
-                "true_values downcast failed to {}",
-                stringify!($ARRAY_TYPE)
-            ));
+            .ok_or_else(|| {
+                DataFusionError::Internal(format!(
+                    "CASE THEN values of type {:?} can not be read as {}",
+                    true_values_ref.data_type(),
+                    stringify!($ARRAY_TYPE)
+                ))
+            })?;
 
         let false_values = if $FALSE.data_type() == &DataType::Null {
-            Arc::new(<$ARRAY_TYPE>::from(vec![None; $FALSE.len()]))
+            Arc::new(<$ARRAY_TYPE>::from(vec![None; $FALSE.len()])) as ArrayRef
         } else {
             $FALSE
         };
-        let false_values = false_values
-            .as_ref()
+        let false_values_ref = false_values.as_ref();
+        let false_values = false_values_ref
             .as_any()
             .downcast_ref::<$ARRAY_TYPE>()
-            .expect(&format!(
-                "false_values downcast failed to {}",
-                stringify!($ARRAY_TYPE)
-            ));
+            .ok_or_else(|| {
+                DataFusionError::Internal(format!(
+                    "CASE ELSE values of type {:?} can not be read as {}",
+                    false_values_ref.data_type(),
+                    stringify!($ARRAY_TYPE)
+                ))
+            })?;
 
         let mut builder = <$BUILDER_TYPE>::new($BOOLS.len());
         for i in 0..$BOOLS.len() {
@@ -271,19 +280,24 @@ fn if_then_else(
 impl CaseExpr {
     /// This function returns the return type of CASE expression.
     ///
-    /// The first non-Null THEN expr type is returned; if there are none, ELSE type is returned.
-    /// In the abscense of ELSE, Null is returned.
+    /// It is the common type all THEN branches and the ELSE branch coerce to, ignoring
+    /// Null branches. When every branch is Null, Null is returned. This must stay in sync
+    /// with the logical type of `Expr::Case`, which coerces the same way.
     fn return_type(&self, schema: &Schema) -> Result<DataType> {
-        for (_, then) in self.when_then_expr.iter() {
-            match then.data_type(schema)? {
-                DataType::Null => continue,
-                dt => return Ok(dt),
-            };
-        }
+        let mut branch_types = self
+            .when_then_expr
+            .iter()
+            .map(|(_, then)| then.data_type(schema))
+            .collect::<Result<Vec<_>>>()?;
         if let Some(else_expr) = &self.else_expr {
-            return else_expr.data_type(schema);
+            branch_types.push(else_expr.data_type(schema)?);
         }
-        Ok(DataType::Null)
+        case_expression_coercion(&branch_types).ok_or_else(|| {
+            DataFusionError::Plan(format!(
+                "CASE branches have no common type to coerce the results to: {:?}",
+                branch_types
+            ))
+        })
     }
 
     /// This function evaluates the form of CASE that matches an expression to fixed values.
@@ -359,6 +373,13 @@ impl CaseExpr {
             let else_ = expr
                 .evaluate_selection(batch, &remainder)?
                 .into_array(batch.num_rows());
+            // `try_cast` above is best effort, so the ELSE type still has to be enforced
+            let else_ = cast(&else_, &return_type).map_err(|err| {
+                DataFusionError::Execution(format!(
+                    "Unable to cast else value to common type: {}",
+                    err,
+                ))
+            })?;
             current_value = if_then_else(&remainder, else_, current_value, &return_type)?;
         }
 
@@ -387,12 +408,25 @@ impl CaseExpr {
                 .as_ref()
                 .as_any()
                 .downcast_ref::<BooleanArray>()
-                .expect("WHEN expression did not return a BooleanArray");
+                .ok_or_else(|| {
+                    DataFusionError::Internal(
+                        "WHEN expression did not return a BooleanArray".to_string(),
+                    )
+                })?;
 
             let then_value = self.when_then_expr[i]
                 .1
                 .evaluate_selection(batch, when_value)?;
             let then_value = then_value.into_array(batch.num_rows());
+
+            // Each THEN branch can have its own type, they all have to be brought to the
+            // single return type of the CASE expression
+            let then_value = cast(&then_value, &return_type).map_err(|e| {
+                DataFusionError::Execution(format!(
+                    "Unable to cast then value to common type: {}",
+                    e,
+                ))
+            })?;
 
             current_value =
                 if_then_else(when_value, then_value, current_value, &return_type)?;
@@ -412,6 +446,13 @@ impl CaseExpr {
             let else_ = expr
                 .evaluate_selection(batch, &remainder)?
                 .into_array(batch.num_rows());
+            // `try_cast` above is best effort, so the ELSE type still has to be enforced
+            let else_ = cast(&else_, &return_type).map_err(|err| {
+                DataFusionError::Execution(format!(
+                    "Unable to cast else value to common type: {}",
+                    err,
+                ))
+            })?;
             current_value = if_then_else(&remainder, else_, current_value, &return_type)?;
         }
 
@@ -768,6 +809,173 @@ mod tests {
         assert_eq!(expected, result);
 
         Ok(())
+    }
+
+    #[test]
+    fn case_without_expr_heterogeneous_then_types() -> Result<()> {
+        let batch = case_test_batch_numbers()?;
+        let schema = batch.schema();
+
+        // CASE WHEN load4 > 3.0 THEN 0 WHEN load4 > 0.0 THEN load4 END
+        // The first THEN is an Int64 literal while the second one is a Float64 column;
+        // both have to be coerced to the single Float64 return type.
+        let when1 = binary(
+            col("load4", &schema)?,
+            Operator::Gt,
+            lit(ScalarValue::Float64(Some(3.0))),
+            &schema,
+        )?;
+        let then1 = lit(ScalarValue::Int64(Some(0)));
+        let when2 = binary(
+            col("load4", &schema)?,
+            Operator::Gt,
+            lit(ScalarValue::Float64(Some(0.0))),
+            &schema,
+        )?;
+        let then2 = col("load4", &schema)?;
+
+        let expr = case(None, &[(when1, then1), (when2, then2)], None)?;
+        assert_eq!(DataType::Float64, expr.data_type(schema.as_ref())?);
+
+        let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+        let result = result
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .expect("failed to downcast to Float64Array");
+
+        let expected = &Float64Array::from(vec![
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(1.78),
+            None,
+            None,
+        ]);
+
+        assert_eq!(expected, result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn case_without_expr_null_then_before_typed_then() -> Result<()> {
+        let batch = case_test_batch()?;
+        let schema = batch.schema();
+
+        // CASE WHEN a = 'foo' THEN NULL WHEN a = 'bar' THEN 1 END
+        // A leading NULL THEN must not make the whole expression Null typed.
+        let when1 = binary(
+            col("a", &schema)?,
+            Operator::Eq,
+            lit(ScalarValue::Utf8(Some("foo".to_string()))),
+            &schema,
+        )?;
+        let then1 = lit(ScalarValue::Null);
+        let when2 = binary(
+            col("a", &schema)?,
+            Operator::Eq,
+            lit(ScalarValue::Utf8(Some("bar".to_string()))),
+            &schema,
+        )?;
+        let then2 = lit(ScalarValue::Int32(Some(1)));
+
+        let expr = case(None, &[(when1, then1), (when2, then2)], None)?;
+        assert_eq!(DataType::Int32, expr.data_type(schema.as_ref())?);
+
+        let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+        let result = result
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("failed to downcast to Int32Array");
+
+        let expected = &Int32Array::from(vec![None, None, None, Some(1)]);
+
+        assert_eq!(expected, result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn case_with_expr_heterogeneous_then_types() -> Result<()> {
+        let batch = case_test_batch()?;
+        let schema = batch.schema();
+
+        // CASE a WHEN 'foo' THEN 1 WHEN 'bar' THEN 2.5 ELSE 0 END
+        let expr = case(
+            Some(col("a", &schema)?),
+            &[
+                (
+                    lit(ScalarValue::Utf8(Some("foo".to_string()))),
+                    lit(ScalarValue::Int32(Some(1))),
+                ),
+                (
+                    lit(ScalarValue::Utf8(Some("bar".to_string()))),
+                    lit(ScalarValue::Float64(Some(2.5))),
+                ),
+            ],
+            Some(lit(ScalarValue::Int32(Some(0)))),
+        )?;
+        assert_eq!(DataType::Float64, expr.data_type(schema.as_ref())?);
+
+        let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+        let result = result
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .expect("failed to downcast to Float64Array");
+
+        let expected =
+            &Float64Array::from(vec![Some(1.0), Some(0.0), Some(0.0), Some(2.5)]);
+
+        assert_eq!(expected, result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn case_without_expr_incompatible_then_types() -> Result<()> {
+        let batch = case_test_batch()?;
+        let schema = batch.schema();
+
+        // CASE WHEN a = 'foo' THEN true WHEN a = 'bar' THEN DATE '2022-01-01' END
+        let when1 = binary(
+            col("a", &schema)?,
+            Operator::Eq,
+            lit(ScalarValue::Utf8(Some("foo".to_string()))),
+            &schema,
+        )?;
+        let then1 = lit(ScalarValue::Boolean(Some(true)));
+        let when2 = binary(
+            col("a", &schema)?,
+            Operator::Eq,
+            lit(ScalarValue::Utf8(Some("bar".to_string()))),
+            &schema,
+        )?;
+        let then2 = lit(ScalarValue::Date32(Some(0)));
+
+        let expr = case(None, &[(when1, then1), (when2, then2)], None)?;
+        // Branches with no common type must be an error, not a panic
+        let err = expr.evaluate(&batch).expect_err("expected an error");
+        assert!(
+            err.to_string().contains("no common type"),
+            "unexpected error: {}",
+            err
+        );
+
+        Ok(())
+    }
+
+    fn case_test_batch_numbers() -> Result<RecordBatch> {
+        let schema = Schema::new(vec![Field::new("load4", DataType::Float64, true)]);
+        let load4 = Float64Array::from(vec![
+            Some(4.0),
+            Some(5.0),
+            Some(6.0),
+            Some(1.78),
+            None,
+            Some(0.0),
+        ]);
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(load4)])?;
+        Ok(batch)
     }
 
     fn case_test_batch() -> Result<RecordBatch> {

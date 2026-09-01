@@ -196,6 +196,44 @@ pub fn comparison_eq_coercion(
         .or_else(|| string_boolean_coercion(lhs_type, rhs_type))
 }
 
+/// Coerce the THEN/ELSE branch types of a `CASE` expression to a single common type.
+///
+/// `Null` branches are ignored, so `CASE WHEN c THEN NULL ELSE 1 END` resolves to
+/// `Int64`; when every branch is `Null` the result is `Null`. Returns `None` when the
+/// branches have no common type.
+pub fn case_expression_coercion<'a>(
+    branch_types: impl IntoIterator<Item = &'a DataType>,
+) -> Option<DataType> {
+    let mut result = DataType::Null;
+    for branch_type in branch_types {
+        if matches!(branch_type, DataType::Null) {
+            continue;
+        }
+        result = match result {
+            DataType::Null => branch_type.clone(),
+            current => case_branch_coercion(&current, branch_type)?,
+        };
+    }
+    Some(result)
+}
+
+/// Coercion rules for a pair of `CASE` branch types.
+///
+/// This is the equality coercion without the string/boolean and string/numeric rules that
+/// narrow a string down to the other side: a `CASE` result mixing a string with a boolean
+/// or a number widens to the string instead.
+fn case_branch_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
+    if lhs_type == rhs_type && !is_dictionary(lhs_type) {
+        return Some(lhs_type.clone());
+    }
+    comparison_binary_numeric_coercion(lhs_type, rhs_type)
+        .or_else(|| dictionary_coercion(lhs_type, rhs_type))
+        .or_else(|| temporal_coercion(lhs_type, rhs_type))
+        .or_else(|| string_coercion(lhs_type, rhs_type))
+        .or_else(|| string_numeric_coercion(lhs_type, rhs_type))
+        .or_else(|| string_boolean_coercion(lhs_type, rhs_type))
+}
+
 // NOTE: NULL hack!
 fn string_numeric_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
     use arrow::datatypes::DataType::*;
