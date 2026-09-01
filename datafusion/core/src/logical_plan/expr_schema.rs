@@ -20,7 +20,7 @@ use crate::logical_expr::{aggregate_function, function, window_function};
 use arrow::compute::can_cast_types;
 use arrow::datatypes::DataType;
 use datafusion_common::{DFField, DFSchema, DataFusionError, ExprSchema, Result};
-use datafusion_expr::binary_rule::binary_operator_data_type;
+use datafusion_expr::binary_rule::{binary_operator_data_type, case_expression_coercion};
 use datafusion_physical_expr::field_util::get_indexed_field;
 
 /// trait to allow expr to typable with respect to a schema
@@ -60,7 +60,25 @@ impl ExprSchemable for Expr {
             Expr::OuterColumn(ty, _) => Ok(ty.clone()),
             Expr::ScalarVariable(ty, _) => Ok(ty.clone()),
             Expr::Literal(l) => Ok(l.get_datatype()),
-            Expr::Case { when_then_expr, .. } => when_then_expr[0].1.get_type(schema),
+            Expr::Case {
+                when_then_expr,
+                else_expr,
+                ..
+            } => {
+                let mut branch_types = when_then_expr
+                    .iter()
+                    .map(|(_, then_expr)| then_expr.get_type(schema))
+                    .collect::<Result<Vec<_>>>()?;
+                if let Some(else_expr) = else_expr {
+                    branch_types.push(else_expr.get_type(schema)?);
+                }
+                case_expression_coercion(&branch_types).ok_or_else(|| {
+                    DataFusionError::Plan(format!(
+                        "CASE branches have no common type to coerce the results to: {:?}",
+                        branch_types
+                    ))
+                })
+            }
             Expr::Cast { data_type, .. } | Expr::TryCast { data_type, .. } => {
                 Ok(data_type.clone())
             }
