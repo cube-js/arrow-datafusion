@@ -436,6 +436,49 @@ async fn to_timestamp_date_only() -> Result<()> {
     Ok(())
 }
 
+/// An `i64` of nanoseconds only reaches 1677-09-21 to 2262-04-11. A cast or `date_trunc`
+/// whose result falls outside that window must fail with an error, not panic or wrap into
+/// a garbage instant.
+#[tokio::test]
+async fn cast_to_timestamp_nanos_out_of_range() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    for sql in [
+        "SELECT CAST(DATE '2262-04-12' AS TIMESTAMP)",
+        "SELECT CAST(DATE '9999-12-31' AS TIMESTAMP)",
+        "SELECT CAST(DATE '1600-01-01' AS TIMESTAMP)",
+        "SELECT CAST('9999-12-31T00:00:00Z' AS TIMESTAMP)",
+        "SELECT CAST('9999-12-31 00:00:00' AS TIMESTAMP)",
+        "SELECT to_timestamp('9999-12-31T00:00:00Z')",
+        "SELECT date_trunc('day', CAST('1677-09-21 12:00:00' AS TIMESTAMP))",
+    ] {
+        let err = plan_and_collect(&ctx, sql)
+            .await
+            .expect_err(&format!("{} must fail", sql));
+        assert!(
+            err.to_string().contains("out of range"),
+            "{} failed with an unexpected error: {}",
+            sql,
+            err
+        );
+    }
+
+    let actual = execute_to_batches(
+        &ctx,
+        "SELECT CAST(DATE '2262-04-11' AS TIMESTAMP) AS last_day",
+    )
+    .await;
+    let expected = [
+        "+---------------------+",
+        "| last_day            |",
+        "+---------------------+",
+        "| 2262-04-11 00:00:00 |",
+        "+---------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
 #[tokio::test]
 async fn to_timestamp_millis() -> Result<()> {
     let ctx = SessionContext::new();

@@ -445,7 +445,14 @@ fn date_trunc_single(granularity: &str, value: i64) -> Result<i64> {
         }
     };
     // `with_x(0)` are infalible because `0` are always a valid
-    Ok(value.unwrap().and_utc().timestamp_nanos_opt().unwrap())
+    let value = value.unwrap();
+    // Truncating down can leave the nanosecond range, e.g. `day` of 1677-09-21 12:00.
+    value.and_utc().timestamp_nanos_opt().ok_or_else(|| {
+        DataFusionError::Execution(format!(
+            "date_trunc('{}') result {} is out of range for a timestamp",
+            granularity, value
+        ))
+    })
 }
 
 /// date_trunc SQL function
@@ -838,6 +845,21 @@ mod tests {
             let result = date_trunc_single(granularity, left).unwrap();
             assert_eq!(result, right, "{} = {}", original, expected);
         });
+    }
+
+    #[test]
+    fn date_trunc_below_nanosecond_range() {
+        let value = string_to_timestamp_nanos("1677-09-21T12:00:00Z").unwrap();
+        for granularity in ["day", "week", "month", "year"] {
+            let err = date_trunc_single(granularity, value).unwrap_err();
+            assert!(
+                err.to_string().contains("is out of range for a timestamp"),
+                "{}: {}",
+                granularity,
+                err
+            );
+        }
+        assert!(date_trunc_single("hour", value).is_ok());
     }
 
     #[test]

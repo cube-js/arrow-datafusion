@@ -34,7 +34,7 @@ path = "examples/avro_sql.rs"
 required-features = ["datafusion/avro"]
 
 [dev-dependencies]
-arrow-flight = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "837ddde06037034056b9faced3d8ea7073529cfc" }
+arrow-flight = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "d484adc1a79495624d659959f22fa4cd55ae2d3c" }
 async-trait = "0.1.41"
 datafusion = { path = "../datafusion/core" }
 futures = "0.3"
