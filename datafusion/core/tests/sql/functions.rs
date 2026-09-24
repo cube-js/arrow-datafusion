@@ -736,3 +736,61 @@ async fn pi_function() -> Result<()> {
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
+
+macro_rules! assert_logical_plan {
+    ($ctx:expr, $udf_call:expr, $expected:expr) => {{
+        let sql = format!("SELECT {}", $udf_call);
+        let logical_plan = $ctx.create_logical_plan(&sql)?;
+        let formatted = format!("{:?}", logical_plan);
+        assert_eq!($expected, formatted.split("\n").collect::<Vec<&str>>());
+    }};
+}
+
+#[tokio::test]
+async fn test_log_round_logical_plan() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    assert_logical_plan!(
+        ctx,
+        "log(2.0, 2)",
+        vec!["Projection: log(Float64(2), Int64(2))", "  EmptyRelation",]
+    );
+
+    assert_logical_plan!(
+        ctx,
+        "log(2::Decimal(38,10), 2::Decimal(38,10))",
+        vec![
+            "Projection: log(CAST(Int64(2) AS Decimal(38, 10)), CAST(Int64(2) AS Decimal(38, 10)))",
+            "  EmptyRelation",
+        ]
+    );
+
+    assert_logical_plan!(
+        ctx,
+        "log(2::Decimal(38,10), 2)",
+        vec![
+            "Projection: log(CAST(Int64(2) AS Decimal(38, 10)), Int64(2))",
+            "  EmptyRelation",
+        ]
+    );
+
+    assert_logical_plan!(
+        ctx,
+        "round(5.7, 2)",
+        vec![
+            "Projection: round(Float64(5.7), Int64(2))",
+            "  EmptyRelation",
+        ]
+    );
+
+    assert_logical_plan!(
+        ctx,
+        "round(5.7::Decimal(38,10), 2)",
+        vec![
+            "Projection: round(CAST(Float64(5.7) AS Decimal(38, 10)), Int64(2))",
+            "  EmptyRelation",
+        ]
+    );
+
+    Ok(())
+}
