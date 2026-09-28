@@ -364,10 +364,29 @@ fn optimize(plan: &LogicalPlan, mut state: State) -> Result<LogicalPlan> {
                 utils::expr_to_columns(predicate, columns)?;
             }
 
+            // Predicates that no longer reference any column after the rewrite
+            // (e.g. `#t.x = Int64(2)` over `Projection: Int64(1) AS x`) would never
+            // be issued further down, as no plan uses their columns, and would get lost.
+            // Issue them on top of this projection instead: its input may have no columns
+            // at all (EmptyRelation), which the physical filter can't handle.
+            let (no_col_filters, filters): (Vec<_>, Vec<_>) = state
+                .filters
+                .into_iter()
+                .partition(|(_, columns)| columns.is_empty());
+            state.filters = filters;
+
             // optimize inner
             let new_input = optimize(input, state)?;
 
-            utils::from_plan(plan, expr, &[new_input])
+            let new_plan = utils::from_plan(plan, expr, &[new_input])?;
+            if no_col_filters.is_empty() {
+                return Ok(new_plan);
+            }
+            let no_col_predicates = no_col_filters
+                .iter()
+                .map(|(expr, _)| expr)
+                .collect::<Vec<_>>();
+            Ok(add_filter(new_plan, &no_col_predicates))
         }
         LogicalPlan::Aggregate(Aggregate {
             aggr_expr, input, ..
@@ -658,6 +677,65 @@ mod tests {
         let expected = "\
             Filter: Int64(0) = Int64(1)\
             \n  TableScan: test projection=None";
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn filter_on_literal_projection() -> Result<()> {
+        let plan = LogicalPlanBuilder::empty(true)
+            .project_with_alias(vec![lit(1i64).alias("x")], Some("t".to_string()))?
+            .filter(col("t.x").eq(lit(2i64)))?
+            .build()?;
+        // filter no longer references any column after rewriting it over the projection,
+        // it must be kept instead of being dropped
+        let expected = "\
+            Filter: Int64(1) = Int64(2)\
+            \n  Projection: Int64(1) AS x, alias=t\
+            \n    EmptyRelation";
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn filter_on_literal_projection_over_table_scan() -> Result<()> {
+        let table_scan = test_table_scan()?;
+        let plan = LogicalPlanBuilder::from(table_scan)
+            .project(vec![lit(1i64).alias("x"), col("a")])?
+            .filter(and(col("x").eq(lit(2i64)), col("a").eq(lit(3i64))))?
+            .build()?;
+        // column-free part stays on top of the projection,
+        // the rest is pushed down to the table scan
+        let expected = "\
+            Filter: Int64(1) = Int64(2)\
+            \n  Projection: Int64(1) AS x, #test.a\
+            \n    Filter: #test.a = Int64(3)\
+            \n      TableScan: test projection=None";
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn filter_on_literal_projections_under_union() -> Result<()> {
+        let left = LogicalPlanBuilder::empty(true)
+            .project(vec![lit("a").alias("g")])?
+            .build()?;
+        let right = LogicalPlanBuilder::empty(true)
+            .project(vec![lit("b").alias("g")])?
+            .build()?;
+        let plan = LogicalPlanBuilder::from(left)
+            .union(right)?
+            .filter(col("g").eq(lit("b")))?
+            .build()?;
+        // each Union input keeps its own rewritten filter
+        let expected = "\
+            Union\
+            \n  Filter: Utf8(\"a\") = Utf8(\"b\")\
+            \n    Projection: Utf8(\"a\") AS g\
+            \n      EmptyRelation\
+            \n  Filter: Utf8(\"b\") = Utf8(\"b\")\
+            \n    Projection: Utf8(\"b\") AS g\
+            \n      EmptyRelation";
         assert_optimized_plan_eq(&plan, expected);
         Ok(())
     }
