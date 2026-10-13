@@ -1117,13 +1117,16 @@ macro_rules! binary_primitive_array_op {
 
 /// Invoke a compute kernel on an array and a scalar
 /// The binary_primitive_array_op_scalar macro only evaluates for primitive
-/// types like integers and floats.
+/// types like integers and floats. Other types return `Ok(None)` from the
+/// enclosing function, so the caller falls back to the array implementation.
 macro_rules! binary_primitive_array_op_scalar {
     ($LEFT:expr, $RIGHT:expr, $OP:ident) => {{
         let result: Result<Arc<dyn Array>> = match $LEFT.data_type() {
             // TODO support decimal type
             // which is not the primitive type
-            DataType::Decimal(_,_) => compute_decimal_op_scalar!($LEFT, $RIGHT, $OP, DecimalArray),
+            DataType::Decimal(_, _) => {
+                compute_decimal_op_scalar!($LEFT, $RIGHT, $OP, DecimalArray)
+            }
             DataType::Int8 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int8Array),
             DataType::Int16 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int16Array),
             DataType::Int32 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int32Array),
@@ -1134,10 +1137,8 @@ macro_rules! binary_primitive_array_op_scalar {
             DataType::UInt64 => compute_op_scalar!($LEFT, $RIGHT, $OP, UInt64Array),
             DataType::Float32 => compute_op_scalar!($LEFT, $RIGHT, $OP, Float32Array),
             DataType::Float64 => compute_op_scalar!($LEFT, $RIGHT, $OP, Float64Array),
-            other => Err(DataFusionError::Internal(format!(
-                "Data type {:?} not supported for scalar operation '{}' on primitive array",
-                other, stringify!($OP)
-            ))),
+            // e.g. `Timestamp + Interval`, which the array implementation supports
+            _ => return Ok(None),
         };
         Some(result)
     }};
@@ -1814,6 +1815,34 @@ mod tests {
             .expect("failed to downcast to BooleanArray");
         for (i, &expected_item) in expected.iter().enumerate().take(5) {
             assert_eq!(result.value(i), expected_item);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn timestamp_array_interval_scalar_arithmetic() -> Result<()> {
+        const DAY: i64 = 86_400_000_000_000;
+        let schema = Schema::new(vec![Field::new(
+            "a",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            false,
+        )]);
+        let a = TimestampNanosecondArray::from(vec![0, DAY]);
+        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![Arc::new(a)])?;
+        let one_day = lit(ScalarValue::IntervalDayTime(Some(1 << 32)));
+
+        for (op, expected) in [
+            (Operator::Plus, vec![DAY, 2 * DAY]),
+            (Operator::Minus, vec![-DAY, 0]),
+        ] {
+            let expr = BinaryExpr::new(col("a", &schema)?, op, one_day.clone());
+            let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+            let result = result
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .expect("failed to downcast to TimestampNanosecondArray");
+            assert_eq!(result.values(), expected.as_slice(), "{}", op);
         }
 
         Ok(())
