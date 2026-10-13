@@ -1117,30 +1117,34 @@ macro_rules! binary_primitive_array_op {
 
 /// Invoke a compute kernel on an array and a scalar
 /// The binary_primitive_array_op_scalar macro only evaluates for primitive
-/// types like integers and floats. Other types return `Ok(None)` from the
-/// enclosing function, so the caller falls back to the array implementation.
+/// types like integers and floats. Other types yield `None`, so the caller
+/// falls back to the array implementation.
 macro_rules! binary_primitive_array_op_scalar {
     ($LEFT:expr, $RIGHT:expr, $OP:ident) => {{
-        let result: Result<Arc<dyn Array>> = match $LEFT.data_type() {
+        let result: Option<Result<Arc<dyn Array>>> = match $LEFT.data_type() {
             // TODO support decimal type
             // which is not the primitive type
             DataType::Decimal(_, _) => {
-                compute_decimal_op_scalar!($LEFT, $RIGHT, $OP, DecimalArray)
+                Some(compute_decimal_op_scalar!($LEFT, $RIGHT, $OP, DecimalArray))
             }
-            DataType::Int8 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int8Array),
-            DataType::Int16 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int16Array),
-            DataType::Int32 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int32Array),
-            DataType::Int64 => compute_op_scalar!($LEFT, $RIGHT, $OP, Int64Array),
-            DataType::UInt8 => compute_op_scalar!($LEFT, $RIGHT, $OP, UInt8Array),
-            DataType::UInt16 => compute_op_scalar!($LEFT, $RIGHT, $OP, UInt16Array),
-            DataType::UInt32 => compute_op_scalar!($LEFT, $RIGHT, $OP, UInt32Array),
-            DataType::UInt64 => compute_op_scalar!($LEFT, $RIGHT, $OP, UInt64Array),
-            DataType::Float32 => compute_op_scalar!($LEFT, $RIGHT, $OP, Float32Array),
-            DataType::Float64 => compute_op_scalar!($LEFT, $RIGHT, $OP, Float64Array),
-            // e.g. `Timestamp + Interval`, which the array implementation supports
-            _ => return Ok(None),
+            DataType::Int8 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, Int8Array)),
+            DataType::Int16 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, Int16Array)),
+            DataType::Int32 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, Int32Array)),
+            DataType::Int64 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, Int64Array)),
+            DataType::UInt8 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, UInt8Array)),
+            DataType::UInt16 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, UInt16Array)),
+            DataType::UInt32 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, UInt32Array)),
+            DataType::UInt64 => Some(compute_op_scalar!($LEFT, $RIGHT, $OP, UInt64Array)),
+            DataType::Float32 => {
+                Some(compute_op_scalar!($LEFT, $RIGHT, $OP, Float32Array))
+            }
+            DataType::Float64 => {
+                Some(compute_op_scalar!($LEFT, $RIGHT, $OP, Float64Array))
+            }
+            // e.g. `Timestamp - Timestamp`, which only the array implementation supports
+            _ => None,
         };
-        Some(result)
+        result
     }};
 }
 
@@ -1369,8 +1373,10 @@ impl PhysicalExpr for BinaryExpr {
             )));
         }
 
-        // Attempt to use special kernels if one input is scalar and the other is an array
+        // Attempt to use special kernels if one input is scalar and the other is an array.
+        // Distinct-type arithmetic (timestamp/interval) only has array kernels.
         let scalar_result = match (&left_value, &right_value) {
+            _ if left_data_type != right_data_type => None,
             (ColumnarValue::Array(array), ColumnarValue::Scalar(scalar)) => {
                 // if left is array and right is literal - use scalar operations
                 self.evaluate_array_scalar(array, scalar)?
@@ -1844,6 +1850,57 @@ mod tests {
                 .expect("failed to downcast to TimestampNanosecondArray");
             assert_eq!(result.values(), expected.as_slice(), "{}", op);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn timestamp_array_minus_timestamp_scalar() -> Result<()> {
+        const DAY: i64 = 86_400_000_000_000;
+        let ts_type = DataType::Timestamp(TimeUnit::Nanosecond, None);
+        let schema = Schema::new(vec![
+            Field::new("a", ts_type.clone(), false),
+            Field::new("b", ts_type, false),
+        ]);
+        let a = TimestampNanosecondArray::from(vec![DAY, 2 * DAY]);
+        let b = TimestampNanosecondArray::from(vec![DAY, DAY]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema.clone()),
+            vec![Arc::new(a), Arc::new(b)],
+        )?;
+
+        let minus_scalar = BinaryExpr::new(
+            col("a", &schema)?,
+            Operator::Minus,
+            lit(ScalarValue::TimestampNanosecond(Some(DAY), None)),
+        )
+        .evaluate(&batch)?
+        .into_array(batch.num_rows());
+        let minus_array =
+            BinaryExpr::new(col("a", &schema)?, Operator::Minus, col("b", &schema)?)
+                .evaluate(&batch)?
+                .into_array(batch.num_rows());
+        assert_eq!(&minus_scalar, &minus_array);
+
+        Ok(())
+    }
+
+    #[test]
+    fn number_array_times_interval_scalar() -> Result<()> {
+        let schema = Schema::new(vec![Field::new("n", DataType::Int64, false)]);
+        let n = Int64Array::from(vec![1, 2]);
+        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![Arc::new(n)])?;
+        let one_day = lit(ScalarValue::IntervalDayTime(Some(1 << 32)));
+
+        let n_times_interval =
+            BinaryExpr::new(col("n", &schema)?, Operator::Multiply, one_day.clone())
+                .evaluate(&batch)?
+                .into_array(batch.num_rows());
+        let interval_times_n =
+            BinaryExpr::new(one_day, Operator::Multiply, col("n", &schema)?)
+                .evaluate(&batch)?
+                .into_array(batch.num_rows());
+        assert_eq!(&n_times_interval, &interval_times_n);
 
         Ok(())
     }
