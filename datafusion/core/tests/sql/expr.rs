@@ -951,6 +951,9 @@ async fn test_string_expressions() -> Result<()> {
     test_expression!("initcap(NULL)", "NULL");
     test_expression!("lower('')", "");
     test_expression!("lower('TOM')", "tom");
+    test_expression!("lower('ÄB')", "äb");
+    test_expression!("lower('ΟΔΟΣ')", "οδοσ");
+    test_expression!("lower('İ')", "i");
     test_expression!("lower(NULL)", "NULL");
     test_expression!("ltrim(' zzzytest ', NULL)", "NULL");
     test_expression!("ltrim(' zzzytest ')", "zzzytest ");
@@ -1002,6 +1005,8 @@ async fn test_string_expressions() -> Result<()> {
     test_expression!("trim('tom ')", "tom");
     test_expression!("upper('')", "");
     test_expression!("upper('tom')", "TOM");
+    test_expression!("upper('äb')", "ÄB");
+    test_expression!("upper('straße')", "STRAßE");
     test_expression!("upper(NULL)", "NULL");
     Ok(())
 }

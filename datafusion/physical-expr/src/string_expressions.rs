@@ -394,7 +394,21 @@ pub fn initcap<T: StringOffsetSizeTrait>(args: &[ArrayRef]) -> Result<ArrayRef> 
 /// Converts the string to all lower case.
 /// lower('TOM') = 'tom'
 pub fn lower(args: &[ColumnarValue]) -> Result<ColumnarValue> {
-    handle(args, |string| string.to_ascii_lowercase(), "lower")
+    handle(
+        args,
+        |string| {
+            if string.is_ascii() {
+                return string.to_ascii_lowercase();
+            }
+            // Simple 1:1 mapping per char, like PostgreSQL libc locales;
+            // the only multi-char lowercase mapping (U+0130) starts with its simple one
+            string
+                .chars()
+                .map(|c| c.to_lowercase().next().unwrap_or(c))
+                .collect::<String>()
+        },
+        "lower",
+    )
 }
 
 /// Removes the longest string containing only characters in characters (a space by default) from the start of string.
@@ -584,5 +598,25 @@ where
 /// Converts the string to all upper case.
 /// upper('tom') = 'TOM'
 pub fn upper(args: &[ColumnarValue]) -> Result<ColumnarValue> {
-    handle(args, |string| string.to_ascii_uppercase(), "upper")
+    handle(
+        args,
+        |string| {
+            if string.is_ascii() {
+                return string.to_ascii_uppercase();
+            }
+            // Simple 1:1 mapping per char, like PostgreSQL libc locales,
+            // so e.g. 'ß' stays 'ß' instead of expanding to "SS"
+            string
+                .chars()
+                .map(|c| {
+                    let mut upper = c.to_uppercase();
+                    match (upper.next(), upper.next()) {
+                        (Some(u), None) => u,
+                        _ => c,
+                    }
+                })
+                .collect::<String>()
+        },
+        "upper",
+    )
 }
