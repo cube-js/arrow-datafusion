@@ -319,10 +319,22 @@ mod tests {
             "bla".to_string(),
             DataType::Float64,
         ));
-        let actual = aggregate(&batch, agg);
-        assert!(actual.is_err());
+        let actual = aggregate(&batch, agg)?;
+        assert_eq!(actual, ScalarValue::Float64(None));
 
         Ok(())
+    }
+
+    #[test]
+    fn stddev_pop_1_input() -> Result<()> {
+        let a: ArrayRef = Arc::new(Float64Array::from(vec![1_f64]));
+        generic_test_op!(
+            a,
+            DataType::Float64,
+            StddevPop,
+            ScalarValue::from(0_f64),
+            DataType::Float64
+        )
     }
 
     #[test]
@@ -354,8 +366,8 @@ mod tests {
             "bla".to_string(),
             DataType::Float64,
         ));
-        let actual = aggregate(&batch, agg);
-        assert!(actual.is_err());
+        let actual = aggregate(&batch, agg)?;
+        assert_eq!(actual, ScalarValue::Float64(None));
 
         Ok(())
     }
