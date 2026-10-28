@@ -28,8 +28,8 @@ use arrow::{
     datatypes::DataType,
     datatypes::Field,
 };
+use datafusion_common::Result;
 use datafusion_common::ScalarValue;
-use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::Accumulator;
 
 use super::{format_state_name, StatsType};
@@ -279,13 +279,8 @@ impl Accumulator for VarianceAccumulator {
             }
         };
 
-        if count <= 1 {
-            return Err(DataFusionError::Internal(
-                "At least two values are needed to calculate variance".to_string(),
-            ));
-        }
-
-        if self.count == 0 {
+        // Too few values for the statistic yields NULL, as in SQL
+        if count == 0 {
             Ok(ScalarValue::Float64(None))
         } else {
             Ok(ScalarValue::Float64(Some(self.m2 / count as f64)))
@@ -401,10 +396,34 @@ mod tests {
             "bla".to_string(),
             DataType::Float64,
         ));
-        let actual = aggregate(&batch, agg);
-        assert!(actual.is_err());
+        let actual = aggregate(&batch, agg)?;
+        assert_eq!(actual, ScalarValue::Float64(None));
 
         Ok(())
+    }
+
+    #[test]
+    fn variance_2_inputs() -> Result<()> {
+        let a: ArrayRef = Arc::new(Float64Array::from(vec![1_f64, 3_f64]));
+        generic_test_op!(
+            a,
+            DataType::Float64,
+            Variance,
+            ScalarValue::from(2_f64),
+            DataType::Float64
+        )
+    }
+
+    #[test]
+    fn variance_pop_1_input() -> Result<()> {
+        let a: ArrayRef = Arc::new(Float64Array::from(vec![1_f64]));
+        generic_test_op!(
+            a,
+            DataType::Float64,
+            VariancePop,
+            ScalarValue::from(0_f64),
+            DataType::Float64
+        )
     }
 
     #[test]
@@ -436,8 +455,8 @@ mod tests {
             "bla".to_string(),
             DataType::Float64,
         ));
-        let actual = aggregate(&batch, agg);
-        assert!(actual.is_err());
+        let actual = aggregate(&batch, agg)?;
+        assert_eq!(actual, ScalarValue::Float64(None));
 
         Ok(())
     }
