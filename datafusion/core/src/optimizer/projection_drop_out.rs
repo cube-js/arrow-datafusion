@@ -21,8 +21,8 @@
 use crate::error::{DataFusionError, Result};
 use crate::logical_plan::plan::{Aggregate, Projection, Sort, Subquery};
 use crate::logical_plan::{
-    normalize_col, replace_col_to_expr, unnormalize_col, Column, DFField, DFSchema,
-    Filter, LogicalPlan,
+    normalize_col, replace_col_to_expr, Column, DFField, DFSchema, ExprRewritable,
+    ExprRewriter, Filter, LogicalPlan,
 };
 use crate::optimizer::optimizer::OptimizerConfig;
 use crate::optimizer::optimizer::OptimizerRule;
@@ -358,7 +358,7 @@ fn rewrite_projection_expr(
         .map(|e| match replace_col_to_expr(e.clone(), &rewrite_map) {
             Ok(expr) => {
                 let old_name = expr_name(e, schema)?;
-                let new_e = normalize_col(unnormalize_col(expr), input)?;
+                let new_e = normalize_col(unqualify_unresolved_col(expr, input)?, input)?;
 
                 Ok(if old_name != expr_name(&new_e, schema)? {
                     Expr::Alias(Box::new(new_e), old_name)
@@ -369,6 +369,36 @@ fn rewrite_projection_expr(
             Err(e) => Err(e),
         })
         .collect::<Result<Vec<Expr>>>()
+}
+
+/// Removes qualifiers that don't resolve in `input` and takes the schema's spelling of
+/// the rest. Re-resolving a qualified column by its bare name would pick the wrong side
+/// of a join when both sides have a column with that name.
+fn unqualify_unresolved_col(expr: Expr, input: &LogicalPlan) -> Result<Expr> {
+    struct Unqualify<'a> {
+        schema: &'a DFSchema,
+    }
+
+    impl<'a> ExprRewriter for Unqualify<'a> {
+        fn mutate(&mut self, expr: Expr) -> Result<Expr> {
+            match expr {
+                Expr::Column(col) if col.relation.is_some() => {
+                    Ok(Expr::Column(match self.schema.field_from_column(&col) {
+                        Ok(field) => field.qualified_column(),
+                        Err(_) => Column {
+                            relation: None,
+                            name: col.name,
+                        },
+                    }))
+                }
+                _ => Ok(expr),
+            }
+        }
+    }
+
+    expr.rewrite(&mut Unqualify {
+        schema: input.schema(),
+    })
 }
 
 fn rewrite_aggregate_expr(
@@ -385,7 +415,8 @@ fn rewrite_aggregate_expr(
             if let Ok(expr) = &expr {
                 let old_name = e.name(schema)?;
                 let new_name =
-                    normalize_col(unnormalize_col(expr.clone()), input)?.name(schema)?;
+                    normalize_col(unqualify_unresolved_col(expr.clone(), input)?, input)?
+                        .name(schema)?;
 
                 if old_name != new_name {
                     rewritten_map.insert(
@@ -1113,6 +1144,65 @@ mod tests {
         \n      TableScan: test projection=None\
         \n    Projection: #test.a, alias=n\
         \n      TableScan: test projection=None";
+
+        assert_optimized_plan_eq(&plan, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn join_keeps_column_side() -> Result<()> {
+        let table_scan = test_table_scan()?;
+
+        // select k, v2 from (select l.k, R.v v2 from (select a k, b v from test) l left join (select a k, b v from test) r on l.k = r.k) x;
+        let right = LogicalPlanBuilder::from(table_scan.clone())
+            .project_with_alias(
+                vec![col("a").alias("k"), col("b").alias("v")],
+                Some("r".to_string()),
+            )?
+            .build()?;
+        let join = LogicalPlanBuilder::from(table_scan)
+            .project_with_alias(
+                vec![col("a").alias("k"), col("b").alias("v")],
+                Some("l".to_string()),
+            )?
+            .join(&right, JoinType::Left, (vec!["l.k"], vec!["r.k"]))?
+            .build()?;
+        let plan = LogicalPlanBuilder::from(join.clone())
+            .project_with_alias(
+                vec![col("l.k"), col("R.v").alias("v2")],
+                Some("x".to_string()),
+            )?
+            .project_with_alias(vec![col("k"), col("v2")], Some("x".to_string()))?
+            .build()?;
+
+        let expected = "Projection: #l.k, #r.v AS v2, alias=x\
+        \n  Left Join: #l.k = #r.k\
+        \n    Projection: #test.a AS k, #test.b AS v, alias=l\
+        \n      TableScan: test projection=None\
+        \n    Projection: #test.a AS k, #test.b AS v, alias=r\
+        \n      TableScan: test projection=None";
+
+        assert_optimized_plan_eq(&plan, expected);
+
+        // select v2 from (select v1, v2 from (select l.v v1, r.v v2 from l left join r on l.k = r.k group by 1, 2) x group by 1, 2) y;
+        let plan = LogicalPlanBuilder::from(join)
+            .aggregate(vec![col("l.v"), col("r.v")], Vec::<Expr>::new())?
+            .project_with_alias(
+                vec![col("l.v").alias("v1"), col("r.v").alias("v2")],
+                Some("x".to_string()),
+            )?
+            .aggregate(vec![col("v1"), col("v2")], Vec::<Expr>::new())?
+            .project_with_alias(vec![col("v2")], Some("y".to_string()))?
+            .build()?;
+
+        let expected = "Projection: #r.v AS v2, alias=y\
+        \n  Aggregate: groupBy=[[#l.v, #r.v]], aggr=[[]]\
+        \n    Left Join: #l.k = #r.k\
+        \n      Projection: #test.a AS k, #test.b AS v, alias=l\
+        \n        TableScan: test projection=None\
+        \n      Projection: #test.a AS k, #test.b AS v, alias=r\
+        \n        TableScan: test projection=None";
 
         assert_optimized_plan_eq(&plan, expected);
 
