@@ -32,7 +32,7 @@ use crate::logical_plan::EmptyRelation;
 use crate::logical_plan::Expr::Alias;
 use crate::logical_plan::{
     and, builder::expand_qualified_wildcard, builder::expand_wildcard, col, lit,
-    normalize_col, rewrite_udtfs_to_columns, Column, CreateMemoryTable, DFSchema,
+    normalize_col, rewrite_udtfs_to_columns, when, Column, CreateMemoryTable, DFSchema,
     DFSchemaRef, DropTable, Expr, ExprSchemable, Like, LogicalPlan, LogicalPlanBuilder,
     Operator, PlanType, SubqueryType, ToDFSchema, ToStringifiedPlan,
 };
@@ -53,7 +53,7 @@ use crate::{
 use arrow::datatypes::*;
 use datafusion_expr::{
     window_function::{BuiltInWindowFunction, WindowFunction},
-    BuiltinScalarFunction,
+    AggregateFunction, BuiltinScalarFunction,
 };
 use hashbrown::HashMap;
 
@@ -619,11 +619,15 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
 
                 // return the logical plan representing the join
                 if left_keys.is_empty() {
-                    // When we don't have join keys, use cross join
-                    let join = LogicalPlanBuilder::from(left).cross_join(&right)?;
+                    let condition = filter.into_iter().reduce(Expr::and).unwrap();
+                    if join_type == JoinType::Inner {
+                        // When we don't have join keys, use cross join
+                        let join = LogicalPlanBuilder::from(left).cross_join(&right)?;
 
-                    join.filter(filter.into_iter().reduce(Expr::and).unwrap())?
-                        .build()
+                        join.filter(condition)?.build()
+                    } else {
+                        plan_outer_join_without_keys(left, right, condition, join_type)
+                    }
                 } else if filter.is_empty() {
                     let join = LogicalPlanBuilder::from(left).join(
                         &right,
@@ -3538,6 +3542,211 @@ fn extract_join_keys(
             accum_filter.push(expr);
         }
     }
+}
+
+const OUTER_JOIN_LEFT_ROW: &str = "__outer_join_left_row";
+const OUTER_JOIN_RIGHT_ROW: &str = "__outer_join_right_row";
+const OUTER_JOIN_LEFT_PAD: &str = "__outer_join_left_pad";
+const OUTER_JOIN_RIGHT_PAD: &str = "__outer_join_right_pad";
+const OUTER_JOIN_PAD_KEY: &str = "__outer_join_pad_key";
+const OUTER_JOIN_MATCHED: &str = "__outer_join_matched";
+const OUTER_JOIN_LEFT_MATCHED: &str = "__outer_join_left_matched";
+const OUTER_JOIN_RIGHT_MATCHED: &str = "__outer_join_right_matched";
+
+/// Plans a LEFT, RIGHT or FULL join whose ON condition has no equi-join keys.
+///
+/// A cross join followed by a filter would drop the rows that have no match, so
+/// each side whose unmatched rows are kept gets a row number, and the other side
+/// gets one extra all-NULL row. The cross join then contains, for every kept row,
+/// its pairing with that NULL row; a window over the row number tells whether the
+/// row matched anything, and the filter keeps the pairs that match plus the NULL
+/// pairing of each row that matched nothing:
+///
+/// ```text
+/// l LEFT JOIN r ON c
+///   => SELECT l.*, r.* FROM (SELECT l.*, row_number() AS lrow FROM l)
+///      CROSS JOIN (SELECT r.* FROM (VALUES (1), (2)) p(pad)
+///                  LEFT JOIN (SELECT r.*, 1 AS key FROM r) ON pad = key)
+///      WHERE m = 1 OR (max(m) OVER (PARTITION BY lrow) = 0 AND pad = 2)
+///   where m = CASE WHEN pad = 1 AND c THEN 1 ELSE 0 END
+/// ```
+///
+/// Each input is evaluated once, so the row numbers don't depend on the order in
+/// which the inputs produce their rows.
+fn plan_outer_join_without_keys(
+    left: LogicalPlan,
+    right: LogicalPlan,
+    condition: Expr,
+    join_type: JoinType,
+) -> Result<LogicalPlan> {
+    let keep_left = matches!(join_type, JoinType::Left | JoinType::Full);
+    let keep_right = matches!(join_type, JoinType::Right | JoinType::Full);
+    if !keep_left && !keep_right {
+        return Err(DataFusionError::Internal(format!(
+            "Unexpected join type for an outer join without keys: {:?}",
+            join_type
+        )));
+    }
+
+    let output = left
+        .schema()
+        .fields()
+        .iter()
+        .chain(right.schema().fields().iter())
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect::<Vec<_>>();
+
+    let mut left = left;
+    let mut right = right;
+    if keep_left {
+        left = add_row_number(left, OUTER_JOIN_LEFT_ROW)?;
+        right = add_null_row(right, OUTER_JOIN_RIGHT_PAD)?;
+    }
+    if keep_right {
+        right = add_row_number(right, OUTER_JOIN_RIGHT_ROW)?;
+        left = add_null_row(left, OUTER_JOIN_LEFT_PAD)?;
+    }
+
+    // Whether a pair is a real match, as 1 or 0: neither side is the NULL row
+    // and the condition is true. It's an integer since MAX doesn't take booleans.
+    let mut matched = condition;
+    for pad in [
+        keep_right.then(|| OUTER_JOIN_LEFT_PAD),
+        keep_left.then(|| OUTER_JOIN_RIGHT_PAD),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        matched = col(pad).eq(lit(1i64)).and(matched);
+    }
+    let matched = when(matched, lit(1i64)).otherwise(lit(0i64))?;
+
+    let mut plan = LogicalPlanBuilder::from(left).cross_join(&right)?.build()?;
+    plan = add_column(plan, matched, OUTER_JOIN_MATCHED)?;
+    let mut keep = col(OUTER_JOIN_MATCHED).eq(lit(1i64));
+    if keep_left {
+        plan = add_window_column(
+            plan,
+            any_matched(OUTER_JOIN_LEFT_ROW),
+            OUTER_JOIN_LEFT_MATCHED,
+        )?;
+        let mut unmatched = col(OUTER_JOIN_LEFT_MATCHED)
+            .eq(lit(0i64))
+            .and(col(OUTER_JOIN_RIGHT_PAD).eq(lit(2i64)));
+        if keep_right {
+            unmatched = col(OUTER_JOIN_LEFT_PAD).eq(lit(1i64)).and(unmatched);
+        }
+        keep = keep.or(unmatched);
+    }
+    if keep_right {
+        plan = add_window_column(
+            plan,
+            any_matched(OUTER_JOIN_RIGHT_ROW),
+            OUTER_JOIN_RIGHT_MATCHED,
+        )?;
+        let mut unmatched = col(OUTER_JOIN_RIGHT_MATCHED)
+            .eq(lit(0i64))
+            .and(col(OUTER_JOIN_LEFT_PAD).eq(lit(2i64)));
+        if keep_left {
+            unmatched = col(OUTER_JOIN_RIGHT_PAD).eq(lit(1i64)).and(unmatched);
+        }
+        keep = keep.or(unmatched);
+    }
+
+    LogicalPlanBuilder::from(plan)
+        .filter(keep)?
+        .project(output)?
+        .build()
+}
+
+/// `MAX(matched) OVER (PARTITION BY row)`: 1 if the row has any match
+fn any_matched(row: &str) -> Expr {
+    Expr::WindowFunction {
+        fun: WindowFunction::AggregateFunction(AggregateFunction::Max),
+        args: vec![col(OUTER_JOIN_MATCHED)],
+        partition_by: vec![col(row)],
+        order_by: vec![],
+        window_frame: None,
+    }
+}
+
+/// Appends `expr` to `plan` as a column named `name`, keeping the qualifiers
+/// of the existing columns
+fn add_column(plan: LogicalPlan, expr: Expr, name: &str) -> Result<LogicalPlan> {
+    let mut columns = plan
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect::<Vec<_>>();
+    columns.push(expr.alias(name));
+    LogicalPlanBuilder::from(plan).project(columns)?.build()
+}
+
+/// Appends the result of `window_expr` to `plan` as a column named `name`,
+/// keeping the qualifiers of the existing columns
+fn add_window_column(
+    plan: LogicalPlan,
+    window_expr: Expr,
+    name: &str,
+) -> Result<LogicalPlan> {
+    let mut columns = plan
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect::<Vec<_>>();
+    let window = LogicalPlanBuilder::from(plan).window(vec![window_expr])?;
+    // The window puts its own columns before those of its input
+    let window_column = window.schema().field(0).qualified_column();
+    columns.push(Expr::Column(window_column).alias(name));
+    window.project(columns)?.build()
+}
+
+/// Numbers the rows of `plan` in a new column named `name`
+fn add_row_number(plan: LogicalPlan, name: &str) -> Result<LogicalPlan> {
+    let row_number = Expr::WindowFunction {
+        fun: WindowFunction::BuiltInWindowFunction(BuiltInWindowFunction::RowNumber),
+        args: vec![],
+        partition_by: vec![],
+        order_by: vec![],
+        window_frame: None,
+    };
+    add_window_column(plan, row_number, name)
+}
+
+/// Adds one row of NULLs to `plan`, and a column named `pad` that is 1 for the
+/// rows of `plan` and 2 for the added row.
+///
+/// The row comes from a left join rather than a union, since a union would drop
+/// the qualifiers of the columns.
+fn add_null_row(plan: LogicalPlan, pad: &str) -> Result<LogicalPlan> {
+    let mut columns = plan
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect::<Vec<_>>();
+    let keyed = {
+        let mut keyed_columns = columns.clone();
+        keyed_columns.push(lit(1i64).alias(OUTER_JOIN_PAD_KEY));
+        LogicalPlanBuilder::from(plan)
+            .project(keyed_columns)?
+            .build()?
+    };
+    columns.insert(0, col(pad));
+    LogicalPlanBuilder::values(vec![vec![lit(1i64)], vec![lit(2i64)]])?
+        .project(vec![col("column1").alias(pad)])?
+        .join(
+            &keyed,
+            JoinType::Left,
+            (
+                vec![Column::from_name(pad)],
+                vec![Column::from_name(OUTER_JOIN_PAD_KEY)],
+            ),
+        )?
+        .project(columns)?
+        .build()
 }
 
 /// Extract join keys from a WHERE clause

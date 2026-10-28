@@ -312,6 +312,149 @@ async fn self_join_non_equijoin() -> Result<()> {
 }
 
 #[tokio::test]
+async fn left_join_without_equijoin_keys() -> Result<()> {
+    let ctx = create_join_context("t1_id", "t2_id")?;
+    let sql = "SELECT t1_id, t1_name, t2_id, t2_name FROM t1 \
+        LEFT JOIN t2 ON t2_id = t1_id OR t2_id = t1_id * 2 \
+        ORDER BY t1_id, t2_id";
+    let expected = [
+        "+-------+---------+-------+---------+",
+        "| t1_id | t1_name | t2_id | t2_name |",
+        "+-------+---------+-------+---------+",
+        "| 11    | a       | 11    | z       |",
+        "| 11    | a       | 22    | y       |",
+        "| 22    | b       | 22    | y       |",
+        "| 22    | b       | 44    | x       |",
+        "| 33    | c       |       |         |",
+        "| 44    | d       | 44    | x       |",
+        "+-------+---------+-------+---------+",
+    ];
+    let actual = execute_to_batches(&ctx, sql).await;
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn right_join_without_equijoin_keys() -> Result<()> {
+    let ctx = create_join_context("t1_id", "t2_id")?;
+    let sql = "SELECT t1_id, t1_name, t2_id, t2_name FROM t1 \
+        RIGHT JOIN t2 ON t2_id = t1_id OR t2_id = t1_id * 2 \
+        ORDER BY t2_id, t1_id";
+    let expected = [
+        "+-------+---------+-------+---------+",
+        "| t1_id | t1_name | t2_id | t2_name |",
+        "+-------+---------+-------+---------+",
+        "| 11    | a       | 11    | z       |",
+        "| 11    | a       | 22    | y       |",
+        "| 22    | b       | 22    | y       |",
+        "| 22    | b       | 44    | x       |",
+        "| 44    | d       | 44    | x       |",
+        "|       |         | 55    | w       |",
+        "+-------+---------+-------+---------+",
+    ];
+    let actual = execute_to_batches(&ctx, sql).await;
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_join_without_equijoin_keys() -> Result<()> {
+    let ctx = create_join_context("t1_id", "t2_id")?;
+    let sql = "SELECT t1_id, t1_name, t2_id, t2_name FROM t1 \
+        FULL JOIN t2 ON t2_id = t1_id OR t2_id = t1_id * 2 \
+        ORDER BY t1_id, t2_id";
+    let expected = [
+        "+-------+---------+-------+---------+",
+        "| t1_id | t1_name | t2_id | t2_name |",
+        "+-------+---------+-------+---------+",
+        "| 11    | a       | 11    | z       |",
+        "| 11    | a       | 22    | y       |",
+        "| 22    | b       | 22    | y       |",
+        "| 22    | b       | 44    | x       |",
+        "| 33    | c       |       |         |",
+        "| 44    | d       | 44    | x       |",
+        "|       |         | 55    | w       |",
+        "+-------+---------+-------+---------+",
+    ];
+    let actual = execute_to_batches(&ctx, sql).await;
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn left_join_without_equijoin_keys_condition_on_left_only() -> Result<()> {
+    // `t1_id = 33` holds without any row of t2, which must not make the
+    // added NULL row of t2 count as a match
+    let ctx = create_join_context("t1_id", "t2_id")?;
+    let sql = "SELECT t1_id, t2_id FROM t1 \
+        LEFT JOIN t2 ON t1_id = 33 OR t2_id = t1_id \
+        ORDER BY t1_id, t2_id";
+    let expected = [
+        "+-------+-------+",
+        "| t1_id | t2_id |",
+        "+-------+-------+",
+        "| 11    | 11    |",
+        "| 22    | 22    |",
+        "| 33    | 11    |",
+        "| 33    | 22    |",
+        "| 33    | 44    |",
+        "| 33    | 55    |",
+        "| 44    | 44    |",
+        "+-------+-------+",
+    ];
+    let actual = execute_to_batches(&ctx, sql).await;
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn left_join_without_equijoin_keys_empty_right() -> Result<()> {
+    let ctx = create_join_context("t1_id", "t2_id")?;
+    let sql = "SELECT t1_id, t2_id FROM t1 \
+        LEFT JOIN (SELECT * FROM t2 WHERE t2_id > 100) t2 \
+        ON t1_id = 33 OR t2_id = t1_id \
+        ORDER BY t1_id";
+    let expected = [
+        "+-------+-------+",
+        "| t1_id | t2_id |",
+        "+-------+-------+",
+        "| 11    |       |",
+        "| 22    |       |",
+        "| 33    |       |",
+        "| 44    |       |",
+        "+-------+-------+",
+    ];
+    let actual = execute_to_batches(&ctx, sql).await;
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn left_join_without_equijoin_keys_after_join() -> Result<()> {
+    // The left side is itself a join, so its columns have two qualifiers
+    let ctx = create_join_context("t1_id", "t2_id")?;
+    let sql = "SELECT a.t1_id, b.t1_name, c.t2_id FROM t1 a \
+        LEFT JOIN t1 b ON a.t1_id = b.t1_id \
+        LEFT JOIN t2 c ON c.t2_id = a.t1_id OR c.t2_id = b.t1_id * 2 \
+        ORDER BY a.t1_id, c.t2_id";
+    let expected = [
+        "+-------+---------+-------+",
+        "| t1_id | t1_name | t2_id |",
+        "+-------+---------+-------+",
+        "| 11    | a       | 11    |",
+        "| 11    | a       | 22    |",
+        "| 22    | b       | 22    |",
+        "| 22    | b       | 44    |",
+        "| 33    | c       |       |",
+        "| 44    | d       | 44    |",
+        "+-------+---------+-------+",
+    ];
+    let actual = execute_to_batches(&ctx, sql).await;
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
 async fn right_join_null_filter() -> Result<()> {
     let ctx = create_join_context_with_nulls()?;
     let sql = "SELECT t1_id, t1_name, t2_id FROM t1 RIGHT JOIN t2 ON t1_id = t2_id WHERE t1_name IS NULL ORDER BY t2_id";
