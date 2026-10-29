@@ -32,7 +32,7 @@ use crate::logical_plan::EmptyRelation;
 use crate::logical_plan::Expr::Alias;
 use crate::logical_plan::{
     and, builder::expand_qualified_wildcard, builder::expand_wildcard, col, lit,
-    normalize_col, rewrite_udtfs_to_columns, Column, CreateMemoryTable, DFSchema,
+    normalize_col, rewrite_udtfs_to_columns, when, Column, CreateMemoryTable, DFSchema,
     DFSchemaRef, DropTable, Expr, ExprSchemable, Like, LogicalPlan, LogicalPlanBuilder,
     Operator, PlanType, SubqueryType, ToDFSchema, ToStringifiedPlan,
 };
@@ -53,7 +53,7 @@ use crate::{
 use arrow::datatypes::*;
 use datafusion_expr::{
     window_function::{BuiltInWindowFunction, WindowFunction},
-    BuiltinScalarFunction,
+    AggregateFunction, BuiltinScalarFunction,
 };
 use hashbrown::HashMap;
 
@@ -611,6 +611,36 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                 // extract join keys
                 extract_join_keys(expr, &mut keys, &mut filter);
 
+                // A filter after an outer join would drop the rows it keeps
+                // unmatched, so an equality between an expression of each side
+                // becomes a join key: each side computes its expression in a new
+                // column, and the columns are dropped again after the join
+                let mut left = left;
+                let mut right = right;
+                let mut output = None;
+                if join_type != JoinType::Inner {
+                    let expr_keys;
+                    (expr_keys, filter) =
+                        extract_expr_join_keys(left.schema(), right.schema(), filter)?;
+                    if !expr_keys.is_empty() {
+                        output = Some(qualified_columns(&join_schema));
+                        let mut left_exprs = vec![];
+                        let mut right_exprs = vec![];
+                        for (i, (l, r)) in expr_keys.into_iter().enumerate() {
+                            let left_name = format!("{}_{}", EXPR_JOIN_LEFT_KEY, i);
+                            let right_name = format!("{}_{}", EXPR_JOIN_RIGHT_KEY, i);
+                            left_exprs.push(l.alias(&left_name));
+                            right_exprs.push(r.alias(&right_name));
+                            keys.push((
+                                Column::from_name(left_name),
+                                Column::from_name(right_name),
+                            ));
+                        }
+                        left = add_columns(left, left_exprs)?;
+                        right = add_columns(right, right_exprs)?;
+                    }
+                }
+
                 let mut cols = HashSet::new();
                 exprlist_to_columns(&filter, &mut cols)?;
 
@@ -618,12 +648,16 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                     keys.into_iter().unzip();
 
                 // return the logical plan representing the join
-                if left_keys.is_empty() {
-                    // When we don't have join keys, use cross join
-                    let join = LogicalPlanBuilder::from(left).cross_join(&right)?;
+                let plan = if left_keys.is_empty() {
+                    let condition = filter.into_iter().reduce(Expr::and).unwrap();
+                    if join_type == JoinType::Inner {
+                        // When we don't have join keys, use cross join
+                        let join = LogicalPlanBuilder::from(left).cross_join(&right)?;
 
-                    join.filter(filter.into_iter().reduce(Expr::and).unwrap())?
-                        .build()
+                        join.filter(condition)?.build()
+                    } else {
+                        plan_outer_join_without_keys(left, right, condition, join_type)
+                    }
                 } else if filter.is_empty() {
                     let join = LogicalPlanBuilder::from(left).join(
                         &right,
@@ -700,6 +734,13 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         "Unsupported expressions in {:?} JOIN: {:?}",
                         join_type, filter
                     )))
+                }?;
+
+                match output {
+                    Some(output) => {
+                        LogicalPlanBuilder::from(plan).project(output)?.build()
+                    }
+                    None => Ok(plan),
                 }
             }
             JoinConstraint::Using(idents) => {
@@ -3538,6 +3579,235 @@ fn extract_join_keys(
             accum_filter.push(expr);
         }
     }
+}
+
+const EXPR_JOIN_LEFT_KEY: &str = "__expr_join_left_key";
+const EXPR_JOIN_RIGHT_KEY: &str = "__expr_join_right_key";
+const OUTER_JOIN_LEFT_ROW: &str = "__outer_join_left_row";
+const OUTER_JOIN_RIGHT_ROW: &str = "__outer_join_right_row";
+const OUTER_JOIN_LEFT_PAD: &str = "__outer_join_left_pad";
+const OUTER_JOIN_RIGHT_PAD: &str = "__outer_join_right_pad";
+const OUTER_JOIN_LEFT_MATCHED: &str = "__outer_join_left_matched";
+const OUTER_JOIN_RIGHT_MATCHED: &str = "__outer_join_right_matched";
+
+/// An expression of the left side and an expression of the right side whose
+/// values must be equal
+type ExprJoinKey = (Expr, Expr);
+
+/// Takes from `filter` the equalities between an expression of the left side and
+/// an expression of the right side of the same type, and returns them as
+/// (left, right) pairs together with the rest of `filter`
+fn extract_expr_join_keys(
+    left: &DFSchema,
+    right: &DFSchema,
+    filter: Vec<Expr>,
+) -> Result<(Vec<ExprJoinKey>, Vec<Expr>)> {
+    let mut keys = vec![];
+    let mut rest = vec![];
+    for expr in filter {
+        if let Expr::BinaryExpr {
+            left: a,
+            op: Operator::Eq,
+            right: b,
+        } = &expr
+        {
+            if let Some(key) = expr_join_key(a, b, left, right)? {
+                keys.push(key);
+                continue;
+            }
+            if let Some(key) = expr_join_key(b, a, left, right)? {
+                keys.push(key);
+                continue;
+            }
+        }
+        rest.push(expr);
+    }
+    Ok((keys, rest))
+}
+
+/// `Some((l, r))` if `l` only refers to `left`, `r` only to `right`, and both
+/// have the same type
+fn expr_join_key(
+    l: &Expr,
+    r: &Expr,
+    left: &DFSchema,
+    right: &DFSchema,
+) -> Result<Option<ExprJoinKey>> {
+    let refers_only_to = |expr: &Expr, schema: &DFSchema| -> Result<bool> {
+        let mut cols = HashSet::new();
+        exprlist_to_columns(std::slice::from_ref(expr), &mut cols)?;
+        Ok(!cols.is_empty()
+            && cols.iter().all(|c| {
+                schema
+                    .field_with_name(c.relation.as_deref(), &c.name)
+                    .is_ok()
+            }))
+    };
+    if refers_only_to(l, left)?
+        && refers_only_to(r, right)?
+        && l.get_type(left)? == r.get_type(right)?
+    {
+        Ok(Some((l.clone(), r.clone())))
+    } else {
+        Ok(None)
+    }
+}
+
+/// The columns of `schema`, with their qualifiers
+fn qualified_columns(schema: &DFSchema) -> Vec<Expr> {
+    schema
+        .fields()
+        .iter()
+        .map(|f| Expr::Column(f.qualified_column()))
+        .collect()
+}
+
+/// Plans a LEFT, RIGHT or FULL join whose ON condition has no equi-join keys.
+///
+/// A cross join followed by a filter would drop the rows that have no match, so
+/// each side whose unmatched rows are kept gets a row number, and the other side
+/// gets one extra all-NULL row. The cross join then contains, for every kept row,
+/// its pairing with that NULL row; a window over the row number tells whether the
+/// row matched anything, and the filter keeps the pairs that match plus the NULL
+/// pairing of each row that matched nothing:
+///
+/// ```text
+/// l LEFT JOIN r ON c
+///   => SELECT l.*, r.* FROM (SELECT l.*, row_number() AS lrow FROM l)
+///      CROSS JOIN ((VALUES (1), (2)) p(pad)
+///                  LEFT JOIN (SELECT r.*, 1 AS key FROM r) ON pad = key)
+///      WHERE m = 1 OR (max(m) OVER (PARTITION BY lrow) = 0 AND pad = 2)
+///   where m = CASE WHEN pad = 1 AND c THEN 1 ELSE 0 END
+/// ```
+///
+/// Each input is evaluated once, so the row numbers don't depend on the order in
+/// which the inputs produce their rows. The plan adds as few nodes as it can
+/// (each window computes its expression and names its column itself, and the
+/// extra columns are only dropped at the end), since cubesql converts plans
+/// recursively and a chain of such joins would otherwise grow its stack quickly.
+fn plan_outer_join_without_keys(
+    left: LogicalPlan,
+    right: LogicalPlan,
+    condition: Expr,
+    join_type: JoinType,
+) -> Result<LogicalPlan> {
+    let keep_left = matches!(join_type, JoinType::Left | JoinType::Full);
+    let keep_right = matches!(join_type, JoinType::Right | JoinType::Full);
+    if !keep_left && !keep_right {
+        return Err(DataFusionError::Internal(format!(
+            "Unexpected join type for an outer join without keys: {:?}",
+            join_type
+        )));
+    }
+
+    let output = qualified_columns(&left.schema().join(right.schema())?);
+
+    let mut left = left;
+    let mut right = right;
+    if keep_left {
+        left = add_row_number(left, OUTER_JOIN_LEFT_ROW)?;
+        right = add_null_row(right, OUTER_JOIN_RIGHT_PAD)?;
+    }
+    if keep_right {
+        right = add_row_number(right, OUTER_JOIN_RIGHT_ROW)?;
+        left = add_null_row(left, OUTER_JOIN_LEFT_PAD)?;
+    }
+
+    // Whether a pair is a real match, as 1 or 0: neither side is the NULL row
+    // and the condition is true. It's an integer since MAX doesn't take booleans.
+    let mut matched = condition;
+    for pad in [
+        keep_right.then(|| OUTER_JOIN_LEFT_PAD),
+        keep_left.then(|| OUTER_JOIN_RIGHT_PAD),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        matched = col(pad).eq(lit(1i64)).and(matched);
+    }
+    let matched = when(matched, lit(1i64)).otherwise(lit(0i64))?;
+
+    // A window takes a single partitioning, so FULL needs two
+    let mut plan = LogicalPlanBuilder::from(left).cross_join(&right)?;
+    let mut keep = matched.clone().eq(lit(1i64));
+    if keep_left {
+        plan = plan.window(vec![
+            any_matched(&matched, OUTER_JOIN_LEFT_ROW).alias(OUTER_JOIN_LEFT_MATCHED)
+        ])?;
+        let mut unmatched = col(OUTER_JOIN_LEFT_MATCHED)
+            .eq(lit(0i64))
+            .and(col(OUTER_JOIN_RIGHT_PAD).eq(lit(2i64)));
+        if keep_right {
+            unmatched = col(OUTER_JOIN_LEFT_PAD).eq(lit(1i64)).and(unmatched);
+        }
+        keep = keep.or(unmatched);
+    }
+    if keep_right {
+        plan = plan
+            .window(vec![any_matched(&matched, OUTER_JOIN_RIGHT_ROW)
+                .alias(OUTER_JOIN_RIGHT_MATCHED)])?;
+        let mut unmatched = col(OUTER_JOIN_RIGHT_MATCHED)
+            .eq(lit(0i64))
+            .and(col(OUTER_JOIN_LEFT_PAD).eq(lit(2i64)));
+        if keep_left {
+            unmatched = col(OUTER_JOIN_RIGHT_PAD).eq(lit(1i64)).and(unmatched);
+        }
+        keep = keep.or(unmatched);
+    }
+
+    plan.filter(keep)?.project(output)?.build()
+}
+
+/// `MAX(matched) OVER (PARTITION BY row)`: 1 if the row has any match
+fn any_matched(matched: &Expr, row: &str) -> Expr {
+    Expr::WindowFunction {
+        fun: WindowFunction::AggregateFunction(AggregateFunction::Max),
+        args: vec![matched.clone()],
+        partition_by: vec![col(row)],
+        order_by: vec![],
+        window_frame: None,
+    }
+}
+
+/// Appends `exprs` to `plan` as new columns, keeping the qualifiers of the
+/// existing columns
+fn add_columns(plan: LogicalPlan, exprs: Vec<Expr>) -> Result<LogicalPlan> {
+    let mut columns = qualified_columns(plan.schema());
+    columns.extend(exprs);
+    LogicalPlanBuilder::from(plan).project(columns)?.build()
+}
+
+/// Numbers the rows of `plan` in a new column named `name`
+fn add_row_number(plan: LogicalPlan, name: &str) -> Result<LogicalPlan> {
+    let row_number = Expr::WindowFunction {
+        fun: WindowFunction::BuiltInWindowFunction(BuiltInWindowFunction::RowNumber),
+        args: vec![],
+        partition_by: vec![],
+        order_by: vec![],
+        window_frame: None,
+    };
+    LogicalPlanBuilder::from(plan)
+        .window(vec![row_number.alias(name)])?
+        .build()
+}
+
+/// Adds one row of NULLs to `plan`, and a column named `pad` that is 1 for the
+/// rows of `plan` and 2 for the added row. The result also has a column named
+/// `{pad}_key`, which is 1 or NULL.
+///
+/// The row comes from a left join rather than a union, since a union would drop
+/// the qualifiers of the columns.
+fn add_null_row(plan: LogicalPlan, pad: &str) -> Result<LogicalPlan> {
+    let key = format!("{}_key", pad);
+    let keyed = add_columns(plan, vec![lit(1i64).alias(&key)])?;
+    LogicalPlanBuilder::values(vec![vec![lit(1i64)], vec![lit(2i64)]])?
+        .project(vec![col("column1").alias(pad)])?
+        .join(
+            &keyed,
+            JoinType::Left,
+            (vec![Column::from_name(pad)], vec![Column::from_name(key)]),
+        )?
+        .build()
 }
 
 /// Extract join keys from a WHERE clause
