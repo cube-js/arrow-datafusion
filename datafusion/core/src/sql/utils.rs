@@ -708,6 +708,15 @@ pub(crate) fn generate_sort_key(
     sort_key
 }
 
+/// The window function of a window expression, which may have an alias
+/// (`MAX(x) OVER () AS m`)
+pub(crate) fn unalias_window_expr(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Alias(expr, _) => expr,
+        expr => expr,
+    }
+}
+
 /// given a slice of window expressions sharing the same sort key, find their common partition
 /// keys.
 pub(crate) fn window_expr_common_partition_keys(
@@ -715,7 +724,7 @@ pub(crate) fn window_expr_common_partition_keys(
 ) -> Result<&[Expr]> {
     let all_partition_keys = window_exprs
         .iter()
-        .map(|expr| match expr {
+        .map(|expr| match unalias_window_expr(expr) {
             Expr::WindowFunction { partition_by, .. } => Ok(partition_by),
             expr => Err(DataFusionError::Execution(format!(
                 "Impossibly got non-window expr {:?}",
@@ -737,7 +746,7 @@ pub(crate) fn group_window_expr_by_sort_keys(
     window_expr: &[Expr],
 ) -> Result<Vec<(WindowSortKey, Vec<&Expr>)>> {
     let mut result = vec![];
-    window_expr.iter().try_for_each(|expr| match expr {
+    window_expr.iter().try_for_each(|expr| match unalias_window_expr(expr) {
         Expr::WindowFunction { partition_by, order_by, .. } => {
             let sort_key = generate_sort_key(partition_by, order_by);
             if let Some((_, values)) = result.iter_mut().find(
