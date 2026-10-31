@@ -359,22 +359,43 @@ async fn right_join_without_equijoin_keys() -> Result<()> {
 
 #[tokio::test]
 async fn full_join_without_equijoin_keys() -> Result<()> {
+    // PostgreSQL refuses these, as it plans a FULL join only as a merge or hash
+    // join
     let ctx = create_join_context("t1_id", "t2_id")?;
-    let sql = "SELECT t1_id, t1_name, t2_id, t2_name FROM t1 \
-        FULL JOIN t2 ON t2_id = t1_id OR t2_id = t1_id * 2 \
-        ORDER BY t1_id, t2_id";
+    for on in [
+        "t2_id = t1_id OR t2_id = t1_id * 2",
+        "t1_id = 33",
+        "t1_id < t2_id",
+    ] {
+        let sql = format!("SELECT t1_id, t2_id FROM t1 FULL JOIN t2 ON {}", on);
+        let res = ctx.create_logical_plan(&sql);
+        assert_eq!(
+            format!("{}", res.unwrap_err()),
+            "This feature is not implemented: FULL JOIN is only supported with merge-joinable or hash-joinable join conditions",
+            "{}",
+            sql
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_join_on_false() -> Result<()> {
+    let ctx = create_join_context("t1_id", "t2_id")?;
+    let sql = "SELECT t1_id, t2_id FROM t1 FULL JOIN t2 ON false ORDER BY t1_id, t2_id";
     let expected = [
-        "+-------+---------+-------+---------+",
-        "| t1_id | t1_name | t2_id | t2_name |",
-        "+-------+---------+-------+---------+",
-        "| 11    | a       | 11    | z       |",
-        "| 11    | a       | 22    | y       |",
-        "| 22    | b       | 22    | y       |",
-        "| 22    | b       | 44    | x       |",
-        "| 33    | c       |       |         |",
-        "| 44    | d       | 44    | x       |",
-        "|       |         | 55    | w       |",
-        "+-------+---------+-------+---------+",
+        "+-------+-------+",
+        "| t1_id | t2_id |",
+        "+-------+-------+",
+        "| 11    |       |",
+        "| 22    |       |",
+        "| 33    |       |",
+        "| 44    |       |",
+        "|       | 11    |",
+        "|       | 22    |",
+        "|       | 44    |",
+        "|       | 55    |",
+        "+-------+-------+",
     ];
     let actual = execute_to_batches(&ctx, sql).await;
     assert_batches_eq!(expected, &actual);

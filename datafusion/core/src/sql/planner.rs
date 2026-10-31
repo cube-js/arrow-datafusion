@@ -655,6 +655,14 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
                         let join = LogicalPlanBuilder::from(left).cross_join(&right)?;
 
                         join.filter(condition)?.build()
+                    } else if join_type == JoinType::Full && !cols.is_empty() {
+                        // PostgreSQL plans a FULL join only as a merge or hash
+                        // join, so it refuses one without an equality between the
+                        // two sides unless the condition is a constant; do the
+                        // same, with its message
+                        Err(DataFusionError::NotImplemented(
+                            "FULL JOIN is only supported with merge-joinable or hash-joinable join conditions".to_string(),
+                        ))
                     } else {
                         plan_outer_join_without_keys(left, right, condition, join_type)
                     }
@@ -3663,6 +3671,8 @@ fn qualified_columns(schema: &DFSchema) -> Vec<Expr> {
 }
 
 /// Plans a LEFT, RIGHT or FULL join whose ON condition has no equi-join keys.
+/// A FULL join only gets here with a constant condition, as PostgreSQL refuses
+/// any other.
 ///
 /// A cross join followed by a filter would drop the rows that have no match, so
 /// each side whose unmatched rows are kept gets a row number, and the other side
