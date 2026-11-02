@@ -371,7 +371,10 @@ impl CaseExpr {
             current_value =
                 if_then_else(&when_match, then_value, current_value, &return_type)?;
 
-            remainder = and(&remainder, &or_kleene(&not(&when_match)?, &base_nulls)?)?;
+            // a NULL comparison (e.g. `WHEN NULL`) does not match, the row stays for the
+            // next WHEN and the ELSE
+            let when_unmatched = or_kleene(&not(&when_match)?, &is_null(&when_match)?)?;
+            remainder = and(&remainder, &or_kleene(&when_unmatched, &base_nulls)?)?;
         }
 
         if let Some(e) = &self.else_expr {

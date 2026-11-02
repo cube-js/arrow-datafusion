@@ -190,8 +190,19 @@ impl ExprSchemable for Expr {
             | Expr::Not(expr)
             | Expr::Negative(expr)
             | Expr::Sort { expr, .. }
-            | Expr::Between { expr, .. }
-            | Expr::InList { expr, .. } => expr.nullable(input_schema),
+            | Expr::Between { expr, .. } => expr.nullable(input_schema),
+            // `1 IN (2, NULL)` is NULL
+            Expr::InList { expr, list, .. } => {
+                if expr.nullable(input_schema)? {
+                    return Ok(true);
+                }
+                for item in list {
+                    if item.nullable(input_schema)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
             Expr::Column(c) => input_schema.nullable(c),
             Expr::OuterColumn(_, _) | Expr::InSubquery { .. } => Ok(true),
             Expr::Literal(value) => Ok(value.is_null()),

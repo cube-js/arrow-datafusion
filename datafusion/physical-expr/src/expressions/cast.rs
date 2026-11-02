@@ -33,6 +33,7 @@ use arrow::compute::kernels;
 use arrow::compute::CastOptions;
 use arrow::datatypes::{
     ArrowPrimitiveType, DataType, Date64Type, Decimal128Type, Float32Type, Float64Type,
+    IntervalDayTimeType, IntervalMonthDayNanoType, IntervalUnit, IntervalYearMonthType,
     Schema, TimeUnit, TimestampMicrosecondType, TimestampMillisecondType,
     TimestampNanosecondType, TimestampSecondType, DECIMAL128_MAX_PRECISION,
     MAX_DECIMAL128_FOR_EACH_PRECISION, MIN_DECIMAL128_FOR_EACH_PRECISION,
@@ -74,6 +75,10 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
 ///   `cast_options` sets the corresponding format;
 /// * booleans are cast to the strings `1` and `0` (arrow's `cast` yields `true` and
 ///   `false`);
+/// * intervals are cast to strings in PostgreSQL's default `postgres` interval style
+///   (`1 year 2 mons 3 days 04:05:06.789000`, see [`interval_to_string`]), the format
+///   the SQL API writes intervals to the wire with (arrow's `cast` yields
+///   `1 years 2 mons 3 days 4 hours 5 mins 6.789 secs`);
 /// * a cast between integer and floating point types turns a value that does not fit
 ///   the target type (overflow, NaN or infinity to an integer) into NULL, whatever
 ///   `cast_options.safe` says (arrow 13 ignored `safe` for numeric casts; arrow's `cast`
@@ -137,6 +142,8 @@ pub fn cast_array_with_options(
         }
         (DataType::Boolean, DataType::Utf8) => Ok(boolean_to_string::<i32>(array)),
         (DataType::Boolean, DataType::LargeUtf8) => Ok(boolean_to_string::<i64>(array)),
+        (DataType::Interval(_), DataType::Utf8) => interval_to_string::<i32>(array),
+        (DataType::Interval(_), DataType::LargeUtf8) => interval_to_string::<i64>(array),
         (from_type, to_type)
             if is_integer_or_float(from_type) && is_integer_or_float(to_type) =>
         {
@@ -485,6 +492,85 @@ fn boolean_to_string<O: OffsetSizeTrait>(array: &ArrayRef) -> ArrayRef {
     )
 }
 
+/// Casts an interval array to strings in PostgreSQL's default `postgres` interval style
+fn interval_to_string<O: OffsetSizeTrait>(
+    array: &ArrayRef,
+) -> std::result::Result<ArrayRef, ArrowError> {
+    // (months, days, microseconds): PostgreSQL keeps intervals with microsecond precision
+    let parts: Vec<Option<(i32, i32, i64)>> = match array.data_type() {
+        DataType::Interval(IntervalUnit::YearMonth) => array
+            .as_primitive::<IntervalYearMonthType>()
+            .iter()
+            .map(|v| v.map(|months| (months, 0, 0)))
+            .collect(),
+        DataType::Interval(IntervalUnit::DayTime) => array
+            .as_primitive::<IntervalDayTimeType>()
+            .iter()
+            .map(|v| v.map(|v| (0, v.days, v.milliseconds as i64 * 1_000)))
+            .collect(),
+        DataType::Interval(IntervalUnit::MonthDayNano) => array
+            .as_primitive::<IntervalMonthDayNanoType>()
+            .iter()
+            .map(|v| v.map(|v| (v.months, v.days, v.nanoseconds / 1_000)))
+            .collect(),
+        other => {
+            return Err(ArrowError::CastError(format!(
+                "Unsupported CAST from {} to Utf8",
+                other
+            )))
+        }
+    };
+
+    Ok(Arc::new(
+        parts
+            .into_iter()
+            .map(|v| {
+                v.map(|(months, days, micros)| format_interval(months, days, micros))
+            })
+            .collect::<GenericStringArray<O>>(),
+    ))
+}
+
+/// Formats an interval like PostgreSQL's `postgres` interval style, e.g.
+/// `1 year 2 mons 3 days 04:05:06.789000`, `-1 days -02:00:00` or `00:00:00`
+fn format_interval(months: i32, days: i32, micros: i64) -> String {
+    fn unit(res: &mut String, value: i32, singular: &str, plural: &str) {
+        if value != 0 {
+            let name = if value == 1 { singular } else { plural };
+            res.push_str(&format!("{} {} ", value, name));
+        }
+    }
+
+    if months == 0 && days == 0 && micros == 0 {
+        return "00:00:00".to_string();
+    }
+
+    let mut res = String::new();
+    unit(&mut res, months / 12, "year", "years");
+    unit(&mut res, months % 12, "mon", "mons");
+    unit(&mut res, days, "day", "days");
+
+    if micros != 0 {
+        if micros < 0 {
+            res.push('-');
+        }
+        let micros = micros.unsigned_abs();
+        let secs = micros / 1_000_000;
+        res.push_str(&format!(
+            "{:02}:{:02}:{:02}",
+            secs / 3600,
+            secs / 60 % 60,
+            secs % 60
+        ));
+        let fraction = micros % 1_000_000;
+        if fraction != 0 {
+            res.push_str(&format!(".{:06}", fraction));
+        }
+    }
+
+    res.trim_end().to_string()
+}
+
 /// CAST expression casts an expression to a specific data type and returns a runtime error on invalid cast
 #[derive(Debug)]
 pub struct CastExpr {
@@ -624,9 +710,10 @@ mod tests {
     use arrow::{
         array::{
             Array, BooleanArray, Date32Array, Date64Array, Decimal128Array, Float32Array,
-            Float64Array, Int16Array, Int32Array, Int64Array, Int8Array, StringArray,
-            Time64NanosecondArray, TimestampNanosecondArray, TimestampSecondArray,
-            UInt32Array,
+            Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+            IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
+            StringArray, Time64NanosecondArray, TimestampNanosecondArray,
+            TimestampSecondArray, UInt32Array,
         },
         datatypes::*,
     };
@@ -1289,6 +1376,71 @@ mod tests {
         let result = cast_array(array, &DataType::LargeUtf8)?;
         let result = result.as_string::<i64>().iter().collect::<Vec<_>>();
         assert_eq!(result, vec![Some("1"), Some("0"), None]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_cast_interval_to_string() -> Result<()> {
+        let year_month: ArrayRef = Arc::new(IntervalYearMonthArray::from(vec![
+            Some(14),
+            Some(-1),
+            Some(0),
+            None,
+        ]));
+        let result = cast_array(year_month, &DataType::Utf8)?;
+        assert_eq!(
+            string_values(&result),
+            vec![
+                Some("1 year 2 mons"),
+                Some("-1 mons"),
+                Some("00:00:00"),
+                None
+            ]
+        );
+
+        let day_time: ArrayRef = Arc::new(IntervalDayTimeArray::from(vec![
+            Some(IntervalDayTime::new(1, 7_200_000)),
+            Some(IntervalDayTime::new(2, 1_500)),
+            Some(IntervalDayTime::new(-1, -7_200_000)),
+            Some(IntervalDayTime::new(0, 90 * 60_000)),
+            None,
+        ]));
+        let result = cast_array(day_time, &DataType::Utf8)?;
+        assert_eq!(
+            string_values(&result),
+            vec![
+                Some("1 day 02:00:00"),
+                Some("2 days 00:00:01.500000"),
+                Some("-1 days -02:00:00"),
+                Some("01:30:00"),
+                None
+            ]
+        );
+
+        let month_day_nano: ArrayRef = Arc::new(IntervalMonthDayNanoArray::from(vec![
+            Some(IntervalMonthDayNano::new(
+                14,
+                3,
+                ((4 * 60 + 5) * 60 + 6) * 1_000_000_000 + 789_000_000,
+            )),
+            Some(IntervalMonthDayNano::new(0, 0, 1_999)),
+            Some(IntervalMonthDayNano::new(0, 0, 100 * 3_600 * 1_000_000_000)),
+            None,
+        ]));
+        let result = cast_array(month_day_nano.clone(), &DataType::Utf8)?;
+        assert_eq!(
+            string_values(&result),
+            vec![
+                Some("1 year 2 mons 3 days 04:05:06.789000"),
+                Some("00:00:00.000001"),
+                Some("100:00:00"),
+                None
+            ]
+        );
+
+        let result = cast_array(month_day_nano, &DataType::LargeUtf8)?;
+        let result = result.as_string::<i64>().iter().collect::<Vec<_>>();
+        assert_eq!(result[0], Some("1 year 2 mons 3 days 04:05:06.789000"));
         Ok(())
     }
 

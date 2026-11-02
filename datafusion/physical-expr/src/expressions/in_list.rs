@@ -324,7 +324,16 @@ impl PhysicalExpr for InListExpr {
     }
 
     fn nullable(&self, input_schema: &Schema) -> Result<bool> {
-        self.expr.nullable(input_schema)
+        // `1 IN (2, NULL)` is NULL
+        if self.expr.nullable(input_schema)? {
+            return Ok(true);
+        }
+        for item in &self.list {
+            if item.nullable(input_schema)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn evaluate(&self, batch: &RecordBatch) -> Result<ColumnarValue> {
