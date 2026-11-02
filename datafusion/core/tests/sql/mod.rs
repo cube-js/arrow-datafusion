@@ -752,9 +752,7 @@ where
 {
     let tz: Option<Arc<str>> = tz.map(Arc::from);
     let schema = Arc::new(Schema::new(vec![
-        Field::new(
-            "ts",
-            DataType::Timestamp(A::UNIT, tz.clone()), false),
+        Field::new("ts", DataType::Timestamp(A::UNIT, tz.clone()), false),
         Field::new("value", DataType::Int32, true),
     ]));
 

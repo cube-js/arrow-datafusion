@@ -540,145 +540,46 @@ async fn test_nullif() -> Result<()> {
 #[tokio::test]
 async fn test_interval_expressions() -> Result<()> {
     // day nano intervals
-    test_expression!(
-        "interval '1'",
-        "1.000 secs"
-    );
-    test_expression!(
-        "interval '1 second'",
-        "1.000 secs"
-    );
-    test_expression!(
-        "interval '500 milliseconds'",
-        "0.500 secs"
-    );
-    test_expression!(
-        "interval '5 second'",
-        "5.000 secs"
-    );
-    test_expression!(
-        "interval '0.5 minute'",
-        "30.000 secs"
-    );
-    test_expression!(
-        "interval '.5 minute'",
-        "30.000 secs"
-    );
-    test_expression!(
-        "interval '5 minute'",
-        "5 mins"
-    );
-    test_expression!(
-        "interval '5 minute 1 second'",
-        "5 mins 1.000 secs"
-    );
-    test_expression!(
-        "interval '1 hour'",
-        "1 hours"
-    );
-    test_expression!(
-        "interval '5 hour'",
-        "5 hours"
-    );
-    test_expression!(
-        "interval '1 day'",
-        "1 days"
-    );
-    test_expression!(
-        "interval '1 day 1'",
-        "1 days 1.000 secs"
-    );
-    test_expression!(
-        "interval '0.5'",
-        "0.500 secs"
-    );
-    test_expression!(
-        "interval '0.5 day 1'",
-        "12 hours 1.000 secs"
-    );
-    test_expression!(
-        "interval '0.49 day'",
-        "11 hours 45 mins 36.000 secs"
-    );
-    test_expression!(
-        "interval '0.499 day'",
-        "11 hours 58 mins 33.596 secs"
-    );
-    test_expression!(
-        "interval '0.4999 day'",
-        "11 hours 59 mins 51.364 secs"
-    );
-    test_expression!(
-        "interval '0.49999 day'",
-        "11 hours 59 mins 59.136 secs"
-    );
-    test_expression!(
-        "interval '0.49999999999 day'",
-        "12 hours"
-    );
-    test_expression!(
-        "interval '5 day'",
-        "5 days"
-    );
+    test_expression!("interval '1'", "1.000 secs");
+    test_expression!("interval '1 second'", "1.000 secs");
+    test_expression!("interval '500 milliseconds'", "0.500 secs");
+    test_expression!("interval '5 second'", "5.000 secs");
+    test_expression!("interval '0.5 minute'", "30.000 secs");
+    test_expression!("interval '.5 minute'", "30.000 secs");
+    test_expression!("interval '5 minute'", "5 mins");
+    test_expression!("interval '5 minute 1 second'", "5 mins 1.000 secs");
+    test_expression!("interval '1 hour'", "1 hours");
+    test_expression!("interval '5 hour'", "5 hours");
+    test_expression!("interval '1 day'", "1 days");
+    test_expression!("interval '1 day 1'", "1 days 1.000 secs");
+    test_expression!("interval '0.5'", "0.500 secs");
+    test_expression!("interval '0.5 day 1'", "12 hours 1.000 secs");
+    test_expression!("interval '0.49 day'", "11 hours 45 mins 36.000 secs");
+    test_expression!("interval '0.499 day'", "11 hours 58 mins 33.596 secs");
+    test_expression!("interval '0.4999 day'", "11 hours 59 mins 51.364 secs");
+    test_expression!("interval '0.49999 day'", "11 hours 59 mins 59.136 secs");
+    test_expression!("interval '0.49999999999 day'", "12 hours");
+    test_expression!("interval '5 day'", "5 days");
     // Hour is ignored, this matches PostgreSQL
-    test_expression!(
-        "interval '5 day' hour",
-        "5 days"
-    );
+    test_expression!("interval '5 day' hour", "5 days");
     test_expression!(
         "interval '5 day 4 hours 3 minutes 2 seconds 100 milliseconds'",
         "5 days 4 hours 3 mins 2.100 secs"
     );
     // month intervals
-    test_expression!(
-        "interval '0.5 month'",
-        "15 days"
-    );
-    test_expression!(
-        "interval '0.5' month",
-        "15 days"
-    );
-    test_expression!(
-        "interval '1 month'",
-        "0 years 1 mons"
-    );
-    test_expression!(
-        "interval '1' MONTH",
-        "0 years 1 mons"
-    );
-    test_expression!(
-        "interval '5 month'",
-        "0 years 5 mons"
-    );
-    test_expression!(
-        "interval '13 month'",
-        "1 years 1 mons"
-    );
-    test_expression!(
-        "interval '0.5 year'",
-        "0 years 6 mons"
-    );
-    test_expression!(
-        "interval '1 year'",
-        "1 years 0 mons"
-    );
-    test_expression!(
-        "interval '2 year'",
-        "2 years 0 mons"
-    );
-    test_expression!(
-        "interval '2' year",
-        "2 years 0 mons"
-    );
+    test_expression!("interval '0.5 month'", "15 days");
+    test_expression!("interval '0.5' month", "15 days");
+    test_expression!("interval '1 month'", "0 years 1 mons");
+    test_expression!("interval '1' MONTH", "0 years 1 mons");
+    test_expression!("interval '5 month'", "0 years 5 mons");
+    test_expression!("interval '13 month'", "1 years 1 mons");
+    test_expression!("interval '0.5 year'", "0 years 6 mons");
+    test_expression!("interval '1 year'", "1 years 0 mons");
+    test_expression!("interval '2 year'", "2 years 0 mons");
+    test_expression!("interval '2' year", "2 years 0 mons");
     // complex
-    test_expression!(
-        "interval '1 year 1 day'",
-        "12 mons 1 days"
-    );
-    test_expression!(
-        "interval '1 year 1 day 1 hour'",
-        "12 mons 1 days 1 hours"
-    );
+    test_expression!("interval '1 year 1 day'", "12 mons 1 days");
+    test_expression!("interval '1 year 1 day 1 hour'", "12 mons 1 days 1 hours");
     test_expression!(
         "interval '1 year 1 day 1 hour 1 minute'",
         "12 mons 1 days 1 hours 1 mins"
@@ -722,86 +623,24 @@ async fn test_interval_mul_div_float() -> Result<()> {
         };
     }
 
-    test_mul!(
-        "0.5",
-        "interval '1 month'",
-        "15 days"
-    );
-    test_mul!(
-        "1.0",
-        "interval '1 month'",
-        "1 mons"
-    );
-    test_mul!(
-        "1.5",
-        "interval '1 month'",
-        "1 mons 15 days"
-    );
-    test_mul!(
-        "2.0",
-        "interval '1 month'",
-        "2 mons"
-    );
-    test_mul!(
-        "-1.5",
-        "interval '1 month'",
-        "-1 mons -15 days"
-    );
-    test_expression!(
-        "1.5 * (interval '1 month') / 1.5",
-        "30 days"
-    );
+    test_mul!("0.5", "interval '1 month'", "15 days");
+    test_mul!("1.0", "interval '1 month'", "1 mons");
+    test_mul!("1.5", "interval '1 month'", "1 mons 15 days");
+    test_mul!("2.0", "interval '1 month'", "2 mons");
+    test_mul!("-1.5", "interval '1 month'", "-1 mons -15 days");
+    test_expression!("1.5 * (interval '1 month') / 1.5", "30 days");
 
-    test_mul!(
-        "0.5",
-        "interval '1 day'",
-        "12 hours"
-    );
-    test_mul!(
-        "1.0",
-        "interval '1 day'",
-        "1 days"
-    );
-    test_mul!(
-        "1.5",
-        "interval '1 day'",
-        "1 days 12 hours"
-    );
-    test_mul!(
-        "2.0",
-        "interval '1 day'",
-        "2 days"
-    );
-    test_mul!(
-        "-1.5",
-        "interval '1 day'",
-        "-1 days -12 hours"
-    );
-    test_expression!(
-        "1.5 * (interval '1 day') / 1.5",
-        "24 hours"
-    );
+    test_mul!("0.5", "interval '1 day'", "12 hours");
+    test_mul!("1.0", "interval '1 day'", "1 days");
+    test_mul!("1.5", "interval '1 day'", "1 days 12 hours");
+    test_mul!("2.0", "interval '1 day'", "2 days");
+    test_mul!("-1.5", "interval '1 day'", "-1 days -12 hours");
+    test_expression!("1.5 * (interval '1 day') / 1.5", "24 hours");
 
-    test_mul!(
-        "0.5",
-        "interval '1 second'",
-        "0.500000000 secs"
-    );
-    test_mul!(
-        "1.0",
-        "interval '1 second'",
-        "1.000000000 secs"
-    );
-    test_mul!(
-        "1.5",
-        "interval '1 second'",
-        "1.500000000 secs"
-    );
-    test_mul!(
-        "2.0",
-        "interval '1 second'",
-        "2.000000000 secs"
-    );
+    test_mul!("0.5", "interval '1 second'", "0.500000000 secs");
+    test_mul!("1.0", "interval '1 second'", "1.000000000 secs");
+    test_mul!("1.5", "interval '1 second'", "1.500000000 secs");
+    test_mul!("2.0", "interval '1 second'", "2.000000000 secs");
     // This test prints as -1.-500000000 secs, that looks like a bug in printing
     // TODO fix it
     // test_mul!(
@@ -809,17 +648,10 @@ async fn test_interval_mul_div_float() -> Result<()> {
     //     "interval '1 second'",
     //     "0 years 0 mons 0 days 0 hours 0 mins -1.500000000 secs"
     // );
-    test_expression!(
-        "1.5 * (interval '1 second') / 1.5",
-        "1.000000000 secs"
-    );
+    test_expression!("1.5 * (interval '1 second') / 1.5", "1.000000000 secs");
 
     // Carry-over cases
-    test_mul!(
-        "1.5",
-        "interval '1 month 1 day'",
-        "1 mons 16 days 12 hours"
-    );
+    test_mul!("1.5", "interval '1 month 1 day'", "1 mons 16 days 12 hours");
     test_mul!(
         "1.5",
         "interval '1 month 1 second'",
