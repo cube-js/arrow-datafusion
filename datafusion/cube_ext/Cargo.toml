@@ -35,7 +35,7 @@ name = "cube_ext"
 path = "src/lib.rs"
 
 [dependencies]
-arrow = { path = "../../../arrow-rs/arrow", features = ["prettyprint", "chrono-tz"] }
+arrow = { git = "https://github.com/cube-js/arrow-rs.git", rev = "ef17593f41e375fffd3d6173997ecee7993239e4", features = ["prettyprint", "chrono-tz"] }
 chrono = { version = "0.4.16", package = "chrono", default-features = false, features = ["clock"] }
 datafusion-common = { path = "../common", version = "7.0.0" }
 datafusion-expr = { path = "../expr", version = "7.0.0" }

@@ -75,6 +75,7 @@ checksum = "f02882884d3e1bc524fb12c79f107f6ad0e1cfd498c536ffb494301740995dfe"
 [[package]]
 name = "arrow"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-arith",
  "arrow-array",
@@ -94,6 +95,7 @@ dependencies = [
 [[package]]
 name = "arrow-arith"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -106,6 +108,7 @@ dependencies = [
 [[package]]
 name = "arrow-array"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "ahash 0.8.12",
  "arrow-buffer",
@@ -123,6 +126,7 @@ dependencies = [
 [[package]]
 name = "arrow-buffer"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "bytes",
  "half",
@@ -133,6 +137,7 @@ dependencies = [
 [[package]]
 name = "arrow-cast"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -153,6 +158,7 @@ dependencies = [
 [[package]]
 name = "arrow-cmp"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -162,6 +168,7 @@ dependencies = [
 [[package]]
 name = "arrow-csv"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-cast",
@@ -175,6 +182,7 @@ dependencies = [
 [[package]]
 name = "arrow-data"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-buffer",
  "arrow-schema",
@@ -186,6 +194,7 @@ dependencies = [
 [[package]]
 name = "arrow-flight"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -205,6 +214,7 @@ dependencies = [
 [[package]]
 name = "arrow-ipc"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -217,6 +227,7 @@ dependencies = [
 [[package]]
 name = "arrow-json"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -240,6 +251,7 @@ dependencies = [
 [[package]]
 name = "arrow-ord"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -252,6 +264,7 @@ dependencies = [
 [[package]]
 name = "arrow-row"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -263,10 +276,12 @@ dependencies = [
 [[package]]
 name = "arrow-schema"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 
 [[package]]
 name = "arrow-select"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "ahash 0.8.12",
  "arrow-array",
@@ -280,6 +295,7 @@ dependencies = [
 [[package]]
 name = "arrow-string"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -1315,6 +1331,7 @@ dependencies = [
 [[package]]
 name = "parquet"
 version = "60.1.0"
+source = "git+https://github.com/cube-js/arrow-rs.git?rev=ef17593f41e375fffd3d6173997ecee7993239e4#ef17593f41e375fffd3d6173997ecee7993239e4"
 dependencies = [
  "ahash 0.8.12",
  "arrow-array",
