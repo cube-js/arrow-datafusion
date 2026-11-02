@@ -33,6 +33,7 @@ use datafusion::{
     physical_plan::aggregates::AggregateFunction,
     scalar::ScalarValue,
 };
+use datafusion_common::interval_day_time_to_i64;
 
 #[derive(Debug)]
 pub enum Error {
@@ -159,7 +160,7 @@ impl From<&DataType> for protobuf::arrow_type::ArrowTypeEnum {
             DataType::Timestamp(time_unit, timezone) => {
                 Self::Timestamp(protobuf::Timestamp {
                     time_unit: protobuf::TimeUnit::from(time_unit) as i32,
-                    timezone: timezone.to_owned().unwrap_or_default(),
+                    timezone: timezone.as_deref().unwrap_or_default().to_string(),
                 })
             }
             DataType::Date32 => Self::Date32(EmptyMessage {}),
@@ -196,7 +197,7 @@ impl From<&DataType> for protobuf::arrow_type::ArrowTypeEnum {
             DataType::Struct(struct_fields) => Self::Struct(protobuf::Struct {
                 sub_field_types: struct_fields
                     .iter()
-                    .map(|field| field.into())
+                    .map(|field| field.as_ref().into())
                     .collect::<Vec<_>>(),
             }),
             DataType::Union(union_types, union_mode) => {
@@ -207,7 +208,7 @@ impl From<&DataType> for protobuf::arrow_type::ArrowTypeEnum {
                 Self::Union(protobuf::Union {
                     union_types: union_types
                         .iter()
-                        .map(|field| field.into())
+                        .map(|(_, field)| field.as_ref().into())
                         .collect::<Vec<_>>(),
                     union_mode: union_mode.into(),
                 })
@@ -218,12 +219,23 @@ impl From<&DataType> for protobuf::arrow_type::ArrowTypeEnum {
                     value: Some(Box::new(value_type.as_ref().into())),
                 }))
             }
-            DataType::Decimal(whole, fractional) => Self::Decimal(protobuf::Decimal {
+            DataType::Decimal128(whole, fractional) => Self::Decimal(protobuf::Decimal {
                 whole: *whole as u64,
                 fractional: *fractional as u64,
             }),
             DataType::Map(_, _) => {
                 unimplemented!("The Map data type is not yet supported")
+            }
+            // Types added after arrow 13 that have no protobuf representation.
+            DataType::BinaryView
+            | DataType::Utf8View
+            | DataType::ListView(_)
+            | DataType::LargeListView(_)
+            | DataType::Decimal32(_, _)
+            | DataType::Decimal64(_, _)
+            | DataType::Decimal256(_, _)
+            | DataType::RunEndEncoded(_, _) => {
+                unimplemented!("The {:?} data type is not yet supported", val)
             }
         }
     }
@@ -252,7 +264,7 @@ impl From<&Schema> for protobuf::Schema {
             columns: schema
                 .fields()
                 .iter()
-                .map(protobuf::Field::from)
+                .map(|f| protobuf::Field::from(f.as_ref()))
                 .collect::<Vec<_>>(),
         }
     }
@@ -264,7 +276,7 @@ impl From<SchemaRef> for protobuf::Schema {
             columns: schema
                 .fields()
                 .iter()
-                .map(protobuf::Field::from)
+                .map(|f| protobuf::Field::from(f.as_ref()))
                 .collect::<Vec<_>>(),
         }
     }
@@ -592,7 +604,8 @@ impl TryFrom<&Expr> for protobuf::LogicalExprNode {
                         .collect::<Result<Vec<_>, Error>>()?,
                 })),
             },
-            Expr::AggregateUDF { fun, args } => Self {
+            // DISTINCT is not representable in the protobuf message (see from_proto)
+            Expr::AggregateUDF { fun, args, .. } => Self {
                 expr_type: Some(ExprType::AggregateUdfExpr(
                     protobuf::AggregateUdfExprNode {
                         fun_name: fun.name.clone(),
@@ -928,7 +941,7 @@ impl TryFrom<&ScalarValue> for protobuf::ScalarValue {
             datafusion::scalar::ScalarValue::TimestampMicrosecond(val, tz) => {
                 create_proto_scalar(val, PrimitiveScalarType::TimeMicrosecond, |s| {
                     Value::TimestampValue(protobuf::ScalarTimestampValue {
-                        timezone: tz.as_ref().unwrap_or(&"".to_string()).clone(),
+                        timezone: tz.as_deref().unwrap_or("").to_string(),
                         value: Some(
                             protobuf::scalar_timestamp_value::Value::TimeMicrosecondValue(
                                 *s,
@@ -940,7 +953,7 @@ impl TryFrom<&ScalarValue> for protobuf::ScalarValue {
             datafusion::scalar::ScalarValue::TimestampNanosecond(val, tz) => {
                 create_proto_scalar(val, PrimitiveScalarType::TimeNanosecond, |s| {
                     Value::TimestampValue(protobuf::ScalarTimestampValue {
-                        timezone: tz.as_ref().unwrap_or(&"".to_string()).clone(),
+                        timezone: tz.as_deref().unwrap_or("").to_string(),
                         value: Some(
                             protobuf::scalar_timestamp_value::Value::TimeNanosecondValue(
                                 *s,
@@ -975,7 +988,7 @@ impl TryFrom<&ScalarValue> for protobuf::ScalarValue {
             datafusion::scalar::ScalarValue::TimestampSecond(val, tz) => {
                 create_proto_scalar(val, PrimitiveScalarType::TimeSecond, |s| {
                     Value::TimestampValue(protobuf::ScalarTimestampValue {
-                        timezone: tz.as_ref().unwrap_or(&"".to_string()).clone(),
+                        timezone: tz.as_deref().unwrap_or("").to_string(),
                         value: Some(
                             protobuf::scalar_timestamp_value::Value::TimeSecondValue(*s),
                         ),
@@ -985,7 +998,7 @@ impl TryFrom<&ScalarValue> for protobuf::ScalarValue {
             datafusion::scalar::ScalarValue::TimestampMillisecond(val, tz) => {
                 create_proto_scalar(val, PrimitiveScalarType::TimeMillisecond, |s| {
                     Value::TimestampValue(protobuf::ScalarTimestampValue {
-                        timezone: tz.as_ref().unwrap_or(&"".to_string()).clone(),
+                        timezone: tz.as_deref().unwrap_or("").to_string(),
                         value: Some(
                             protobuf::scalar_timestamp_value::Value::TimeMillisecondValue(
                                 *s,
@@ -1001,7 +1014,7 @@ impl TryFrom<&ScalarValue> for protobuf::ScalarValue {
             }
             datafusion::scalar::ScalarValue::IntervalDayTime(val) => {
                 create_proto_scalar(val, PrimitiveScalarType::IntervalDaytime, |s| {
-                    Value::IntervalDaytimeValue(*s)
+                    Value::IntervalDaytimeValue(interval_day_time_to_i64(*s))
                 })
             }
             _ => {
@@ -1205,7 +1218,15 @@ impl TryFrom<&DataType> for protobuf::scalar_type::Datatype {
             | DataType::Union(_, _)
             | DataType::Dictionary(_, _)
             | DataType::Map(_, _)
-            | DataType::Decimal(_, _) => {
+            | DataType::Decimal128(_, _)
+            | DataType::BinaryView
+            | DataType::Utf8View
+            | DataType::ListView(_)
+            | DataType::LargeListView(_)
+            | DataType::Decimal32(_, _)
+            | DataType::Decimal64(_, _)
+            | DataType::Decimal256(_, _)
+            | DataType::RunEndEncoded(_, _) => {
                 return Err(Error::invalid_scalar_type(val));
             }
         };

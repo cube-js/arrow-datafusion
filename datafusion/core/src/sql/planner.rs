@@ -3799,7 +3799,7 @@ mod tests {
     fn test_int_decimal_default() {
         quick_test(
             "SELECT CAST(10 AS DECIMAL)",
-            "Projection: CAST(Int64(10) AS Decimal(38, 10))\
+            "Projection: CAST(Int64(10) AS Decimal128(38, 10))\
              \n  EmptyRelation",
         );
     }
@@ -5976,7 +5976,7 @@ mod tests {
             let schema = match name.table() {
                 "test_decimal" => Some(Schema::new(vec![
                     Field::new("id", DataType::Int32, false),
-                    Field::new("price", DataType::Decimal(10, 2), false),
+                    Field::new("price", DataType::Decimal128(10, 2), false),
                 ])),
                 "person" => Some(Schema::new(vec![
                     Field::new("id", DataType::UInt32, false),

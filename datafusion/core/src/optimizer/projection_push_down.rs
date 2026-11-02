@@ -112,11 +112,11 @@ fn get_projected_schema(
     let projected_fields: Vec<DFField> = match table_name {
         Some(qualifer) => projection
             .iter()
-            .map(|i| DFField::from_qualified(qualifer, schema.fields()[*i].clone()))
+            .map(|i| DFField::from_qualified(qualifer, schema.field(*i).clone()))
             .collect(),
         None => projection
             .iter()
-            .map(|i| DFField::from(schema.fields()[*i].clone()))
+            .map(|i| DFField::from(schema.field(*i).clone()))
             .collect(),
     };
 

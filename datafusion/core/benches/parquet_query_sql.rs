@@ -155,7 +155,7 @@ fn generate_file() -> NamedTempFile {
 
     let properties = WriterProperties::builder()
         .set_writer_version(WriterVersion::PARQUET_2_0)
-        .set_max_row_group_size(ROW_GROUP_SIZE)
+        .set_max_row_group_row_count(Some(ROW_GROUP_SIZE))
         .build();
 
     let file = named_file.as_file().try_clone().unwrap();
@@ -168,10 +168,10 @@ fn generate_file() -> NamedTempFile {
 
     let metadata = writer.close().unwrap();
     assert_eq!(
-        metadata.num_rows as usize,
+        metadata.file_metadata().num_rows() as usize,
         WRITE_RECORD_BATCH_SIZE * NUM_BATCHES
     );
-    assert_eq!(metadata.row_groups.len(), EXPECTED_ROW_GROUPS);
+    assert_eq!(metadata.row_groups().len(), EXPECTED_ROW_GROUPS);
 
     println!(
         "Generated parquet file in {} seconds",

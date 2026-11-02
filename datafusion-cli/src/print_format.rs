@@ -44,9 +44,10 @@ impl FromStr for PrintFormat {
 macro_rules! batches_to_json {
     ($WRITER: ident, $batches: expr) => {{
         let mut bytes = vec![];
-        {
+        // arrow 13 json writers printed nothing (not `[]`) when there were no rows
+        if $batches.iter().any(|b| b.num_rows() > 0) {
             let mut writer = $WRITER::new(&mut bytes);
-            writer.write_batches($batches)?;
+            writer.write_batches(&$batches.iter().collect::<Vec<_>>())?;
             writer.finish()?;
         }
         String::from_utf8(bytes).map_err(|e| DataFusionError::Execution(e.to_string()))?
@@ -57,7 +58,7 @@ fn print_batches_with_sep(batches: &[RecordBatch], delimiter: u8) -> Result<Stri
     let mut bytes = vec![];
     {
         let builder = WriterBuilder::new()
-            .has_headers(true)
+            .with_header(true)
             .with_delimiter(delimiter);
         let mut writer = builder.build(&mut bytes);
         for batch in batches {
@@ -121,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_print_batches_to_json_empty() -> Result<()> {
-        let batches = vec![];
+        let batches: Vec<RecordBatch> = vec![];
         let r = batches_to_json!(ArrayWriter, &batches);
         assert_eq!("", r);
 

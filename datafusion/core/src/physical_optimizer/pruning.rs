@@ -46,6 +46,9 @@ use crate::{
     optimizer::utils,
     physical_plan::{ColumnarValue, PhysicalExpr},
 };
+use datafusion_physical_expr::expressions::{
+    cast_array_with_options, DEFAULT_DATAFUSION_CAST_OPTIONS,
+};
 
 /// Interface to pass statistics information to [`PruningPredicate`]
 ///
@@ -382,9 +385,12 @@ fn build_statistics_record_batch<S: PruningStatistics>(
 
         // cast statistics array to required data type (e.g. parquet
         // provides timestamp statistics as "Int64")
-        let array = arrow::compute::cast(&array, data_type)?;
+        let array =
+            cast_array_with_options(&array, data_type, &DEFAULT_DATAFUSION_CAST_OPTIONS)?;
 
-        fields.push(stat_field.clone());
+        // statistics may be missing (NULL) even for non-nullable columns, and arrow
+        // rejects NULLs in a non-nullable field of a RecordBatch
+        fields.push(stat_field.clone().with_nullable(true));
         arrays.push(array);
     }
 
@@ -1008,7 +1014,7 @@ mod tests {
             "+-------------------------------+",
             "| s1_min                        |",
             "+-------------------------------+",
-            "| 1970-01-01 00:00:00.000000010 |",
+            "| 1970-01-01T00:00:00.000000010 |",
             "+-------------------------------+",
         ];
 
@@ -1056,7 +1062,7 @@ mod tests {
         let result =
             build_statistics_record_batch(&statistics, &required_columns).unwrap_err();
         assert!(
-            result.to_string().contains("Cannot cast binary to string"),
+            result.to_string().contains("Encountered non UTF-8 data"),
             "{}",
             result
         );

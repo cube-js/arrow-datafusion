@@ -30,7 +30,7 @@ use crate::physical_plan::{
 };
 use arrow::{
     array::ArrayRef,
-    datatypes::{Schema, SchemaRef},
+    datatypes::{Field, Schema, SchemaRef},
     error::Result as ArrowResult,
     record_batch::RecordBatch,
 };
@@ -174,7 +174,17 @@ impl ExecutionPlan for WindowAggExec {
                 let g: Vec<String> = self
                     .window_expr
                     .iter()
-                    .map(|e| format!("{}: {:?}", e.name().to_owned(), e.field()))
+                    .map(|e| {
+                        format!(
+                            "{}: {}",
+                            e.name().to_owned(),
+                            match e.field() {
+                                Ok(field) =>
+                                    format!("Ok({})", field_debug_arrow13(&field)),
+                                Err(err) => format!("Err({:?})", err),
+                            }
+                        )
+                    })
                     .collect();
                 write!(f, "wdw=[{}]", g.join(", "))?;
             }
@@ -207,6 +217,30 @@ impl ExecutionPlan for WindowAggExec {
     }
 }
 
+/// Formats `field` like arrow 13's derived `Debug` of `Field` did, to keep the
+/// `WindowAggExec` plan display unchanged (arrow 60 prints a shorter form).
+fn field_debug_arrow13(field: &Field) -> String {
+    let metadata = if field.metadata().is_empty() {
+        "None".to_string()
+    } else {
+        format!(
+            "Some({:?})",
+            field
+                .metadata()
+                .iter()
+                .collect::<std::collections::BTreeMap<_, _>>()
+        )
+    };
+    format!(
+        "Field {{ name: {:?}, data_type: {:?}, nullable: {}, dict_id: 0, dict_is_ordered: {}, metadata: {} }}",
+        field.name(),
+        field.data_type(),
+        field.is_nullable(),
+        field.dict_is_ordered().unwrap_or(false),
+        metadata
+    )
+}
+
 fn create_schema(
     input_schema: &Schema,
     window_expr: &[Arc<dyn WindowExpr>],
@@ -215,7 +249,7 @@ fn create_schema(
     for expr in window_expr {
         fields.push(expr.field()?);
     }
-    fields.extend_from_slice(input_schema.fields());
+    fields.extend(input_schema.fields().iter().map(|f| f.as_ref().clone()));
     Ok(Schema::new(fields))
 }
 

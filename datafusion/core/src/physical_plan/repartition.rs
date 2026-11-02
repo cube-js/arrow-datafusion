@@ -28,7 +28,7 @@ use crate::physical_plan::hash_utils::create_hashes;
 use crate::physical_plan::{DisplayFormatType, ExecutionPlan, Partitioning, Statistics};
 use arrow::record_batch::RecordBatch;
 use arrow::{
-    array::Array,
+    array::{Array, UInt64Array},
     error::{ArrowError, Result as ArrowResult},
 };
 use arrow::{compute::take, datatypes::SchemaRef};
@@ -366,7 +366,7 @@ impl RepartitionExec {
                             continue;
                         }
                         let timer = r_metrics.repart_time.timer();
-                        let indices = partition_indices.into();
+                        let indices: UInt64Array = partition_indices.into();
                         // Produce batches based on indices
                         let columns = input_batch
                             .columns()

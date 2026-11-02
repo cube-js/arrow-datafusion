@@ -34,9 +34,9 @@ use datafusion::scalar::ScalarValue;
 use std::sync::Arc;
 
 fn create_batch(value: i32, num_rows: usize) -> Result<RecordBatch> {
-    let mut builder = Int32Builder::new(num_rows);
+    let mut builder = Int32Builder::with_capacity(num_rows);
     for _ in 0..num_rows {
-        builder.append_value(value)?;
+        builder.append_value(value);
     }
 
     Ok(RecordBatch::try_new(

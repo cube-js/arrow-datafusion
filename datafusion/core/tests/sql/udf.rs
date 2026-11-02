@@ -16,7 +16,7 @@
 // under the License.
 
 use super::*;
-use arrow::compute::add;
+use arrow::compute::kernels::numeric::add_wrapping;
 use datafusion::{
     logical_plan::{create_udaf, FunctionRegistry, LogicalPlanBuilder},
     physical_plan::{
@@ -68,7 +68,7 @@ async fn scalar_udf() -> Result<()> {
             .as_any()
             .downcast_ref::<Int32Array>()
             .expect("cast failed");
-        Ok(Arc::new(add(l, r)?) as ArrayRef)
+        Ok(add_wrapping(*l, *r)?)
     };
     let myfunc = make_scalar_function(myfunc);
 
@@ -195,7 +195,7 @@ async fn simple_udaf() -> Result<()> {
         "+-------------+",
         "| my_avg(t.a) |",
         "+-------------+",
-        "| 11          |",
+        "| 11.0        |",
         "+-------------+",
     ];
     assert_batches_eq!(expected, &result);
@@ -207,7 +207,7 @@ async fn simple_udaf() -> Result<()> {
         "+----------------------+",
         "| my_avg(DISTINCT t.a) |",
         "+----------------------+",
-        "| 15                   |",
+        "| 15.0                 |",
         "+----------------------+",
     ];
     assert_batches_eq!(expected, &result);

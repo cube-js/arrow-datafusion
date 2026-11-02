@@ -19,6 +19,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use arrow_flight::SchemaAsIpc;
+use datafusion::arrow::error::ArrowError;
+use datafusion::arrow::ipc::writer::{
+    DictionaryTracker, IpcDataGenerator, IpcWriteContext,
+};
 use datafusion::datafusion_data_access::object_store::local::LocalFileSystem;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::ListingOptions;
@@ -31,7 +35,7 @@ use datafusion::prelude::*;
 use arrow_flight::{
     flight_service_server::FlightService, flight_service_server::FlightServiceServer,
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
-    HandshakeRequest, HandshakeResponse, PutResult, SchemaResult, Ticket,
+    HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
 };
 
 #[derive(Clone)]
@@ -75,7 +79,9 @@ impl FlightService for FlightServiceImpl {
             .unwrap();
 
         let options = datafusion::arrow::ipc::writer::IpcWriteOptions::default();
-        let schema_result = SchemaAsIpc::new(&schema, &options).into();
+        let schema_result = SchemaAsIpc::new(&schema, &options)
+            .try_into()
+            .map_err(|e: ArrowError| Status::internal(e.to_string()))?;
 
         Ok(Response::new(schema_result))
     }
@@ -120,22 +126,16 @@ impl FlightService for FlightServiceImpl {
                 let mut flights: Vec<Result<FlightData, Status>> =
                     vec![Ok(schema_flight_data)];
 
-                let mut batches: Vec<Result<FlightData, Status>> = results
-                    .iter()
-                    .flat_map(|batch| {
-                        let (flight_dictionaries, flight_batch) =
-                            arrow_flight::utils::flight_data_from_arrow_batch(
-                                batch, &options,
-                            );
-                        flight_dictionaries
-                            .into_iter()
-                            .chain(std::iter::once(flight_batch))
-                            .map(Ok)
-                    })
-                    .collect();
-
-                // append batch vector to schema vector, so that the first message sent is the schema
-                flights.append(&mut batches);
+                let encoder = IpcDataGenerator::default();
+                let mut tracker = DictionaryTracker::new(false);
+                let mut write_context = IpcWriteContext::default();
+                for batch in &results {
+                    let (flight_dictionaries, flight_batch) = encoder
+                        .encode(batch, &mut tracker, &options, &mut write_context)
+                        .map_err(|e: ArrowError| Status::internal(e.to_string()))?;
+                    flights.extend(flight_dictionaries.into_iter().map(|d| Ok(d.into())));
+                    flights.push(Ok(flight_batch.into()));
+                }
 
                 let output = futures::stream::iter(flights);
 
@@ -163,6 +163,13 @@ impl FlightService for FlightServiceImpl {
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        Err(Status::unimplemented("Not yet implemented"))
+    }
+
+    async fn poll_flight_info(
+        &self,
+        _request: Request<FlightDescriptor>,
+    ) -> Result<Response<PollInfo>, Status> {
         Err(Status::unimplemented("Not yet implemented"))
     }
 

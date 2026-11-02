@@ -256,13 +256,13 @@ impl ListingTable {
         })?;
 
         // Add the partition columns to the file schema
-        let mut table_fields = file_schema.fields().clone();
+        let mut table_fields = file_schema.fields().to_vec();
         for part in &options.table_partition_cols {
-            table_fields.push(Field::new(
+            table_fields.push(Arc::new(Field::new(
                 part,
                 DEFAULT_PARTITION_COLUMN_DATATYPE.clone(),
                 false,
-            ));
+            )));
         }
 
         let table = Self {

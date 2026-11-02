@@ -50,16 +50,17 @@ pyarrow = ["pyo3", "arrow/pyarrow", "datafusion-common/pyarrow"]
 regex_expressions = ["datafusion-physical-expr/regex_expressions"]
 # Used to enable row format experiment
 row = []
-simd = ["arrow/simd"]
+simd = []
 unicode_expressions = ["datafusion-physical-expr/regex_expressions"]
 # SQL API doesn't use parquet, while parquet is enabled by default in the original repository.
-parquet-all-compressions = ["datafusion-common/parquet-all-compressions", "parquet/snap", "parquet/brotli", "parquet/flate2", "parquet/lz4", "parquet/zstd"]
+parquet-all-compressions = ["datafusion-common/parquet-all-compressions", "parquet/snap", "parquet/brotli", "parquet/flate2-rust_backend", "parquet/lz4", "parquet/zstd"]
 
 [dependencies]
 ahash = { version = "0.7", default-features = false }
-arrow = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "d484adc1a79495624d659959f22fa4cd55ae2d3c", features = ["prettyprint", "chrono-tz"] }
+arrow = { git = "https://github.com/cube-js/arrow-rs.git", rev = "ef17593f41e375fffd3d6173997ecee7993239e4", features = ["prettyprint", "chrono-tz"] }
 async-trait = "0.1.41"
 avro-rs = { version = "0.13", features = ["snappy"], optional = true }
+bytes = "1.1"
 chrono = { version = "0.4.31", default-features = false }
 datafusion-common = { path = "../common", version = "7.0.0", features = ["parquet"] }
 datafusion-data-access = { path = "../../data-access", version = "1.0.0" }
@@ -76,11 +77,13 @@ num_cpus = "1.13.0"
 ordered-float = "2.10"
 parking_lot = "0.12"
 # All compression codes are disabled by default in our fork because it increases compilation time significantly.
-parquet = { git = 'https://github.com/cube-js/arrow-rs.git', rev = "d484adc1a79495624d659959f22fa4cd55ae2d3c", features = ["arrow", "base64"], default-features = false }
+parquet = { git = "https://github.com/cube-js/arrow-rs.git", rev = "ef17593f41e375fffd3d6173997ecee7993239e4", features = ["arrow", "base64"], default-features = false }
 paste = "^1.0"
 pin-project-lite= "^0.2.7"
-pyo3 = { version = "0.16", optional = true }
+pyo3 = { version = "0.29", optional = true }
 rand = "0.8"
+# arrow 13 CSV schema inference (physical_plan/file_format/csv_arrow13.rs)
+regex = "^1.4.3"
 smallvec = { version = "1.6", features = ["union"] }
 sqlparser = { git = 'https://github.com/cube-js/sqlparser-rs.git', rev = "33cf41ae4ddd0c409f52fd72fb5101ae000aad53" }
 tempfile = "3"

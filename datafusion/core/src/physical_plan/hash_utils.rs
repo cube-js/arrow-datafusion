@@ -17,22 +17,30 @@
 
 //! Functionality used both on logical and physical plans
 
-use crate::error::{DataFusionError, Result};
-use ahash::{CallHasher, RandomState};
-use arrow::array::{
-    Array, ArrayRef, BooleanArray, Date32Array, Date64Array, DecimalArray,
-    DictionaryArray, Float32Array, Float64Array, GenericListArray, Int16Array,
-    Int32Array, Int64Array, Int8Array, IntervalDayTimeArray, IntervalMonthDayNanoArray,
-    IntervalYearMonthArray, LargeStringArray, OffsetSizeTrait, StringArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-    TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+use crate::error::Result;
+use ahash::RandomState;
+use arrow::array::ArrayRef;
+#[cfg(not(feature = "force_hash_collisions"))]
+use {
+    crate::error::DataFusionError,
+    ahash::CallHasher,
+    arrow::array::{
+        Array, BooleanArray, Date32Array, Date64Array, Decimal128Array, DictionaryArray,
+        Float32Array, Float64Array, GenericListArray, Int16Array, Int32Array, Int64Array,
+        Int8Array, IntervalDayTimeArray, IntervalMonthDayNanoArray,
+        IntervalYearMonthArray, LargeStringArray, OffsetSizeTrait, StringArray,
+        TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+        TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+    },
+    arrow::datatypes::{
+        ArrowDictionaryKeyType, ArrowNativeType, DataType, Int16Type, Int32Type,
+        Int64Type, Int8Type, IntervalUnit, TimeUnit, UInt16Type, UInt32Type, UInt64Type,
+        UInt8Type,
+    },
+    std::sync::Arc,
 };
-use arrow::datatypes::{
-    ArrowDictionaryKeyType, ArrowNativeType, DataType, Int16Type, Int32Type, Int64Type,
-    Int8Type, IntervalUnit, TimeUnit, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
-};
-use std::sync::Arc;
 
+#[cfg(not(feature = "force_hash_collisions"))]
 // Combines two hashes into one hash
 #[inline]
 fn combine_hashes(l: u64, r: u64) -> u64 {
@@ -40,6 +48,7 @@ fn combine_hashes(l: u64, r: u64) -> u64 {
     hash.wrapping_mul(37).wrapping_add(r)
 }
 
+#[cfg(not(feature = "force_hash_collisions"))]
 fn hash_null(random_state: &RandomState, hashes_buffer: &'_ mut [u64], mul_col: bool) {
     if mul_col {
         hashes_buffer.iter_mut().for_each(|hash| {
@@ -53,13 +62,14 @@ fn hash_null(random_state: &RandomState, hashes_buffer: &'_ mut [u64], mul_col: 
     }
 }
 
+#[cfg(not(feature = "force_hash_collisions"))]
 fn hash_decimal128(
     array: &ArrayRef,
     random_state: &RandomState,
     hashes_buffer: &mut [u64],
     mul_col: bool,
 ) {
-    let array = array.as_any().downcast_ref::<DecimalArray>().unwrap();
+    let array = array.as_any().downcast_ref::<Decimal128Array>().unwrap();
     if array.null_count() == 0 {
         if mul_col {
             for (i, hash) in hashes_buffer.iter_mut().enumerate() {
@@ -87,6 +97,7 @@ fn hash_decimal128(
     }
 }
 
+#[cfg(not(feature = "force_hash_collisions"))]
 macro_rules! hash_array {
     ($array_type:ident, $column: ident, $ty: ident, $hashes: ident, $random_state: ident, $multi_col: ident) => {
         let array = $column.as_any().downcast_ref::<$array_type>().unwrap();
@@ -124,6 +135,7 @@ macro_rules! hash_array {
     };
 }
 
+#[cfg(not(feature = "force_hash_collisions"))]
 macro_rules! hash_array_primitive {
     ($array_type:ident, $column: ident, $ty: ident, $hashes: ident, $random_state: ident, $multi_col: ident) => {
         let array = $column.as_any().downcast_ref::<$array_type>().unwrap();
@@ -162,6 +174,54 @@ macro_rules! hash_array_primitive {
     };
 }
 
+/// Like `hash_array_primitive`, but hashes `$convert(value)` instead of the native
+/// value. Used for interval types whose arrow native type is a struct: the value is
+/// converted to the packed integer layout used by arrow 13 so hashes are unchanged.
+#[cfg(not(feature = "force_hash_collisions"))]
+macro_rules! hash_array_primitive_converted {
+    ($array_type:ident, $column: ident, $ty: ident, $convert: expr, $hashes: ident, $random_state: ident, $multi_col: ident) => {
+        let array = $column.as_any().downcast_ref::<$array_type>().unwrap();
+        let values = array.values();
+
+        if array.null_count() == 0 {
+            if $multi_col {
+                for (hash, value) in $hashes.iter_mut().zip(values.iter()) {
+                    *hash = combine_hashes(
+                        $ty::get_hash(&$convert(*value), $random_state),
+                        *hash,
+                    );
+                }
+            } else {
+                for (hash, value) in $hashes.iter_mut().zip(values.iter()) {
+                    *hash = $ty::get_hash(&$convert(*value), $random_state)
+                }
+            }
+        } else {
+            if $multi_col {
+                for (i, (hash, value)) in
+                    $hashes.iter_mut().zip(values.iter()).enumerate()
+                {
+                    if !array.is_null(i) {
+                        *hash = combine_hashes(
+                            $ty::get_hash(&$convert(*value), $random_state),
+                            *hash,
+                        );
+                    }
+                }
+            } else {
+                for (i, (hash, value)) in
+                    $hashes.iter_mut().zip(values.iter()).enumerate()
+                {
+                    if !array.is_null(i) {
+                        *hash = $ty::get_hash(&$convert(*value), $random_state);
+                    }
+                }
+            }
+        }
+    };
+}
+
+#[cfg(not(feature = "force_hash_collisions"))]
 macro_rules! hash_array_float {
     ($array_type:ident, $column: ident, $ty: ident, $hashes: ident, $random_state: ident, $multi_col: ident) => {
         let array = $column.as_any().downcast_ref::<$array_type>().unwrap();
@@ -218,6 +278,7 @@ macro_rules! hash_array_float {
 }
 
 /// Hash the values in a dictionary array
+#[cfg(not(feature = "force_hash_collisions"))]
 fn create_hashes_dictionary<K: ArrowDictionaryKeyType>(
     array: &ArrayRef,
     random_state: &RandomState,
@@ -267,6 +328,7 @@ fn create_hashes_dictionary<K: ArrowDictionaryKeyType>(
 }
 
 /// Hash the values in a list array
+#[cfg(not(feature = "force_hash_collisions"))]
 fn create_hashes_list_array<T: OffsetSizeTrait>(
     array: &ArrayRef,
     random_state: &RandomState,
@@ -327,7 +389,7 @@ pub fn create_hashes<'a>(
             DataType::Null => {
                 hash_null(random_state, hashes_buffer, multi_col);
             }
-            DataType::Decimal(_, _) => {
+            DataType::Decimal128(_, _) => {
                 hash_decimal128(col, random_state, hashes_buffer, multi_col);
             }
             DataType::UInt8 => {
@@ -481,20 +543,22 @@ pub fn create_hashes<'a>(
                 );
             }
             DataType::Interval(IntervalUnit::DayTime) => {
-                hash_array_primitive!(
+                hash_array_primitive_converted!(
                     IntervalDayTimeArray,
                     col,
                     i64,
+                    datafusion_common::interval_day_time_to_i64,
                     hashes_buffer,
                     random_state,
                     multi_col
                 );
             }
             DataType::Interval(IntervalUnit::MonthDayNano) => {
-                hash_array_primitive!(
+                hash_array_primitive_converted!(
                     IntervalMonthDayNanoArray,
                     col,
                     i128,
+                    datafusion_common::interval_month_day_nano_to_i128,
                     hashes_buffer,
                     random_state,
                     multi_col
@@ -617,7 +681,7 @@ pub fn create_hashes<'a>(
                 }
                 _ => {
                     return Err(DataFusionError::Internal(format!(
-                        "Unsupported dictionary type in hasher hashing: {}",
+                        "Unsupported dictionary type in hasher hashing: {:?}",
                         col.data_type(),
                     )))
                 }
@@ -631,7 +695,7 @@ pub fn create_hashes<'a>(
             _ => {
                 // This is internal because we should have caught this before.
                 return Err(DataFusionError::Internal(format!(
-                    "Unsupported data type in hasher: {}",
+                    "Unsupported data type in hasher: {:?}",
                     col.data_type()
                 )));
             }
@@ -643,8 +707,16 @@ pub fn create_hashes<'a>(
 #[cfg(test)]
 mod tests {
     use crate::from_slice::FromSlice;
-    use arrow::{array::DictionaryArray, datatypes::Int8Type};
-    use std::{slice, sync::Arc};
+    use arrow::array::{
+        Array, Decimal128Array, Float32Array, Float64Array, GenericListArray,
+    };
+    use arrow::datatypes::Int32Type;
+    use std::sync::Arc;
+    #[cfg(not(feature = "force_hash_collisions"))]
+    use {
+        arrow::{array::DictionaryArray, datatypes::Int8Type},
+        std::slice,
+    };
 
     use super::*;
 
@@ -653,7 +725,7 @@ mod tests {
         let array = vec![1, 2, 3, 4]
             .into_iter()
             .map(Some)
-            .collect::<DecimalArray>()
+            .collect::<Decimal128Array>()
             .with_precision_and_scale(20, 3)
             .unwrap();
         let array_ref = Arc::new(array);

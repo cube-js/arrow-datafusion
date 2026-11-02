@@ -25,7 +25,8 @@ use crate::physical_plan::expressions::PhysicalSortExpr;
 use crate::physical_plan::{
     DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
 };
-use arrow::json::reader::DecoderOptions;
+use arrow::datatypes::Schema;
+use arrow::json::reader::ReaderBuilder;
 use arrow::{datatypes::SchemaRef, json};
 use futures::{StreamExt, TryStreamExt};
 use std::any::Any;
@@ -103,14 +104,29 @@ impl ExecutionPlan for NdJsonExec {
 
         // The json reader cannot limit the number of records, so `remaining` is ignored.
         let fun = move |file, _remaining: &Option<usize>| {
-            let options = DecoderOptions::new().with_batch_size(batch_size);
-            let options = if let Some(proj) = &proj {
-                options.with_projection(proj.clone())
+            // arrow 13 `DecoderOptions::with_projection(names)` returned the schema
+            // fields named in the projection, in projection order (unknown names were
+            // skipped). Keys missing from the reader schema are ignored by the arrow 60
+            // json reader.
+            let schema = if let Some(proj) = &proj {
+                Arc::new(Schema::new_with_metadata(
+                    proj.iter()
+                        .filter_map(|name| {
+                            file_schema.field_with_name(name).ok().cloned()
+                        })
+                        .collect::<Vec<_>>(),
+                    file_schema.metadata().clone(),
+                ))
             } else {
-                options
+                Arc::clone(&file_schema)
             };
-            Box::new(json::Reader::new(file, Arc::clone(&file_schema), options))
-                as BatchIter
+            match ReaderBuilder::new(schema)
+                .with_batch_size(batch_size)
+                .build(std::io::BufReader::new(file))
+            {
+                Ok(reader) => Box::new(reader) as BatchIter,
+                Err(e) => Box::new(std::iter::once(Err(e))) as BatchIter,
+            }
         };
 
         Ok(Box::pin(FileStream::new(
@@ -166,7 +182,7 @@ pub async fn plan_to_json(
                 let stream = plan.execute(i, task_ctx).await?;
                 let handle: JoinHandle<Result<()>> = task::spawn(async move {
                     stream
-                        .map(|batch| writer.write(batch?))
+                        .map(|batch| writer.write(&batch?))
                         .try_collect()
                         .await
                         .map_err(DataFusionError::from)
@@ -275,8 +291,8 @@ mod tests {
 
         let actual_schema = infer_schema(path.clone()).await?;
 
-        let mut fields = actual_schema.fields().clone();
-        fields.push(Field::new("missing_col", DataType::Int32, true));
+        let mut fields = actual_schema.fields().to_vec();
+        fields.push(Arc::new(Field::new("missing_col", DataType::Int32, true)));
         let missing_field_idx = fields.len() - 1;
 
         let file_schema = Arc::new(Schema::new(fields));

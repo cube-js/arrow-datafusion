@@ -637,12 +637,14 @@ pub fn table_with_decimal() -> Arc<dyn TableProvider> {
 }
 
 fn make_decimal() -> RecordBatch {
-    let mut decimal_builder = DecimalBuilder::new(20, 10, 3);
+    let mut decimal_builder = Decimal128Builder::with_capacity(20)
+        .with_precision_and_scale(10, 3)
+        .unwrap();
     for i in 110000..110010 {
-        decimal_builder.append_value(i as i128).unwrap();
+        decimal_builder.append_value(i as i128);
     }
     for i in 100000..100010 {
-        decimal_builder.append_value(-i as i128).unwrap();
+        decimal_builder.append_value(-i as i128);
     }
     let array = decimal_builder.finish();
     let schema = Schema::new(vec![Field::new("c1", array.data_type().clone(), true)]);
@@ -748,16 +750,13 @@ fn make_timestamp_tz_table<A>(tz: Option<String>) -> Result<Arc<MemTable>>
 where
     A: ArrowTimestampType,
 {
+    let tz: Option<Arc<str>> = tz.map(Arc::from);
     let schema = Arc::new(Schema::new(vec![
-        Field::new(
-            "ts",
-            DataType::Timestamp(A::get_time_unit(), tz.clone()),
-            false,
-        ),
+        Field::new("ts", DataType::Timestamp(A::UNIT, tz.clone()), false),
         Field::new("value", DataType::Int32, true),
     ]));
 
-    let divisor = match A::get_time_unit() {
+    let divisor = match A::UNIT {
         TimeUnit::Nanosecond => 1,
         TimeUnit::Microsecond => 1000,
         TimeUnit::Millisecond => 1_000_000,
@@ -770,7 +769,7 @@ where
         1599565349190855000 / divisor,    // 2020-09-08T11:42:29.190855+00:00
     ]; // 2020-09-08T11:42:29.190855+00:00
 
-    let array = PrimitiveArray::<A>::from_vec(timestamps, tz);
+    let array = PrimitiveArray::<A>::from_iter_values(timestamps).with_timezone_opt(tz);
 
     let data = RecordBatch::try_new(
         schema.clone(),
@@ -857,6 +856,7 @@ pub fn make_timestamps() -> RecordBatch {
             t.map(|t| {
                 t.parse::<chrono::NaiveDateTime>()
                     .unwrap()
+                    .and_utc()
                     .timestamp_nanos_opt()
                     .unwrap()
             })
@@ -884,10 +884,10 @@ pub fn make_timestamps() -> RecordBatch {
         .map(|(i, _)| format!("Row {}", i))
         .collect::<Vec<_>>();
 
-    let arr_nanos = TimestampNanosecondArray::from_opt_vec(ts_nanos, None);
-    let arr_micros = TimestampMicrosecondArray::from_opt_vec(ts_micros, None);
-    let arr_millis = TimestampMillisecondArray::from_opt_vec(ts_millis, None);
-    let arr_secs = TimestampSecondArray::from_opt_vec(ts_secs, None);
+    let arr_nanos = TimestampNanosecondArray::from(ts_nanos);
+    let arr_micros = TimestampMicrosecondArray::from(ts_micros);
+    let arr_millis = TimestampMillisecondArray::from(ts_millis);
+    let arr_secs = TimestampSecondArray::from(ts_secs);
 
     let names = names.iter().map(|s| s.as_str()).collect::<Vec<_>>();
     let arr_names = StringArray::from(names);

@@ -28,6 +28,7 @@ use futures::StreamExt;
 use super::FileFormat;
 use crate::error::Result;
 use crate::logical_plan::Expr;
+use crate::physical_plan::file_format::csv_arrow13::infer_reader_schema;
 use crate::physical_plan::file_format::{CsvExec, FileScanConfig};
 use crate::physical_plan::ExecutionPlan;
 use crate::physical_plan::Statistics;
@@ -99,7 +100,8 @@ impl FileFormat for CsvFormat {
 
         while let Some(obj_reader) = readers.next().await {
             let mut reader = obj_reader?.sync_reader()?;
-            let (schema, records_read) = arrow::csv::reader::infer_reader_schema(
+            // arrow 13 `arrow::csv::reader::infer_reader_schema` semantics
+            let (schema, records_read) = infer_reader_schema(
                 &mut reader,
                 self.delimiter,
                 Some(records_to_read),

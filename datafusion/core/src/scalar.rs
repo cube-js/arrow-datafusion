@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn scalar_decimal_test() {
         let decimal_value = ScalarValue::Decimal128(Some(123), 10, 1);
-        assert_eq!(DataType::Decimal(10, 1), decimal_value.get_datatype());
+        assert_eq!(DataType::Decimal128(10, 1), decimal_value.get_datatype());
         let try_into_value: i128 = decimal_value.clone().try_into().unwrap();
         assert_eq!(123_i128, try_into_value);
         assert!(!decimal_value.is_null());
@@ -46,16 +46,16 @@ mod tests {
 
         // decimal scalar to array
         let array = decimal_value.to_array();
-        let array = array.as_any().downcast_ref::<DecimalArray>().unwrap();
+        let array = array.as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(1, array.len());
-        assert_eq!(DataType::Decimal(10, 1), array.data_type().clone());
+        assert_eq!(DataType::Decimal128(10, 1), array.data_type().clone());
         assert_eq!(123i128, array.value(0));
 
         // decimal scalar to array with size
         let array = decimal_value.to_array_of_size(10);
-        let array_decimal = array.as_any().downcast_ref::<DecimalArray>().unwrap();
+        let array_decimal = array.as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(10, array.len());
-        assert_eq!(DataType::Decimal(10, 1), array.data_type().clone());
+        assert_eq!(DataType::Decimal128(10, 1), array.data_type().clone());
         assert_eq!(123i128, array_decimal.value(0));
         assert_eq!(123i128, array_decimal.value(9));
         // test eq array
@@ -93,7 +93,7 @@ mod tests {
         // convert the vec to decimal array and check the result
         let array = ScalarValue::iter_to_array(decimal_vec).unwrap();
         assert_eq!(3, array.len());
-        assert_eq!(DataType::Decimal(10, 2), array.data_type().clone());
+        assert_eq!(DataType::Decimal128(10, 2), array.data_type().clone());
 
         let decimal_vec = vec![
             ScalarValue::Decimal128(Some(1), 10, 2),
@@ -103,7 +103,7 @@ mod tests {
         ];
         let array = ScalarValue::iter_to_array(decimal_vec).unwrap();
         assert_eq!(4, array.len());
-        assert_eq!(DataType::Decimal(10, 2), array.data_type().clone());
+        assert_eq!(DataType::Decimal128(10, 2), array.data_type().clone());
 
         assert!(ScalarValue::try_new_decimal128(1, 10, 2)
             .unwrap()
@@ -117,10 +117,6 @@ mod tests {
         assert_eq!(
             ScalarValue::Decimal128(None, 10, 2),
             ScalarValue::try_from_array(&array, 3).unwrap()
-        );
-        assert_eq!(
-            ScalarValue::Decimal128(None, 10, 2),
-            ScalarValue::try_from_array(&array, 4).unwrap()
         );
     }
 
@@ -374,7 +370,7 @@ mod tests {
         // Since ScalarValues are used in a non trivial number of places,
         // making it larger means significant more memory consumption
         // per distinct value.
-        assert_eq!(std::mem::size_of::<ScalarValue>(), 64);
+        assert_eq!(std::mem::size_of::<ScalarValue>(), 48);
     }
 
     #[test]
@@ -402,6 +398,11 @@ mod tests {
         let u16_vals = make_typed_vec!(u8_vals, u16);
         let u32_vals = make_typed_vec!(u8_vals, u32);
         let u64_vals = make_typed_vec!(u8_vals, u64);
+
+        let interval_dt_vals = i64_vals
+            .iter()
+            .map(|v| v.map(datafusion_common::interval_day_time_from_i64))
+            .collect::<Vec<_>>();
 
         let str_vals = [Some("foo"), None, Some("bar")];
 
@@ -501,7 +502,7 @@ mod tests {
                 i64_vals,
                 TimestampSecondArray,
                 TimestampSecond,
-                Some("UTC".to_owned())
+                Some(Arc::<str>::from("UTC"))
             ),
             make_test_case!(
                 i64_vals,
@@ -513,7 +514,7 @@ mod tests {
                 i64_vals,
                 TimestampMillisecondArray,
                 TimestampMillisecond,
-                Some("UTC".to_owned())
+                Some(Arc::<str>::from("UTC"))
             ),
             make_test_case!(
                 i64_vals,
@@ -525,7 +526,7 @@ mod tests {
                 i64_vals,
                 TimestampMicrosecondArray,
                 TimestampMicrosecond,
-                Some("UTC".to_owned())
+                Some(Arc::<str>::from("UTC"))
             ),
             make_test_case!(
                 i64_vals,
@@ -537,10 +538,10 @@ mod tests {
                 i64_vals,
                 TimestampNanosecondArray,
                 TimestampNanosecond,
-                Some("UTC".to_owned())
+                Some(Arc::<str>::from("UTC"))
             ),
             make_test_case!(i32_vals, IntervalYearMonthArray, IntervalYearMonth),
-            make_test_case!(i64_vals, IntervalDayTimeArray, IntervalDayTime),
+            make_test_case!(interval_dt_vals, IntervalDayTimeArray, IntervalDayTime),
             make_str_dict_test_case!(str_vals, Int8Type, Utf8),
             make_str_dict_test_case!(str_vals, Int16Type, Utf8),
             make_str_dict_test_case!(str_vals, Int32Type, Utf8),
@@ -685,7 +686,7 @@ mod tests {
         let field_f = Field::new("f", DataType::Int64, false);
         let field_d = Field::new(
             "D",
-            DataType::Struct(vec![field_e.clone(), field_f.clone()]),
+            DataType::Struct(vec![field_e.clone(), field_f.clone()].into()),
             false,
         );
 
@@ -726,26 +727,26 @@ mod tests {
 
         let expected = Arc::new(StructArray::from(vec![
             (
-                field_a.clone(),
+                Arc::new(field_a.clone()),
                 Arc::new(Int32Array::from_slice([23, 23])) as ArrayRef,
             ),
             (
-                field_b.clone(),
+                Arc::new(field_b.clone()),
                 Arc::new(BooleanArray::from_slice([false, false])) as ArrayRef,
             ),
             (
-                field_c.clone(),
+                Arc::new(field_c.clone()),
                 Arc::new(StringArray::from_slice(["Hello", "Hello"])) as ArrayRef,
             ),
             (
-                field_d.clone(),
+                Arc::new(field_d.clone()),
                 Arc::new(StructArray::from(vec![
                     (
-                        field_e.clone(),
+                        Arc::new(field_e.clone()),
                         Arc::new(Int16Array::from_slice([2, 2])) as ArrayRef,
                     ),
                     (
-                        field_f.clone(),
+                        Arc::new(field_f.clone()),
                         Arc::new(Int64Array::from_slice([3, 3])) as ArrayRef,
                     ),
                 ])) as ArrayRef,
@@ -821,27 +822,27 @@ mod tests {
 
         let expected = Arc::new(StructArray::from(vec![
             (
-                field_a,
+                Arc::new(field_a),
                 Arc::new(Int32Array::from_slice([23, 7, -1000])) as ArrayRef,
             ),
             (
-                field_b,
+                Arc::new(field_b),
                 Arc::new(BooleanArray::from_slice([false, true, true])) as ArrayRef,
             ),
             (
-                field_c,
+                Arc::new(field_c),
                 Arc::new(StringArray::from_slice(["Hello", "World", "!!!!!"]))
                     as ArrayRef,
             ),
             (
-                field_d,
+                Arc::new(field_d),
                 Arc::new(StructArray::from(vec![
                     (
-                        field_e,
+                        Arc::new(field_e),
                         Arc::new(Int16Array::from_slice([2, 4, 6])) as ArrayRef,
                     ),
                     (
-                        field_f,
+                        Arc::new(field_f),
                         Arc::new(Int64Array::from_slice([3, 5, 7])) as ArrayRef,
                     ),
                 ])) as ArrayRef,
@@ -856,7 +857,7 @@ mod tests {
         let field_a = Field::new("A", DataType::Utf8, false);
         let field_primitive_list = Field::new(
             "primitive_list",
-            DataType::List(Box::new(Field::new("item", DataType::Int32, true))),
+            DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
             false,
         );
 
@@ -906,12 +907,12 @@ mod tests {
 
         let expected = StructArray::from(vec![
             (
-                field_a.clone(),
+                Arc::new(field_a.clone()),
                 Arc::new(StringArray::from_slice(["First", "Second", "Third"]))
                     as ArrayRef,
             ),
             (
-                field_primitive_list.clone(),
+                Arc::new(field_primitive_list.clone()),
                 Arc::new(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![
                     Some(vec![Some(1), Some(2), Some(3)]),
                     Some(vec![Some(4), Some(5)]),
@@ -939,7 +940,7 @@ mod tests {
         let array = array.as_any().downcast_ref::<ListArray>().unwrap();
 
         // Construct expected array with array builders
-        let field_a_builder = StringBuilder::new(4);
+        let field_a_builder = StringBuilder::new();
         let primitive_value_builder = Int32Array::builder(8);
         let field_primitive_list_builder = ListBuilder::new(primitive_value_builder);
 
@@ -956,116 +957,100 @@ mod tests {
             .values()
             .field_builder::<StringBuilder>(0)
             .unwrap()
-            .append_value("First")
-            .unwrap();
+            .append_value("First");
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(1)
-            .unwrap();
+            .append_value(1);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(2)
-            .unwrap();
+            .append_value(2);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(3)
-            .unwrap();
+            .append_value(3);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
-            .append(true)
-            .unwrap();
-        list_builder.values().append(true).unwrap();
+            .append(true);
+        list_builder.values().append(true);
 
         list_builder
             .values()
             .field_builder::<StringBuilder>(0)
             .unwrap()
-            .append_value("Second")
-            .unwrap();
+            .append_value("Second");
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(4)
-            .unwrap();
+            .append_value(4);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(5)
-            .unwrap();
+            .append_value(5);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
-            .append(true)
-            .unwrap();
-        list_builder.values().append(true).unwrap();
-        list_builder.append(true).unwrap();
+            .append(true);
+        list_builder.values().append(true);
+        list_builder.append(true);
 
         list_builder
             .values()
             .field_builder::<StringBuilder>(0)
             .unwrap()
-            .append_value("Third")
-            .unwrap();
+            .append_value("Third");
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(6)
-            .unwrap();
+            .append_value(6);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
-            .append(true)
-            .unwrap();
-        list_builder.values().append(true).unwrap();
-        list_builder.append(true).unwrap();
+            .append(true);
+        list_builder.values().append(true);
+        list_builder.append(true);
 
         list_builder
             .values()
             .field_builder::<StringBuilder>(0)
             .unwrap()
-            .append_value("Second")
-            .unwrap();
+            .append_value("Second");
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(4)
-            .unwrap();
+            .append_value(4);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
             .values()
-            .append_value(5)
-            .unwrap();
+            .append_value(5);
         list_builder
             .values()
             .field_builder::<ListBuilder<PrimitiveBuilder<Int32Type>>>(1)
             .unwrap()
-            .append(true)
-            .unwrap();
-        list_builder.values().append(true).unwrap();
-        list_builder.append(true).unwrap();
+            .append(true);
+        list_builder.values().append(true);
+        list_builder.append(true);
 
         let expected = list_builder.finish();
 
@@ -1093,7 +1078,7 @@ mod tests {
                     Box::new(DataType::Int32),
                 ),
             ])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -1114,7 +1099,7 @@ mod tests {
                     Box::new(DataType::Int32),
                 ),
             ])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -1126,7 +1111,7 @@ mod tests {
                 Some(Box::new(vec![ScalarValue::from(9i32)])),
                 Box::new(DataType::Int32),
             )])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -1141,27 +1126,27 @@ mod tests {
         let middle_builder = ListBuilder::new(inner_builder);
         let mut outer_builder = ListBuilder::new(middle_builder);
 
-        outer_builder.values().values().append_value(1).unwrap();
-        outer_builder.values().values().append_value(2).unwrap();
-        outer_builder.values().values().append_value(3).unwrap();
-        outer_builder.values().append(true).unwrap();
+        outer_builder.values().values().append_value(1);
+        outer_builder.values().values().append_value(2);
+        outer_builder.values().values().append_value(3);
+        outer_builder.values().append(true);
 
-        outer_builder.values().values().append_value(4).unwrap();
-        outer_builder.values().values().append_value(5).unwrap();
-        outer_builder.values().append(true).unwrap();
-        outer_builder.append(true).unwrap();
+        outer_builder.values().values().append_value(4);
+        outer_builder.values().values().append_value(5);
+        outer_builder.values().append(true);
+        outer_builder.append(true);
 
-        outer_builder.values().values().append_value(6).unwrap();
-        outer_builder.values().append(true).unwrap();
+        outer_builder.values().values().append_value(6);
+        outer_builder.values().append(true);
 
-        outer_builder.values().values().append_value(7).unwrap();
-        outer_builder.values().values().append_value(8).unwrap();
-        outer_builder.values().append(true).unwrap();
-        outer_builder.append(true).unwrap();
+        outer_builder.values().values().append_value(7);
+        outer_builder.values().values().append_value(8);
+        outer_builder.values().append(true);
+        outer_builder.append(true);
 
-        outer_builder.values().values().append_value(9).unwrap();
-        outer_builder.values().append(true).unwrap();
-        outer_builder.append(true).unwrap();
+        outer_builder.values().values().append_value(9);
+        outer_builder.values().append(true);
+        outer_builder.append(true);
 
         let expected = outer_builder.finish();
 
@@ -1172,25 +1157,25 @@ mod tests {
     fn scalar_timestamp_ns_utc_timezone() {
         let scalar = ScalarValue::TimestampNanosecond(
             Some(1599566400000000000),
-            Some("UTC".to_owned()),
+            Some(Arc::<str>::from("UTC")),
         );
 
         assert_eq!(
             scalar.get_datatype(),
-            DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".to_owned()))
+            DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::<str>::from("UTC")))
         );
 
         let array = scalar.to_array();
         assert_eq!(array.len(), 1);
         assert_eq!(
             array.data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".to_owned()))
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::<str>::from("UTC")))
         );
 
         let newscalar = ScalarValue::try_from_array(&array, 0).unwrap();
         assert_eq!(
             newscalar.get_datatype(),
-            DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".to_owned()))
+            DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::<str>::from("UTC")))
         );
     }
 }

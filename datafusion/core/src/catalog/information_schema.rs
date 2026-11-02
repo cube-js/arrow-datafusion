@@ -215,15 +215,11 @@ struct InformationSchemaTablesBuilder {
 
 impl InformationSchemaTablesBuilder {
     fn new() -> Self {
-        // StringBuilder requires providing an initial capacity, so
-        // pick 10 here arbitrarily as this is not performance
-        // critical code and the number of tables is unavailable here.
-        let default_capacity = 10;
         Self {
-            catalog_names: StringBuilder::new(default_capacity),
-            schema_names: StringBuilder::new(default_capacity),
-            table_names: StringBuilder::new(default_capacity),
-            table_types: StringBuilder::new(default_capacity),
+            catalog_names: StringBuilder::new(),
+            schema_names: StringBuilder::new(),
+            table_names: StringBuilder::new(),
+            table_types: StringBuilder::new(),
         }
     }
 
@@ -234,21 +230,14 @@ impl InformationSchemaTablesBuilder {
         table_name: impl AsRef<str>,
         table_type: TableType,
     ) {
-        // Note: append_value is actually infallable.
-        self.catalog_names
-            .append_value(catalog_name.as_ref())
-            .unwrap();
-        self.schema_names
-            .append_value(schema_name.as_ref())
-            .unwrap();
-        self.table_names.append_value(table_name.as_ref()).unwrap();
-        self.table_types
-            .append_value(match table_type {
-                TableType::Base => "BASE TABLE",
-                TableType::View => "VIEW",
-                TableType::Temporary => "LOCAL TEMPORARY",
-            })
-            .unwrap();
+        self.catalog_names.append_value(catalog_name.as_ref());
+        self.schema_names.append_value(schema_name.as_ref());
+        self.table_names.append_value(table_name.as_ref());
+        self.table_types.append_value(match table_type {
+            TableType::Base => "BASE TABLE",
+            TableType::View => "VIEW",
+            TableType::Temporary => "LOCAL TEMPORARY",
+        });
     }
 }
 
@@ -307,26 +296,25 @@ struct InformationSchemaColumnsBuilder {
 
 impl InformationSchemaColumnsBuilder {
     fn new() -> Self {
-        // StringBuilder requires providing an initial capacity, so
-        // pick 10 here arbitrarily as this is not performance
+        // Pick 10 here arbitrarily as this is not performance
         // critical code and the number of tables is unavailable here.
         let default_capacity = 10;
         Self {
-            catalog_names: StringBuilder::new(default_capacity),
-            schema_names: StringBuilder::new(default_capacity),
-            table_names: StringBuilder::new(default_capacity),
-            column_names: StringBuilder::new(default_capacity),
-            ordinal_positions: UInt64Builder::new(default_capacity),
-            column_defaults: StringBuilder::new(default_capacity),
-            is_nullables: StringBuilder::new(default_capacity),
-            data_types: StringBuilder::new(default_capacity),
-            character_maximum_lengths: UInt64Builder::new(default_capacity),
-            character_octet_lengths: UInt64Builder::new(default_capacity),
-            numeric_precisions: UInt64Builder::new(default_capacity),
-            numeric_precision_radixes: UInt64Builder::new(default_capacity),
-            numeric_scales: UInt64Builder::new(default_capacity),
-            datetime_precisions: UInt64Builder::new(default_capacity),
-            interval_types: StringBuilder::new(default_capacity),
+            catalog_names: StringBuilder::new(),
+            schema_names: StringBuilder::new(),
+            table_names: StringBuilder::new(),
+            column_names: StringBuilder::new(),
+            ordinal_positions: UInt64Builder::with_capacity(default_capacity),
+            column_defaults: StringBuilder::new(),
+            is_nullables: StringBuilder::new(),
+            data_types: StringBuilder::new(),
+            character_maximum_lengths: UInt64Builder::with_capacity(default_capacity),
+            character_octet_lengths: UInt64Builder::with_capacity(default_capacity),
+            numeric_precisions: UInt64Builder::with_capacity(default_capacity),
+            numeric_precision_radixes: UInt64Builder::with_capacity(default_capacity),
+            numeric_scales: UInt64Builder::with_capacity(default_capacity),
+            datetime_precisions: UInt64Builder::with_capacity(default_capacity),
+            interval_types: StringBuilder::new(),
         }
     }
 
@@ -343,34 +331,23 @@ impl InformationSchemaColumnsBuilder {
     ) {
         use DataType::*;
 
-        // Note: append_value is actually infallable.
-        self.catalog_names
-            .append_value(catalog_name.as_ref())
-            .unwrap();
-        self.schema_names
-            .append_value(schema_name.as_ref())
-            .unwrap();
-        self.table_names.append_value(table_name.as_ref()).unwrap();
+        self.catalog_names.append_value(catalog_name.as_ref());
+        self.schema_names.append_value(schema_name.as_ref());
+        self.table_names.append_value(table_name.as_ref());
 
-        self.column_names
-            .append_value(column_name.as_ref())
-            .unwrap();
+        self.column_names.append_value(column_name.as_ref());
 
-        self.ordinal_positions
-            .append_value(column_position as u64)
-            .unwrap();
+        self.ordinal_positions.append_value(column_position as u64);
 
         // DataFusion does not support column default values, so null
-        self.column_defaults.append_null().unwrap();
+        self.column_defaults.append_null();
 
         // "YES if the column is possibly nullable, NO if it is known not nullable. "
         let nullable_str = if is_nullable { "YES" } else { "NO" };
-        self.is_nullables.append_value(nullable_str).unwrap();
+        self.is_nullables.append_value(nullable_str);
 
         // "System supplied type" --> Use debug format of the datatype
-        self.data_types
-            .append_value(format!("{:?}", data_type))
-            .unwrap();
+        self.data_types.append_value(format!("{:?}", data_type));
 
         // "If data_type identifies a character or bit string type, the
         // declared maximum length; null for all other data types or
@@ -378,9 +355,7 @@ impl InformationSchemaColumnsBuilder {
         //
         // Arrow has no equivalent of VARCHAR(20), so we leave this as Null
         let max_chars = None;
-        self.character_maximum_lengths
-            .append_option(max_chars)
-            .unwrap();
+        self.character_maximum_lengths.append_option(max_chars);
 
         // "Maximum length, in bytes, for binary data, character data,
         // or text and image data."
@@ -389,9 +364,7 @@ impl InformationSchemaColumnsBuilder {
             LargeBinary | LargeUtf8 => Some(i64::MAX as u64),
             _ => None,
         };
-        self.character_octet_lengths
-            .append_option(char_len)
-            .unwrap();
+        self.character_octet_lengths.append_option(char_len);
 
         // numeric_precision: "If data_type identifies a numeric type, this column
         // contains the (declared or implicit) precision of the type
@@ -426,22 +399,18 @@ impl InformationSchemaColumnsBuilder {
             Float32 => (Some(24), Some(2), None),
             // Numbers from postgres `double` type
             Float64 => (Some(24), Some(2), None),
-            Decimal(precision, scale) => {
+            Decimal128(precision, scale) => {
                 (Some(*precision as u64), Some(10), Some(*scale as u64))
             }
             _ => (None, None, None),
         };
 
-        self.numeric_precisions
-            .append_option(numeric_precision)
-            .unwrap();
-        self.numeric_precision_radixes
-            .append_option(numeric_radix)
-            .unwrap();
-        self.numeric_scales.append_option(numeric_scale).unwrap();
+        self.numeric_precisions.append_option(numeric_precision);
+        self.numeric_precision_radixes.append_option(numeric_radix);
+        self.numeric_scales.append_option(numeric_scale);
 
-        self.datetime_precisions.append_option(None).unwrap();
-        self.interval_types.append_null().unwrap();
+        self.datetime_precisions.append_option(None);
+        self.interval_types.append_null();
     }
 }
 
@@ -453,16 +422,16 @@ impl From<InformationSchemaColumnsBuilder> for MemTable {
             Field::new("table_name", DataType::Utf8, false),
             Field::new("column_name", DataType::Utf8, false),
             Field::new("ordinal_position", DataType::UInt64, false),
-            Field::new("column_default", DataType::Utf8, false),
+            Field::new("column_default", DataType::Utf8, true),
             Field::new("is_nullable", DataType::Utf8, false),
             Field::new("data_type", DataType::Utf8, false),
-            Field::new("character_maximum_length", DataType::UInt64, false),
-            Field::new("character_octet_length", DataType::UInt64, false),
-            Field::new("numeric_precision", DataType::UInt64, false),
-            Field::new("numeric_precision_radix", DataType::UInt64, false),
-            Field::new("numeric_scale", DataType::UInt64, false),
-            Field::new("datetime_precision", DataType::UInt64, false),
-            Field::new("interval_type", DataType::Utf8, false),
+            Field::new("character_maximum_length", DataType::UInt64, true),
+            Field::new("character_octet_length", DataType::UInt64, true),
+            Field::new("numeric_precision", DataType::UInt64, true),
+            Field::new("numeric_precision_radix", DataType::UInt64, true),
+            Field::new("numeric_scale", DataType::UInt64, true),
+            Field::new("datetime_precision", DataType::UInt64, true),
+            Field::new("interval_type", DataType::Utf8, true),
         ]);
 
         let InformationSchemaColumnsBuilder {

@@ -58,7 +58,7 @@ impl AggregateExpr for ArrayAgg {
     fn field(&self) -> Result<Field> {
         Ok(Field::new(
             &self.name,
-            DataType::List(Box::new(Field::new(
+            DataType::List(Arc::new(Field::new(
                 "item",
                 self.input_data_type.clone(),
                 true,
@@ -75,8 +75,8 @@ impl AggregateExpr for ArrayAgg {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "array_agg"),
-            DataType::List(Box::new(Field::new(
+            format_state_name(&self.name, "array_agg"),
+            DataType::List(Arc::new(Field::new(
                 "item",
                 self.input_data_type.clone(),
                 true,
@@ -205,7 +205,7 @@ mod tests {
                     Box::new(DataType::Int32),
                 ),
             ])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -226,7 +226,7 @@ mod tests {
                     Box::new(DataType::Int32),
                 ),
             ])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -238,7 +238,7 @@ mod tests {
                 Some(Box::new(vec![ScalarValue::from(9i32)])),
                 Box::new(DataType::Int32),
             )])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -247,7 +247,7 @@ mod tests {
 
         let list = ScalarValue::List(
             Some(Box::new(vec![l1.clone(), l2.clone(), l3.clone()])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -258,14 +258,14 @@ mod tests {
 
         generic_test_op!(
             array,
-            DataType::List(Box::new(Field::new(
+            DataType::List(Arc::new(Field::new(
                 "item",
-                DataType::List(Box::new(Field::new("item", DataType::Int32, true,))),
+                DataType::List(Arc::new(Field::new("item", DataType::Int32, true,))),
                 true,
             ))),
             ArrayAgg,
             list,
-            DataType::List(Box::new(Field::new("item", DataType::Int32, true,)))
+            DataType::List(Arc::new(Field::new("item", DataType::Int32, true,)))
         )
     }
 }

@@ -330,15 +330,15 @@ async fn select_distinct_simple_2() {
     let actual = execute_to_batches(&ctx, sql).await;
 
     let expected = vec![
-        "+---------+----------------+",
-        "| c1      | c2             |",
-        "+---------+----------------+",
-        "| 0.00001 | 0.000000000001 |",
-        "| 0.00002 | 0.000000000002 |",
-        "| 0.00003 | 0.000000000003 |",
-        "| 0.00004 | 0.000000000004 |",
-        "| 0.00005 | 0.000000000005 |",
-        "+---------+----------------+",
+        "+---------+-------+",
+        "| c1      | c2    |",
+        "+---------+-------+",
+        "| 0.00001 | 1e-12 |",
+        "| 0.00002 | 2e-12 |",
+        "| 0.00003 | 3e-12 |",
+        "| 0.00004 | 4e-12 |",
+        "| 0.00005 | 5e-12 |",
+        "+---------+-------+",
     ];
     assert_batches_eq!(expected, &actual);
 }
@@ -536,17 +536,17 @@ async fn query_get_indexed_field() -> Result<()> {
     let ctx = SessionContext::new();
     let schema = Arc::new(Schema::new(vec![Field::new(
         "some_list",
-        DataType::List(Box::new(Field::new("item", DataType::Int64, true))),
+        DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
         false,
     )]));
-    let builder = PrimitiveBuilder::<Int64Type>::new(3);
+    let builder = PrimitiveBuilder::<Int64Type>::with_capacity(3);
     let mut lb = ListBuilder::new(builder);
     for int_vec in [vec![0, 1, 2], vec![4, 5, 6], vec![7, 8, 9]] {
         let builder = lb.values();
         for int in int_vec {
-            builder.append_value(int).unwrap();
+            builder.append_value(int);
         }
-        lb.append(true).unwrap();
+        lb.append(true);
     }
 
     let data = RecordBatch::try_new(schema.clone(), vec![Arc::new(lb.finish())])?;
@@ -573,15 +573,15 @@ async fn query_get_indexed_field() -> Result<()> {
 #[tokio::test]
 async fn query_nested_get_indexed_field() -> Result<()> {
     let ctx = SessionContext::new();
-    let nested_dt = DataType::List(Box::new(Field::new("item", DataType::Int64, true)));
+    let nested_dt = DataType::List(Arc::new(Field::new("item", DataType::Int64, true)));
     // Nested schema of { "some_list": [[i64]] }
     let schema = Arc::new(Schema::new(vec![Field::new(
         "some_list",
-        DataType::List(Box::new(Field::new("item", nested_dt.clone(), true))),
+        DataType::List(Arc::new(Field::new("item", nested_dt.clone(), true))),
         false,
     )]));
 
-    let builder = PrimitiveBuilder::<Int64Type>::new(3);
+    let builder = PrimitiveBuilder::<Int64Type>::with_capacity(3);
     let nested_lb = ListBuilder::new(builder);
     let mut lb = ListBuilder::new(nested_lb);
     for int_vec_vec in [
@@ -593,11 +593,11 @@ async fn query_nested_get_indexed_field() -> Result<()> {
         for int_vec in int_vec_vec {
             let builder = nested_builder.values();
             for int in int_vec {
-                builder.append_value(int).unwrap();
+                builder.append_value(int);
             }
-            nested_builder.append(true).unwrap();
+            nested_builder.append(true);
         }
-        lb.append(true).unwrap();
+        lb.append(true);
     }
 
     let data = RecordBatch::try_new(schema.clone(), vec![Arc::new(lb.finish())])?;
@@ -649,15 +649,15 @@ async fn query_nested_get_indexed_field() -> Result<()> {
 async fn query_get_indexed_array_dynamic_key() -> Result<()> {
     let ctx = SessionContext::new();
 
-    let list_dt = Box::new(Field::new("item", DataType::Int64, true));
+    let list_dt = Arc::new(Field::new("item", DataType::Int64, true));
     let schema = Arc::new(Schema::new(vec![
         Field::new("arr", DataType::List(list_dt), false),
         Field::new("key", DataType::Int64, false),
     ]));
 
-    let array_ints_builder = PrimitiveBuilder::<Int64Type>::new(3);
+    let array_ints_builder = PrimitiveBuilder::<Int64Type>::with_capacity(3);
     let mut arr_builder = ListBuilder::new(array_ints_builder);
-    let mut key_builder = PrimitiveBuilder::<Int64Type>::new(3);
+    let mut key_builder = PrimitiveBuilder::<Int64Type>::with_capacity(3);
 
     for (int_vec, key) in [
         (vec![0, 1, 2, 3], 1),
@@ -665,11 +665,11 @@ async fn query_get_indexed_array_dynamic_key() -> Result<()> {
         (vec![8, 9, 10, 11], 3),
     ] {
         for n in int_vec {
-            arr_builder.values().append_value(n)?;
+            arr_builder.values().append_value(n);
         }
 
-        key_builder.append_value(key)?;
-        arr_builder.append(true)?;
+        key_builder.append_value(key);
+        arr_builder.append(true);
     }
 
     let data = RecordBatch::try_new(
@@ -716,24 +716,25 @@ async fn query_get_indexed_array_dynamic_key() -> Result<()> {
 #[tokio::test]
 async fn query_nested_get_indexed_field_on_struct() -> Result<()> {
     let ctx = SessionContext::new();
-    let nested_dt = DataType::List(Box::new(Field::new("item", DataType::Int64, true)));
+    let nested_dt = DataType::List(Arc::new(Field::new("item", DataType::Int64, true)));
     // Nested schema of { "some_struct": { "bar": [i64] } }
     let struct_fields = vec![Field::new("bar", nested_dt.clone(), true)];
     let schema = Arc::new(Schema::new(vec![Field::new(
         "some_struct",
-        DataType::Struct(struct_fields.clone()),
+        DataType::Struct(struct_fields.clone().into()),
         false,
     )]));
 
-    let builder = PrimitiveBuilder::<Int64Type>::new(3);
+    let builder = PrimitiveBuilder::<Int64Type>::with_capacity(3);
     let nested_lb = ListBuilder::new(builder);
     let mut sb = StructBuilder::new(struct_fields, vec![Box::new(nested_lb)]);
     for int_vec in [vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]] {
         let lb = sb.field_builder::<ListBuilder<Int64Builder>>(0).unwrap();
         for int in int_vec {
-            lb.values().append_value(int).unwrap();
+            lb.values().append_value(int);
         }
-        lb.append(true).unwrap();
+        lb.append(true);
+        sb.append(true);
     }
     let data = RecordBatch::try_new(schema.clone(), vec![Arc::new(sb.finish())])?;
     let table = MemTable::try_new(schema, vec![vec![data]])?;

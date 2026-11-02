@@ -88,12 +88,12 @@ async fn parquet_list_columns() {
     let schema = Arc::new(Schema::new(vec![
         Field::new(
             "int64_list",
-            DataType::List(Box::new(Field::new("item", DataType::Int64, true))),
+            DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
             true,
         ),
         Field::new(
             "utf8_list",
-            DataType::List(Box::new(Field::new("item", DataType::Utf8, true))),
+            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
             true,
         ),
     ]));

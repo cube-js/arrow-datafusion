@@ -19,7 +19,9 @@ use crate::protobuf;
 use datafusion::logical_plan::FunctionRegistry;
 use datafusion::prelude::bit_length;
 use datafusion::{
-    arrow::datatypes::{DataType, Field, IntervalUnit, Schema, TimeUnit, UnionMode},
+    arrow::datatypes::{
+        DataType, Field, IntervalUnit, Schema, TimeUnit, UnionFields, UnionMode,
+    },
     error::DataFusionError,
     logical_expr::{BuiltInWindowFunction, BuiltinScalarFunction},
     logical_plan::{
@@ -39,6 +41,7 @@ use datafusion::{
     },
     scalar::ScalarValue,
 };
+use datafusion_common::interval_day_time_from_i64;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -222,7 +225,7 @@ impl From<protobuf::PrimitiveScalarType> for DataType {
                 DataType::Time64(TimeUnit::Nanosecond)
             }
             protobuf::PrimitiveScalarType::Null => DataType::Null,
-            protobuf::PrimitiveScalarType::Decimal128 => DataType::Decimal(0, 0),
+            protobuf::PrimitiveScalarType::Decimal128 => DataType::Decimal128(0, 0),
             protobuf::PrimitiveScalarType::Date64 => DataType::Date64,
             protobuf::PrimitiveScalarType::TimeSecond => {
                 DataType::Timestamp(TimeUnit::Second, None)
@@ -290,7 +293,7 @@ impl TryFrom<&protobuf::arrow_type::ArrowTypeEnum> for DataType {
                 protobuf::TimeUnit::try_from(time_unit)?.into(),
                 match timezone.len() {
                     0 => None,
-                    _ => Some(timezone.to_owned()),
+                    _ => Some(timezone.as_str().into()),
                 },
             ),
             arrow_type::ArrowTypeEnum::Time32(time_unit) => {
@@ -305,29 +308,30 @@ impl TryFrom<&protobuf::arrow_type::ArrowTypeEnum> for DataType {
             arrow_type::ArrowTypeEnum::Decimal(protobuf::Decimal {
                 whole,
                 fractional,
-            }) => DataType::Decimal(*whole as usize, *fractional as usize),
+            }) => DataType::Decimal128(*whole as u8, *fractional as i8),
             arrow_type::ArrowTypeEnum::List(list) => {
                 let list_type =
                     list.as_ref().field_type.as_deref().required("field_type")?;
-                DataType::List(Box::new(list_type))
+                DataType::List(Arc::new(list_type))
             }
             arrow_type::ArrowTypeEnum::LargeList(list) => {
                 let list_type =
                     list.as_ref().field_type.as_deref().required("field_type")?;
-                DataType::LargeList(Box::new(list_type))
+                DataType::LargeList(Arc::new(list_type))
             }
             arrow_type::ArrowTypeEnum::FixedSizeList(list) => {
                 let list_type =
                     list.as_ref().field_type.as_deref().required("field_type")?;
                 let list_size = list.list_size;
-                DataType::FixedSizeList(Box::new(list_type), list_size)
+                DataType::FixedSizeList(Arc::new(list_type), list_size)
             }
             arrow_type::ArrowTypeEnum::Struct(strct) => DataType::Struct(
                 strct
                     .sub_field_types
                     .iter()
                     .map(|field| field.try_into())
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .collect::<Result<Vec<Field>, _>>()?
+                    .into(),
             ),
             arrow_type::ArrowTypeEnum::Union(union) => {
                 let union_mode = protobuf::UnionMode::from_i32(union.union_mode)
@@ -336,11 +340,15 @@ impl TryFrom<&protobuf::arrow_type::ArrowTypeEnum> for DataType {
                     protobuf::UnionMode::Dense => UnionMode::Dense,
                     protobuf::UnionMode::Sparse => UnionMode::Sparse,
                 };
-                let union_types = union
+                let union_fields = union
                     .union_types
                     .iter()
                     .map(|field| field.try_into())
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<Vec<Field>, _>>()?;
+                // arrow 13 unions had implicit type ids 0..n
+                let type_ids = (0..union_fields.len()).map(|i| i as i8);
+                let union_types = UnionFields::try_new(type_ids, union_fields)
+                    .map_err(|e| proto_error(format!("Invalid union type: {}", e)))?;
                 DataType::Union(union_types, union_mode)
             }
             arrow_type::ArrowTypeEnum::Dictionary(dict) => {
@@ -529,14 +537,14 @@ impl TryFrom<&protobuf::scalar_type::Datatype> for DataType {
                 let field_type =
                     protobuf::PrimitiveScalarType::try_from(deepest_type)?.into();
                 // Because length is checked above it is safe to unwrap .last()
-                let mut scalar_type = DataType::List(Box::new(Field::new(
+                let mut scalar_type = DataType::List(Arc::new(Field::new(
                     field_names.last().unwrap().as_str(),
                     field_type,
                     true,
                 )));
                 // Iterate over field names in reverse order except for the last item in the vector
                 for name in field_names.iter().rev().skip(1) {
-                    let new_datatype = DataType::List(Box::new(Field::new(
+                    let new_datatype = DataType::List(Arc::new(Field::new(
                         name.as_str(),
                         scalar_type,
                         true,
@@ -580,20 +588,22 @@ impl TryFrom<&protobuf::scalar_value::Value> for ScalarValue {
                 let array = vec_to_array(val.value.clone());
                 ScalarValue::Decimal128(
                     Some(i128::from_be_bytes(array)),
-                    val.p as usize,
-                    val.s as usize,
+                    val.p as u8,
+                    val.s as i8,
                 )
             }
             Value::Date64Value(v) => ScalarValue::Date64(Some(*v)),
             Value::IntervalYearmonthValue(v) => ScalarValue::IntervalYearMonth(Some(*v)),
-            Value::IntervalDaytimeValue(v) => ScalarValue::IntervalDayTime(Some(*v)),
+            Value::IntervalDaytimeValue(v) => {
+                ScalarValue::IntervalDayTime(Some(interval_day_time_from_i64(*v)))
+            }
             Value::TimestampValue(v) => {
                 let ts_value =
                     v.value.as_ref().ok_or_else(|| Error::required("value"))?;
                 let timezone = if v.timezone.is_empty() {
                     None
                 } else {
-                    Some(v.timezone.clone())
+                    Some(v.timezone.as_str().into())
                 };
                 match ts_value {
                     protobuf::scalar_timestamp_value::Value::TimeMicrosecondValue(t) => {
@@ -776,7 +786,7 @@ impl TryFrom<&protobuf::ScalarListType> for DataType {
             return Err(Error::at_least_one("field_names"));
         }
 
-        let mut curr_type = Self::List(Box::new(Field::new(
+        let mut curr_type = Self::List(Arc::new(Field::new(
             // Since checked vector is not empty above this is safe to unwrap
             field_names.last().unwrap(),
             PrimitiveScalarType::try_from(deepest_type)?.into(),
@@ -784,7 +794,7 @@ impl TryFrom<&protobuf::ScalarListType> for DataType {
         )));
         // Iterates over field names in reverse order except for the last item in the vector
         for name in field_names.iter().rev().skip(1) {
-            let temp_curr_type = Self::List(Box::new(Field::new(name, curr_type, true)));
+            let temp_curr_type = Self::List(Arc::new(Field::new(name, curr_type, true)));
             curr_type = temp_curr_type;
         }
         Ok(curr_type)
@@ -845,18 +855,20 @@ impl TryFrom<&protobuf::ScalarValue> for ScalarValue {
                 let array = vec_to_array(val.value.clone());
                 Self::Decimal128(
                     Some(i128::from_be_bytes(array)),
-                    val.p as usize,
-                    val.s as usize,
+                    val.p as u8,
+                    val.s as i8,
                 )
             }
             Value::Date64Value(v) => Self::Date64(Some(*v)),
             Value::IntervalYearmonthValue(v) => Self::IntervalYearMonth(Some(*v)),
-            Value::IntervalDaytimeValue(v) => Self::IntervalDayTime(Some(*v)),
+            Value::IntervalDaytimeValue(v) => {
+                Self::IntervalDayTime(Some(interval_day_time_from_i64(*v)))
+            }
             Value::TimestampValue(v) => {
                 let timezone = if v.timezone.is_empty() {
                     None
                 } else {
-                    Some(v.timezone.clone())
+                    Some(v.timezone.as_str().into())
                 };
 
                 let ts_value =
@@ -1339,7 +1351,7 @@ impl TryFrom<protobuf::WindowFrameBound> for WindowFrameBound {
 impl TryFrom<&Box<protobuf::List>> for DataType {
     type Error = Error;
     fn try_from(list: &Box<protobuf::List>) -> Result<Self, Self::Error> {
-        Ok(Self::List(Box::new(
+        Ok(Self::List(Arc::new(
             list.as_ref().field_type.as_deref().required("field_type")?,
         )))
     }
@@ -1527,8 +1539,8 @@ fn typechecked_scalar_value_conversion(
             let array = vec_to_array(val.value.clone());
             ScalarValue::Decimal128(
                 Some(i128::from_be_bytes(array)),
-                val.p as usize,
-                val.s as usize,
+                val.p as u8,
+                val.s as i8,
             )
         }
         (Value::Date64Value(v), PrimitiveScalarType::Date64) => {
@@ -1538,17 +1550,17 @@ fn typechecked_scalar_value_conversion(
             ScalarValue::IntervalYearMonth(Some(*v))
         }
         (Value::IntervalDaytimeValue(v), PrimitiveScalarType::IntervalDaytime) => {
-            ScalarValue::IntervalDayTime(Some(*v))
+            ScalarValue::IntervalDayTime(Some(interval_day_time_from_i64(*v)))
         }
         _ => return Err(proto_error("Could not convert to the proper type")),
     })
 }
 
-fn unwrap_timezone(proto_value: &str) -> Option<String> {
+fn unwrap_timezone(proto_value: &str) -> Option<Arc<str>> {
     if proto_value.is_empty() {
         None
     } else {
-        Some(proto_value.to_string())
+        Some(proto_value.into())
     }
 }
 

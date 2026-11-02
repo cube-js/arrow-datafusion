@@ -277,7 +277,7 @@ async fn query_without_from() -> Result<()> {
         "+---------------------+---------------------+---------------+",
         "| Int64(1) + Int64(2) | Int64(3) / Int64(4) | cos(Int64(0)) |",
         "+---------------------+---------------------+---------------+",
-        "| 3                   | 0                   | 1             |",
+        "| 3                   | 0                   | 1.0           |",
         "+---------------------+---------------------+---------------+",
     ];
     assert_batches_eq!(expected, &actual);
@@ -508,7 +508,7 @@ async fn binary_bitwise_shift() -> Result<()> {
 #[tokio::test]
 async fn test_nullif() -> Result<()> {
     // both arguments are scalars
-    test_expression!("NULLIF(3.0, 0)", "3");
+    test_expression!("NULLIF(3.0, 0)", "3.0");
     test_expression!("NULLIF(3, 3)", "NULL");
     test_expression!("NULLIF(3, 4)", "3");
     test_expression!("NULLIF('test', 'test')", "NULL");
@@ -540,160 +540,61 @@ async fn test_nullif() -> Result<()> {
 #[tokio::test]
 async fn test_interval_expressions() -> Result<()> {
     // day nano intervals
-    test_expression!(
-        "interval '1'",
-        "0 years 0 mons 0 days 0 hours 0 mins 1.000 secs"
-    );
-    test_expression!(
-        "interval '1 second'",
-        "0 years 0 mons 0 days 0 hours 0 mins 1.000 secs"
-    );
-    test_expression!(
-        "interval '500 milliseconds'",
-        "0 years 0 mons 0 days 0 hours 0 mins 0.500 secs"
-    );
-    test_expression!(
-        "interval '5 second'",
-        "0 years 0 mons 0 days 0 hours 0 mins 5.000 secs"
-    );
-    test_expression!(
-        "interval '0.5 minute'",
-        "0 years 0 mons 0 days 0 hours 0 mins 30.000 secs"
-    );
-    test_expression!(
-        "interval '.5 minute'",
-        "0 years 0 mons 0 days 0 hours 0 mins 30.000 secs"
-    );
-    test_expression!(
-        "interval '5 minute'",
-        "0 years 0 mons 0 days 0 hours 5 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '5 minute 1 second'",
-        "0 years 0 mons 0 days 0 hours 5 mins 1.000 secs"
-    );
-    test_expression!(
-        "interval '1 hour'",
-        "0 years 0 mons 0 days 1 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '5 hour'",
-        "0 years 0 mons 0 days 5 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '1 day'",
-        "0 years 0 mons 1 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '1 day 1'",
-        "0 years 0 mons 1 days 0 hours 0 mins 1.000 secs"
-    );
-    test_expression!(
-        "interval '0.5'",
-        "0 years 0 mons 0 days 0 hours 0 mins 0.500 secs"
-    );
-    test_expression!(
-        "interval '0.5 day 1'",
-        "0 years 0 mons 0 days 12 hours 0 mins 1.000 secs"
-    );
-    test_expression!(
-        "interval '0.49 day'",
-        "0 years 0 mons 0 days 11 hours 45 mins 36.000 secs"
-    );
-    test_expression!(
-        "interval '0.499 day'",
-        "0 years 0 mons 0 days 11 hours 58 mins 33.596 secs"
-    );
-    test_expression!(
-        "interval '0.4999 day'",
-        "0 years 0 mons 0 days 11 hours 59 mins 51.364 secs"
-    );
-    test_expression!(
-        "interval '0.49999 day'",
-        "0 years 0 mons 0 days 11 hours 59 mins 59.136 secs"
-    );
-    test_expression!(
-        "interval '0.49999999999 day'",
-        "0 years 0 mons 0 days 12 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '5 day'",
-        "0 years 0 mons 5 days 0 hours 0 mins 0.000 secs"
-    );
+    test_expression!("interval '1'", "1.000 secs");
+    test_expression!("interval '1 second'", "1.000 secs");
+    test_expression!("interval '500 milliseconds'", "0.500 secs");
+    test_expression!("interval '5 second'", "5.000 secs");
+    test_expression!("interval '0.5 minute'", "30.000 secs");
+    test_expression!("interval '.5 minute'", "30.000 secs");
+    test_expression!("interval '5 minute'", "5 mins");
+    test_expression!("interval '5 minute 1 second'", "5 mins 1.000 secs");
+    test_expression!("interval '1 hour'", "1 hours");
+    test_expression!("interval '5 hour'", "5 hours");
+    test_expression!("interval '1 day'", "1 days");
+    test_expression!("interval '1 day 1'", "1 days 1.000 secs");
+    test_expression!("interval '0.5'", "0.500 secs");
+    test_expression!("interval '0.5 day 1'", "12 hours 1.000 secs");
+    test_expression!("interval '0.49 day'", "11 hours 45 mins 36.000 secs");
+    test_expression!("interval '0.499 day'", "11 hours 58 mins 33.596 secs");
+    test_expression!("interval '0.4999 day'", "11 hours 59 mins 51.364 secs");
+    test_expression!("interval '0.49999 day'", "11 hours 59 mins 59.136 secs");
+    test_expression!("interval '0.49999999999 day'", "12 hours");
+    test_expression!("interval '5 day'", "5 days");
     // Hour is ignored, this matches PostgreSQL
-    test_expression!(
-        "interval '5 day' hour",
-        "0 years 0 mons 5 days 0 hours 0 mins 0.000 secs"
-    );
+    test_expression!("interval '5 day' hour", "5 days");
     test_expression!(
         "interval '5 day 4 hours 3 minutes 2 seconds 100 milliseconds'",
-        "0 years 0 mons 5 days 4 hours 3 mins 2.100 secs"
+        "5 days 4 hours 3 mins 2.100 secs"
     );
     // month intervals
-    test_expression!(
-        "interval '0.5 month'",
-        "0 years 0 mons 15 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '0.5' month",
-        "0 years 0 mons 15 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '1 month'",
-        "0 years 1 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '1' MONTH",
-        "0 years 1 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '5 month'",
-        "0 years 5 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '13 month'",
-        "1 years 1 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '0.5 year'",
-        "0 years 6 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '1 year'",
-        "1 years 0 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '2 year'",
-        "2 years 0 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
-    test_expression!(
-        "interval '2' year",
-        "2 years 0 mons 0 days 0 hours 0 mins 0.000 secs"
-    );
+    test_expression!("interval '0.5 month'", "15 days");
+    test_expression!("interval '0.5' month", "15 days");
+    test_expression!("interval '1 month'", "0 years 1 mons");
+    test_expression!("interval '1' MONTH", "0 years 1 mons");
+    test_expression!("interval '5 month'", "0 years 5 mons");
+    test_expression!("interval '13 month'", "1 years 1 mons");
+    test_expression!("interval '0.5 year'", "0 years 6 mons");
+    test_expression!("interval '1 year'", "1 years 0 mons");
+    test_expression!("interval '2 year'", "2 years 0 mons");
+    test_expression!("interval '2' year", "2 years 0 mons");
     // complex
-    test_expression!(
-        "interval '1 year 1 day'",
-        "0 years 12 mons 1 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_expression!(
-        "interval '1 year 1 day 1 hour'",
-        "0 years 12 mons 1 days 1 hours 0 mins 0.000000000 secs"
-    );
+    test_expression!("interval '1 year 1 day'", "12 mons 1 days");
+    test_expression!("interval '1 year 1 day 1 hour'", "12 mons 1 days 1 hours");
     test_expression!(
         "interval '1 year 1 day 1 hour 1 minute'",
-        "0 years 12 mons 1 days 1 hours 1 mins 0.000000000 secs"
+        "12 mons 1 days 1 hours 1 mins"
     );
     test_expression!(
         "interval '1 year 1 day 1 hour 1 minute 1 second'",
-        "0 years 12 mons 1 days 1 hours 1 mins 1.000000000 secs"
+        "12 mons 1 days 1 hours 1 mins 1.000000000 secs"
     );
     test_expression!(
         "interval '23 years 123 months 75 days 25 hours 73 mins 125 secs 1234 ms'",
-        "0 years 399 mons 75 days 26 hours 15 mins 6.234000000 secs"
+        "399 mons 75 days 26 hours 15 mins 6.234000000 secs"
     );
     test_expression!(
         "11 * interval '0 years 2 months 75 days 25 hours 73 mins 125 secs 1234 ms'",
-        "0 years 22 mons 825 days 288 hours 46 mins 8.574000000 secs"
+        "22 mons 825 days 288 hours 46 mins 8.574000000 secs"
     );
     // TODO: f32 persicion problem in `fn sql_interval_to_literal`
     // test_expression!(
@@ -702,12 +603,12 @@ async fn test_interval_expressions() -> Result<()> {
     // );
     test_expression!(
         "12345 * interval '2 years 2 months 3 days 13 hours 3 mins 3 secs 7654321 ms'",
-        "0 years 320970 mons 37035 days 187360 hours 28 mins 47.745000000 secs"
+        "320970 mons 37035 days 187360 hours 28 mins 47.745000000 secs"
     );
-    // NOTE: only fractional output is incorrect, the calculations under the hood are correct
+    // NOTE: arrow 13 printed the fractional part incorrectly ("0.-05000000 secs"); arrow 60 prints it correctly
     test_expression!(
         "5 * interval '-1 month -1 day -1 millisecond'",
-        "0 years -5 mons -5 days 0 hours 0 mins 0.-05000000 secs"
+        "-5 mons -5 days -0.005000000 secs"
     );
 
     Ok(())
@@ -722,86 +623,24 @@ async fn test_interval_mul_div_float() -> Result<()> {
         };
     }
 
-    test_mul!(
-        "0.5",
-        "interval '1 month'",
-        "0 years 0 mons 15 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "1.0",
-        "interval '1 month'",
-        "0 years 1 mons 0 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "1.5",
-        "interval '1 month'",
-        "0 years 1 mons 15 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "2.0",
-        "interval '1 month'",
-        "0 years 2 mons 0 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "-1.5",
-        "interval '1 month'",
-        "0 years -1 mons -15 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_expression!(
-        "1.5 * (interval '1 month') / 1.5",
-        "0 years 0 mons 30 days 0 hours 0 mins 0.000000000 secs"
-    );
+    test_mul!("0.5", "interval '1 month'", "15 days");
+    test_mul!("1.0", "interval '1 month'", "1 mons");
+    test_mul!("1.5", "interval '1 month'", "1 mons 15 days");
+    test_mul!("2.0", "interval '1 month'", "2 mons");
+    test_mul!("-1.5", "interval '1 month'", "-1 mons -15 days");
+    test_expression!("1.5 * (interval '1 month') / 1.5", "30 days");
 
-    test_mul!(
-        "0.5",
-        "interval '1 day'",
-        "0 years 0 mons 0 days 12 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "1.0",
-        "interval '1 day'",
-        "0 years 0 mons 1 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "1.5",
-        "interval '1 day'",
-        "0 years 0 mons 1 days 12 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "2.0",
-        "interval '1 day'",
-        "0 years 0 mons 2 days 0 hours 0 mins 0.000000000 secs"
-    );
-    test_mul!(
-        "-1.5",
-        "interval '1 day'",
-        "0 years 0 mons -1 days -12 hours 0 mins 0.000000000 secs"
-    );
-    test_expression!(
-        "1.5 * (interval '1 day') / 1.5",
-        "0 years 0 mons 0 days 24 hours 0 mins 0.000000000 secs"
-    );
+    test_mul!("0.5", "interval '1 day'", "12 hours");
+    test_mul!("1.0", "interval '1 day'", "1 days");
+    test_mul!("1.5", "interval '1 day'", "1 days 12 hours");
+    test_mul!("2.0", "interval '1 day'", "2 days");
+    test_mul!("-1.5", "interval '1 day'", "-1 days -12 hours");
+    test_expression!("1.5 * (interval '1 day') / 1.5", "24 hours");
 
-    test_mul!(
-        "0.5",
-        "interval '1 second'",
-        "0 years 0 mons 0 days 0 hours 0 mins 0.500000000 secs"
-    );
-    test_mul!(
-        "1.0",
-        "interval '1 second'",
-        "0 years 0 mons 0 days 0 hours 0 mins 1.000000000 secs"
-    );
-    test_mul!(
-        "1.5",
-        "interval '1 second'",
-        "0 years 0 mons 0 days 0 hours 0 mins 1.500000000 secs"
-    );
-    test_mul!(
-        "2.0",
-        "interval '1 second'",
-        "0 years 0 mons 0 days 0 hours 0 mins 2.000000000 secs"
-    );
+    test_mul!("0.5", "interval '1 second'", "0.500000000 secs");
+    test_mul!("1.0", "interval '1 second'", "1.000000000 secs");
+    test_mul!("1.5", "interval '1 second'", "1.500000000 secs");
+    test_mul!("2.0", "interval '1 second'", "2.000000000 secs");
     // This test prints as -1.-500000000 secs, that looks like a bug in printing
     // TODO fix it
     // test_mul!(
@@ -809,26 +648,19 @@ async fn test_interval_mul_div_float() -> Result<()> {
     //     "interval '1 second'",
     //     "0 years 0 mons 0 days 0 hours 0 mins -1.500000000 secs"
     // );
-    test_expression!(
-        "1.5 * (interval '1 second') / 1.5",
-        "0 years 0 mons 0 days 0 hours 0 mins 1.000000000 secs"
-    );
+    test_expression!("1.5 * (interval '1 second') / 1.5", "1.000000000 secs");
 
     // Carry-over cases
-    test_mul!(
-        "1.5",
-        "interval '1 month 1 day'",
-        "0 years 1 mons 16 days 12 hours 0 mins 0.000000000 secs"
-    );
+    test_mul!("1.5", "interval '1 month 1 day'", "1 mons 16 days 12 hours");
     test_mul!(
         "1.5",
         "interval '1 month 1 second'",
-        "0 years 1 mons 15 days 0 hours 0 mins 1.500000000 secs"
+        "1 mons 15 days 1.500000000 secs"
     );
     test_mul!(
         "1.5",
         "interval '1 day 1 second'",
-        "0 years 0 mons 1 days 12 hours 0 mins 1.500000000 secs"
+        "1 days 12 hours 1.500000000 secs"
     );
 
     Ok(())
@@ -1111,25 +943,25 @@ async fn in_list_array() -> Result<()> {
 
 #[tokio::test]
 async fn test_extract_date_part() -> Result<()> {
-    test_expression!("date_part('YEAR', CAST('2000-01-01' AS DATE))", "2000");
+    test_expression!("date_part('YEAR', CAST('2000-01-01' AS DATE))", "2000.0");
     test_expression!(
         "EXTRACT(year FROM to_timestamp('2020-09-08T12:00:00+00:00'))",
-        "2020"
+        "2020.0"
     );
     test_expression!(
         "date_part('YEAR', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
-        "1"
+        "1.0"
     );
-    test_expression!("date_part('MONTH', CAST('2000-01-01' AS DATE))", "1");
+    test_expression!("date_part('MONTH', CAST('2000-01-01' AS DATE))", "1.0");
     test_expression!(
         "EXTRACT(month FROM to_timestamp('2020-09-08T12:00:00+00:00'))",
-        "9"
+        "9.0"
     );
     test_expression!(
         "date_part('MONTH', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
-        "2"
+        "2.0"
     );
-    test_expression!("date_part('WEEK', CAST('2003-01-01' AS DATE))", "1");
+    test_expression!("date_part('WEEK', CAST('2003-01-01' AS DATE))", "1.0");
 
     // TODO Creating logical plan for 'SELECT EXTRACT(WEEK FROM to_timestamp('2020-09-08T12:00:00+00:00'))'
     // SQL(ParserError("Expected date/time field, found: WEEK"))'
@@ -1139,61 +971,61 @@ async fn test_extract_date_part() -> Result<()> {
     //     "EXTRACT(WEEK FROM to_timestamp('2020-09-08T12:00:00+00:00'))",
     //     "23"
     // );
-    test_expression!("date_part('DAY', CAST('2000-01-01' AS DATE))", "1");
+    test_expression!("date_part('DAY', CAST('2000-01-01' AS DATE))", "1.0");
     test_expression!(
         "EXTRACT(day FROM to_timestamp('2020-09-08T12:00:00+00:00'))",
-        "8"
+        "8.0"
     );
     test_expression!(
         "date_part('DAY', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
-        "3"
+        "3.0"
     );
-    test_expression!("date_part('HOUR', CAST('2000-01-01' AS DATE))", "0");
+    test_expression!("date_part('HOUR', CAST('2000-01-01' AS DATE))", "0.0");
     test_expression!(
         "EXTRACT(hour FROM to_timestamp('2020-09-08T12:03:03+00:00'))",
-        "12"
+        "12.0"
     );
     test_expression!(
         "date_part('HOUR', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
-        "4"
+        "4.0"
     );
     test_expression!(
         "EXTRACT(minute FROM to_timestamp('2020-09-08T12:12:00+00:00'))",
-        "12"
+        "12.0"
     );
     test_expression!(
         "date_part('minute', to_timestamp('2020-09-08T12:12:00+00:00'))",
-        "12"
+        "12.0"
     );
     test_expression!(
         "date_part('MINUTE', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
-        "5"
+        "5.0"
     );
     test_expression!(
         "EXTRACT(second FROM to_timestamp('2020-09-08T12:00:12+00:00'))",
-        "12"
+        "12.0"
     );
     test_expression!(
         "date_part('second', to_timestamp('2020-09-08T12:00:12+00:00'))",
-        "12"
+        "12.0"
     );
     test_expression!(
         "date_part('SECOND', INTERVAL '1 year 2 month 3 day 4 hour 5 minute 6 second')",
-        "6"
+        "6.0"
     );
 
     // DOY
     test_expression!(
         "EXTRACT(doy FROM to_timestamp('2020-01-01T00:00:00+00:00'))",
-        "1"
+        "1.0"
     );
     test_expression!(
         "date_part('doy', to_timestamp('2020-01-01T00:00:00+00:00'))",
-        "1"
+        "1.0"
     );
     test_expression!(
         "date_part('doy', to_timestamp('2020-02-01T00:00:00+00:00'))",
-        "32"
+        "32.0"
     );
     // EPOCH
     test_expression!(
@@ -1206,25 +1038,25 @@ async fn test_extract_date_part() -> Result<()> {
     );
     test_expression!(
         "date_part('epoch', CAST('2020-01-01' AS DATE))",
-        "1577836800"
+        "1577836800.0"
     );
 
     // DOW
     test_expression!(
         "EXTRACT(dow FROM to_timestamp('2020-01-01T00:00:00+00:00'))",
-        "3"
+        "3.0"
     );
     test_expression!(
         "date_part('dow', to_timestamp('2020-01-01T00:00:00+00:00'))",
-        "3"
+        "3.0"
     );
     test_expression!(
         "date_part('dow', to_timestamp('2020-01-04T00:00:00+00:00'))",
-        "6"
+        "6.0"
     );
     test_expression!(
         "date_part('dow', to_timestamp('2020-01-05T00:00:00+00:00'))",
-        "0"
+        "0.0"
     );
 
     Ok(())

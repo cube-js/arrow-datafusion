@@ -182,10 +182,24 @@ impl SortKeyCursor {
                 .entry(other.batch_id)
                 .or_insert_with(|| Vec::with_capacity(other.sort_columns.len()));
 
-            for (i, ((l, r), _)) in zipped.iter().enumerate() {
+            for (i, ((l, r), sort_options)) in zipped.iter().enumerate() {
                 if i >= cmp.len() {
                     // initialise comparators
-                    cmp.push(arrow::array::build_compare(l.as_ref(), r.as_ref())?);
+                    //
+                    // `compare` handles (physical) nulls and `descending` itself and
+                    // only calls the comparator for rows valid on both sides, so the
+                    // comparator is built ascending. Its null handling only applies to
+                    // logical nulls without a null bit (e.g. null dictionary values):
+                    // order them like nulls once `compare` reverses for `descending`.
+                    cmp.push(arrow::array::make_comparator(
+                        l.as_ref(),
+                        r.as_ref(),
+                        SortOptions {
+                            descending: false,
+                            nulls_first: sort_options.nulls_first
+                                != sort_options.descending,
+                        },
+                    )?);
                 }
             }
         }

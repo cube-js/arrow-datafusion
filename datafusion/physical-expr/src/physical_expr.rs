@@ -89,13 +89,13 @@ fn scatter(mask: &BooleanArray, truthy: &dyn Array) -> Result<ArrayRef> {
         return Ok(Arc::new(NullArray::new(mask.len())));
     }
 
-    let truthy = truthy.data();
+    let truthy = truthy.to_data();
 
     // update the mask so that any null values become false
     // (SlicesIterator doesn't respect nulls)
     let mask = and_kleene(mask, &is_not_null(mask)?)?;
 
-    let mut mutable = MutableArrayData::new(vec![truthy], true, mask.len());
+    let mut mutable = MutableArrayData::new(vec![&truthy], true, mask.len());
 
     // the SlicesIterator slices only the true values. So the gaps left by this iterator we need to
     // fill with falsy values
@@ -105,20 +105,20 @@ fn scatter(mask: &BooleanArray, truthy: &dyn Array) -> Result<ArrayRef> {
     // keep track of current position we have in truthy array
     let mut true_pos = 0;
 
-    SlicesIterator::new(&mask).for_each(|(start, end)| {
+    for (start, end) in SlicesIterator::new(&mask) {
         // the gap needs to be filled with nulls
         if start > filled {
-            mutable.extend_nulls(start - filled);
+            mutable.try_extend_nulls(start - filled)?;
         }
         // fill with truthy values
         let len = end - start;
-        mutable.extend(0, true_pos, true_pos + len);
+        mutable.try_extend(0, true_pos, true_pos + len)?;
         true_pos += len;
         filled = end;
-    });
+    }
     // the remaining part is falsy
     if filled < mask.len() {
-        mutable.extend_nulls(mask.len() - filled);
+        mutable.try_extend_nulls(mask.len() - filled)?;
     }
 
     let data = mutable.freeze();

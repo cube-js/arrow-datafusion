@@ -19,7 +19,7 @@
 
 use crate::Operator;
 use arrow::compute::can_cast_types;
-use arrow::datatypes::{DataType, DECIMAL_MAX_PRECISION, DECIMAL_MAX_SCALE};
+use arrow::datatypes::{DataType, DECIMAL128_MAX_PRECISION, DECIMAL128_MAX_SCALE};
 use datafusion_common::DataFusionError;
 use datafusion_common::Result;
 
@@ -238,12 +238,32 @@ fn case_branch_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<Data
 fn string_numeric_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
     use arrow::datatypes::DataType::*;
     match (lhs_type, rhs_type) {
-        (Utf8, _) if DataType::is_numeric(rhs_type) => Some(Utf8),
-        (LargeUtf8, _) if DataType::is_numeric(rhs_type) => Some(LargeUtf8),
-        (_, Utf8) if DataType::is_numeric(lhs_type) => Some(Utf8),
-        (_, LargeUtf8) if DataType::is_numeric(lhs_type) => Some(LargeUtf8),
+        (Utf8, _) if is_integer_or_float(rhs_type) => Some(Utf8),
+        (LargeUtf8, _) if is_integer_or_float(rhs_type) => Some(LargeUtf8),
+        (_, Utf8) if is_integer_or_float(lhs_type) => Some(Utf8),
+        (_, LargeUtf8) if is_integer_or_float(lhs_type) => Some(LargeUtf8),
         _ => None,
     }
+}
+
+/// Returns true for the integer types and `Float32`/`Float64`.
+///
+/// Unlike [`DataType::is_numeric`] this excludes `Float16` and the decimal types.
+fn is_integer_or_float(dt: &DataType) -> bool {
+    use arrow::datatypes::DataType::*;
+    matches!(
+        dt,
+        UInt8
+            | UInt16
+            | UInt32
+            | UInt64
+            | Int8
+            | Int16
+            | Int32
+            | Int64
+            | Float32
+            | Float64
+    )
 }
 
 fn string_boolean_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataType> {
@@ -301,9 +321,11 @@ fn comparison_binary_numeric_coercion(
     // that the coercion removes the least amount of information
     match (lhs_type, rhs_type) {
         // support decimal data type for comparison operation
-        (Decimal(p1, s1), Decimal(p2, s2)) => Some(Decimal(*p1.max(p2), *s1.max(s2))),
-        (Decimal(_, _), _) => get_comparison_common_decimal_type(lhs_type, rhs_type),
-        (_, Decimal(_, _)) => get_comparison_common_decimal_type(rhs_type, lhs_type),
+        (Decimal128(p1, s1), Decimal128(p2, s2)) => {
+            Some(Decimal128(*p1.max(p2), *s1.max(s2)))
+        }
+        (Decimal128(_, _), _) => get_comparison_common_decimal_type(lhs_type, rhs_type),
+        (_, Decimal128(_, _)) => get_comparison_common_decimal_type(rhs_type, lhs_type),
         (Float64, _) | (_, Float64) => Some(Float64),
         (_, Float32) | (Float32, _) => Some(Float32),
         (Int64, _) | (_, Int64) => Some(Int64),
@@ -325,21 +347,21 @@ fn get_comparison_common_decimal_type(
     let other_decimal_type = &match other_type {
         // This conversion rule is from spark
         // https://github.com/apache/spark/blob/1c81ad20296d34f137238dadd67cc6ae405944eb/sql/catalyst/src/main/scala/org/apache/spark/sql/types/DecimalType.scala#L127
-        DataType::Int8 => DataType::Decimal(3, 0),
-        DataType::Int16 => DataType::Decimal(5, 0),
-        DataType::Int32 => DataType::Decimal(10, 0),
-        DataType::Int64 => DataType::Decimal(20, 0),
-        DataType::Float32 => DataType::Decimal(14, 7),
-        DataType::Float64 => DataType::Decimal(30, 15),
+        DataType::Int8 => DataType::Decimal128(3, 0),
+        DataType::Int16 => DataType::Decimal128(5, 0),
+        DataType::Int32 => DataType::Decimal128(10, 0),
+        DataType::Int64 => DataType::Decimal128(20, 0),
+        DataType::Float32 => DataType::Decimal128(14, 7),
+        DataType::Float64 => DataType::Decimal128(30, 15),
         _ => {
             return None;
         }
     };
     match (decimal_type, &other_decimal_type) {
-        (DataType::Decimal(p1, s1), DataType::Decimal(p2, s2)) => {
+        (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
             let new_precision = p1.max(p2);
             let new_scale = s1.max(s2);
-            Some(DataType::Decimal(*new_precision, *new_scale))
+            Some(DataType::Decimal128(*new_precision, *new_scale))
         }
         _ => None,
     }
@@ -349,13 +371,13 @@ fn get_comparison_common_decimal_type(
 // Now, we just support the signed integer type and floating-point type.
 fn coerce_numeric_type_to_decimal(numeric_type: &DataType) -> Option<DataType> {
     match numeric_type {
-        DataType::Int8 => Some(DataType::Decimal(3, 0)),
-        DataType::Int16 => Some(DataType::Decimal(5, 0)),
-        DataType::Int32 => Some(DataType::Decimal(10, 0)),
-        DataType::Int64 => Some(DataType::Decimal(20, 0)),
+        DataType::Int8 => Some(DataType::Decimal128(3, 0)),
+        DataType::Int16 => Some(DataType::Decimal128(5, 0)),
+        DataType::Int32 => Some(DataType::Decimal128(10, 0)),
+        DataType::Int64 => Some(DataType::Decimal128(20, 0)),
         // TODO if we convert the floating-point data to the decimal type, it maybe overflow.
-        DataType::Float32 => Some(DataType::Decimal(14, 7)),
-        DataType::Float64 => Some(DataType::Decimal(30, 15)),
+        DataType::Float32 => Some(DataType::Decimal128(14, 7)),
+        DataType::Float64 => Some(DataType::Decimal128(30, 15)),
         _ => None,
     }
 }
@@ -388,13 +410,13 @@ fn mathematics_numerical_coercion(
     // these are ordered from most informative to least informative so
     // that the coercion removes the least amount of information
     match (lhs_type, rhs_type) {
-        (Decimal(_, _), Decimal(_, _)) => {
+        (Decimal128(_, _), Decimal128(_, _)) => {
             coercion_decimal_mathematics_type(mathematics_op, lhs_type, rhs_type)
         }
-        (Decimal(precision, scale), Null) | (Null, Decimal(precision, scale)) => {
-            Some(Decimal(*precision, *scale))
+        (Decimal128(precision, scale), Null) | (Null, Decimal128(precision, scale)) => {
+            Some(Decimal128(*precision, *scale))
         }
-        (Decimal(_, _), _) => {
+        (Decimal128(_, _), _) => {
             let converted_decimal_type = coerce_numeric_type_to_decimal(rhs_type);
             match converted_decimal_type {
                 None => None,
@@ -405,7 +427,7 @@ fn mathematics_numerical_coercion(
                 ),
             }
         }
-        (_, Decimal(_, _)) => {
+        (_, Decimal128(_, _)) => {
             let converted_decimal_type = coerce_numeric_type_to_decimal(lhs_type);
             match converted_decimal_type {
                 None => None,
@@ -430,10 +452,15 @@ fn mathematics_numerical_coercion(
     }
 }
 
-fn create_decimal_type(precision: usize, scale: usize) -> DataType {
-    DataType::Decimal(
-        DECIMAL_MAX_PRECISION.min(precision),
-        DECIMAL_MAX_SCALE.min(scale),
+/// Builds the `Decimal128` result type of a decimal coercion rule.
+///
+/// `precision` and `scale` are computed in `i64` so the rules can't overflow the
+/// `u8`/`i8` fields of [`DataType::Decimal128`]; both are capped at the `Decimal128`
+/// maximum (38).
+fn create_decimal_type(precision: i64, scale: i64) -> DataType {
+    DataType::Decimal128(
+        precision.clamp(0, DECIMAL128_MAX_PRECISION as i64) as u8,
+        scale.clamp(i8::MIN as i64, DECIMAL128_MAX_SCALE as i64) as i8,
     )
 }
 
@@ -446,34 +473,35 @@ fn coercion_decimal_mathematics_type(
     match (left_decimal_type, right_decimal_type) {
         // The coercion rule from spark
         // https://github.com/apache/spark/blob/c20af535803a7250fef047c2bf0fe30be242369d/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/analysis/DecimalPrecision.scala#L35
-        (Decimal(p1, s1), Decimal(p2, s2)) => {
+        (Decimal128(p1, s1), Decimal128(p2, s2)) => {
+            let (p1, s1, p2, s2) = (*p1 as i64, *s1 as i64, *p2 as i64, *s2 as i64);
             match mathematics_op {
                 Operator::Plus | Operator::Minus => {
                     // max(s1, s2)
-                    let result_scale = *s1.max(s2);
+                    let result_scale = s1.max(s2);
                     // max(s1, s2) + max(p1-s1, p2-s2) + 1
-                    let result_precision = result_scale + (*p1 - *s1).max(*p2 - *s2) + 1;
+                    let result_precision = result_scale + (p1 - s1).max(p2 - s2) + 1;
                     Some(create_decimal_type(result_precision, result_scale))
                 }
                 Operator::Multiply => {
                     // s1 + s2
-                    let result_scale = *s1 + *s2;
+                    let result_scale = s1 + s2;
                     // p1 + p2 + 1
-                    let result_precision = *p1 + *p2 + 1;
+                    let result_precision = p1 + p2 + 1;
                     Some(create_decimal_type(result_precision, result_scale))
                 }
                 Operator::Divide => {
                     // max(6, s1 + p2 + 1)
-                    let result_scale = 6.max(*s1 + *p2 + 1);
+                    let result_scale = 6.max(s1 + p2 + 1);
                     // p1 - s1 + s2 + max(6, s1 + p2 + 1)
-                    let result_precision = result_scale + *p1 - *s1 + *s2;
+                    let result_precision = result_scale + p1 - s1 + s2;
                     Some(create_decimal_type(result_precision, result_scale))
                 }
                 Operator::Modulo => {
                     // max(s1, s2)
-                    let result_scale = *s1.max(s2);
+                    let result_scale = s1.max(s2);
                     // min(p1-s1, p2-s2) + max(s1, s2)
-                    let result_precision = result_scale + (*p1 - *s1).min(*p2 - *s2);
+                    let result_precision = result_scale + (p1 - s1).min(p2 - s2);
                     Some(create_decimal_type(result_precision, result_scale))
                 }
                 _ => unreachable!(),
@@ -494,7 +522,7 @@ pub fn is_signed_numeric(dt: &DataType) -> bool {
             | DataType::Float16
             | DataType::Float32
             | DataType::Float64
-            | DataType::Decimal(_, _)
+            | DataType::Decimal128(_, _)
             | DataType::Null
     )
 }
@@ -566,10 +594,32 @@ fn string_concat_internal_coercion(
     from_type: &DataType,
     to_type: &DataType,
 ) -> Option<DataType> {
-    if can_cast_types(from_type, to_type) {
+    if can_concat_as_string(from_type, to_type) {
         Some(to_type.to_owned())
     } else {
         None
+    }
+}
+
+/// Returns true if a `from_type` operand of `||` can be cast to the string type `to_type`
+/// (`Utf8` or `LargeUtf8`).
+///
+/// This is deliberately narrower than [`can_cast_types`]: decimals, `Float16`, times,
+/// durations, intervals, structs and binary types other than `Binary` are rejected, so
+/// `||` keeps planning only the casts DataFusion has always used for it.
+fn can_concat_as_string(from_type: &DataType, to_type: &DataType) -> bool {
+    use arrow::datatypes::DataType::*;
+    if from_type == to_type {
+        return true;
+    }
+    match from_type {
+        Null | Utf8 | LargeUtf8 | Binary | Date32 | Date64 | Timestamp(_, _) => true,
+        Boolean => to_type == &Utf8,
+        List(field) | LargeList(field) => {
+            can_concat_as_string(field.data_type(), to_type)
+        }
+        Dictionary(_, value_type) => can_concat_as_string(value_type, to_type),
+        other => is_integer_or_float(other),
     }
 }
 
@@ -649,14 +699,14 @@ fn temporal_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<DataTyp
                 (TimeUnit::Nanosecond, TimeUnit::Microsecond) => TimeUnit::Microsecond,
                 (l, r) => {
                     assert_eq!(l, r);
-                    l.clone()
+                    *l
                 }
             };
 
             Some(Timestamp(unit, tz))
         }
         (Timestamp(unit, tz), Date32) | (Date32, Timestamp(unit, tz)) => {
-            Some(Timestamp(unit.clone(), tz.clone()))
+            Some(Timestamp(*unit, tz.clone()))
         }
         _ => None,
     }
@@ -771,11 +821,9 @@ pub fn distinct_coercion(
         Operator::Multiply => match (lhs_type, rhs_type) {
             // TODO: this isn't exactly correct and Utf8 should go the Float64 route,
             // but will crash rather than yield incorrect results, so is acceptable
-            (Utf8, Interval(unit)) | (Interval(unit), Utf8) => {
-                Some(Interval(unit.clone()))
-            }
+            (Utf8, Interval(unit)) | (Interval(unit), Utf8) => Some(Interval(*unit)),
             // TODO: we only plan this but do not execute
-            (Decimal(_, _), Interval(_)) | (Interval(_), Decimal(_, _)) => {
+            (Decimal128(_, _), Interval(_)) | (Interval(_), Decimal128(_, _)) => {
                 Some(Interval(MonthDayNano))
             }
             (Int64, Interval(unit))
@@ -795,7 +843,7 @@ pub fn distinct_coercion(
             | (UInt8, Interval(unit))
             | (Interval(unit), UInt8)
             | (Null, Interval(unit))
-            | (Interval(unit), Null) => Some(Interval(unit.clone())),
+            | (Interval(unit), Null) => Some(Interval(*unit)),
             // float*interval result is always represented as MonthDayNano, to avoid precision loss
             (Float64, Interval(_))
             | (Interval(_), Float64)
@@ -845,7 +893,7 @@ fn interval_add_coercion(lhs_type: &DataType, rhs_type: &DataType) -> Option<Dat
             let coercion_unit = match (l_unit, r_unit) {
                 (MonthDayNano, _) | (_, MonthDayNano) => Some(MonthDayNano),
                 (DayTime, YearMonth) | (YearMonth, DayTime) => Some(MonthDayNano),
-                (l_unit, r_unit) if l_unit == r_unit => Some(l_unit.clone()),
+                (l_unit, r_unit) if l_unit == r_unit => Some(*l_unit),
                 _ => None,
             };
             Some(DataType::Interval(coercion_unit?))
@@ -891,7 +939,7 @@ mod tests {
 
     #[test]
     fn test_decimal_binary_comparison_coercion() -> Result<()> {
-        let input_decimal = DataType::Decimal(20, 3);
+        let input_decimal = DataType::Decimal128(20, 3);
         let input_types = [
             DataType::Int8,
             DataType::Int16,
@@ -899,16 +947,16 @@ mod tests {
             DataType::Int64,
             DataType::Float32,
             DataType::Float64,
-            DataType::Decimal(38, 10),
+            DataType::Decimal128(38, 10),
         ];
         let result_types = [
-            DataType::Decimal(20, 3),
-            DataType::Decimal(20, 3),
-            DataType::Decimal(20, 3),
-            DataType::Decimal(20, 3),
-            DataType::Decimal(20, 7),
-            DataType::Decimal(30, 15),
-            DataType::Decimal(38, 10),
+            DataType::Decimal128(20, 3),
+            DataType::Decimal128(20, 3),
+            DataType::Decimal128(20, 3),
+            DataType::Decimal128(20, 3),
+            DataType::Decimal128(20, 7),
+            DataType::Decimal128(30, 15),
+            DataType::Decimal128(38, 10),
         ];
         let comparison_op_types = [
             Operator::NotEq,
@@ -935,66 +983,154 @@ mod tests {
     fn test_decimal_mathematics_op_type() {
         assert_eq!(
             coerce_numeric_type_to_decimal(&DataType::Int8).unwrap(),
-            DataType::Decimal(3, 0)
+            DataType::Decimal128(3, 0)
         );
         assert_eq!(
             coerce_numeric_type_to_decimal(&DataType::Int16).unwrap(),
-            DataType::Decimal(5, 0)
+            DataType::Decimal128(5, 0)
         );
         assert_eq!(
             coerce_numeric_type_to_decimal(&DataType::Int32).unwrap(),
-            DataType::Decimal(10, 0)
+            DataType::Decimal128(10, 0)
         );
         assert_eq!(
             coerce_numeric_type_to_decimal(&DataType::Int64).unwrap(),
-            DataType::Decimal(20, 0)
+            DataType::Decimal128(20, 0)
         );
         assert_eq!(
             coerce_numeric_type_to_decimal(&DataType::Float32).unwrap(),
-            DataType::Decimal(14, 7)
+            DataType::Decimal128(14, 7)
         );
         assert_eq!(
             coerce_numeric_type_to_decimal(&DataType::Float64).unwrap(),
-            DataType::Decimal(30, 15)
+            DataType::Decimal128(30, 15)
         );
 
         let op = Operator::Plus;
-        let left_decimal_type = DataType::Decimal(10, 3);
-        let right_decimal_type = DataType::Decimal(20, 4);
+        let left_decimal_type = DataType::Decimal128(10, 3);
+        let right_decimal_type = DataType::Decimal128(20, 4);
         let result = coercion_decimal_mathematics_type(
             &op,
             &left_decimal_type,
             &right_decimal_type,
         );
-        assert_eq!(DataType::Decimal(21, 4), result.unwrap());
+        assert_eq!(DataType::Decimal128(21, 4), result.unwrap());
         let op = Operator::Minus;
         let result = coercion_decimal_mathematics_type(
             &op,
             &left_decimal_type,
             &right_decimal_type,
         );
-        assert_eq!(DataType::Decimal(21, 4), result.unwrap());
+        assert_eq!(DataType::Decimal128(21, 4), result.unwrap());
         let op = Operator::Multiply;
         let result = coercion_decimal_mathematics_type(
             &op,
             &left_decimal_type,
             &right_decimal_type,
         );
-        assert_eq!(DataType::Decimal(31, 7), result.unwrap());
+        assert_eq!(DataType::Decimal128(31, 7), result.unwrap());
         let op = Operator::Divide;
         let result = coercion_decimal_mathematics_type(
             &op,
             &left_decimal_type,
             &right_decimal_type,
         );
-        assert_eq!(DataType::Decimal(35, 24), result.unwrap());
+        assert_eq!(DataType::Decimal128(35, 24), result.unwrap());
         let op = Operator::Modulo;
         let result = coercion_decimal_mathematics_type(
             &op,
             &left_decimal_type,
             &right_decimal_type,
         );
-        assert_eq!(DataType::Decimal(11, 4), result.unwrap());
+        assert_eq!(DataType::Decimal128(11, 4), result.unwrap());
+    }
+
+    #[test]
+    fn test_decimal_mathematics_op_type_is_capped() {
+        // precision/scale overflowing 38 are capped instead of overflowing u8/i8
+        let max_decimal = DataType::Decimal128(38, 10);
+        assert_eq!(
+            coercion_decimal_mathematics_type(
+                &Operator::Multiply,
+                &max_decimal,
+                &max_decimal
+            ),
+            Some(DataType::Decimal128(38, 20))
+        );
+        assert_eq!(
+            coercion_decimal_mathematics_type(
+                &Operator::Divide,
+                &DataType::Decimal128(38, 38),
+                &DataType::Decimal128(38, 0)
+            ),
+            Some(DataType::Decimal128(38, 38))
+        );
+        // negative scales are handled with signed arithmetic
+        assert_eq!(
+            coercion_decimal_mathematics_type(
+                &Operator::Plus,
+                &DataType::Decimal128(10, -2),
+                &DataType::Decimal128(5, 0)
+            ),
+            Some(DataType::Decimal128(13, 0))
+        );
+    }
+
+    #[test]
+    fn test_string_numeric_coercion_excludes_decimal_and_float16() -> Result<()> {
+        use DataType::*;
+
+        for op in [Operator::Eq, Operator::Lt] {
+            assert_eq!(coerce_types(&Utf8, &op, &Int32)?, Utf8);
+            assert_eq!(coerce_types(&LargeUtf8, &op, &Float64)?, LargeUtf8);
+            assert!(coerce_types(&Utf8, &op, &Decimal128(10, 2)).is_err());
+            assert!(coerce_types(&Decimal128(10, 2), &op, &Utf8).is_err());
+            assert!(coerce_types(&Utf8, &op, &Float16).is_err());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_concat_coercion() -> Result<()> {
+        use arrow::datatypes::{Field, IntervalUnit, TimeUnit};
+        use std::sync::Arc;
+        use DataType::*;
+
+        let op = Operator::StringConcat;
+        let list = List(Arc::new(Field::new("item", Int32, true)));
+        let dictionary = Dictionary(Box::new(Int8), Box::new(Int64));
+        for (other, expected) in [
+            (Utf8, Utf8),
+            (Int64, Utf8),
+            (Float32, Utf8),
+            (Boolean, Utf8),
+            (Date32, Utf8),
+            (Timestamp(TimeUnit::Nanosecond, Some("UTC".into())), Utf8),
+            (Binary, Utf8),
+            (list, Utf8),
+            (dictionary, Utf8),
+        ] {
+            assert_eq!(coerce_types(&Utf8, &op, &other)?, expected);
+            assert_eq!(coerce_types(&other, &op, &Utf8)?, expected);
+        }
+        assert_eq!(coerce_types(&LargeUtf8, &op, &Int64)?, LargeUtf8);
+
+        for other in [
+            Decimal128(10, 2),
+            Float16,
+            Time64(TimeUnit::Nanosecond),
+            Duration(TimeUnit::Second),
+            Interval(IntervalUnit::MonthDayNano),
+            LargeBinary,
+            Struct(vec![Field::new("a", Int32, true)].into()),
+        ] {
+            assert!(coerce_types(&Utf8, &op, &other).is_err(), "{:?}", other);
+            assert!(coerce_types(&other, &op, &Utf8).is_err(), "{:?}", other);
+        }
+        assert!(coerce_types(&LargeUtf8, &op, &Boolean).is_err());
+
+        Ok(())
     }
 
     #[test]

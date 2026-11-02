@@ -17,10 +17,12 @@
 
 use std::{any::Any, sync::Arc};
 
+use super::binary::{compare_datum, ComparisonOp};
+use super::cast::cast_array_with_options;
 use crate::expressions::try_cast;
 use crate::PhysicalExpr;
 use arrow::array::{self, *};
-use arrow::compute::{and, cast, eq_dyn, is_null, not, or, or_kleene};
+use arrow::compute::{and, is_null, not, or, or_kleene, CUBESQL_CAST_OPTIONS};
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DataFusionError, Result};
@@ -30,6 +32,14 @@ use datafusion_expr::{
 };
 
 type WhenThen = (Arc<dyn PhysicalExpr>, Arc<dyn PhysicalExpr>);
+
+/// Casts `array` to `to_type` like arrow 13's `cast` did (see [`cast_array_with_options`])
+fn cast_array(
+    array: &ArrayRef,
+    to_type: &DataType,
+) -> std::result::Result<ArrayRef, arrow::error::ArrowError> {
+    cast_array_with_options(array, to_type, &CUBESQL_CAST_OPTIONS)
+}
 
 /// The CASE expression is similar to a series of nested if/else and there are two forms that
 /// can be used. The first form consists of a series of boolean "when" expressions with
@@ -113,7 +123,7 @@ impl CaseExpr {
 macro_rules! if_then_else {
     ($BUILDER_TYPE:ty, $ARRAY_TYPE:ty, $BOOLS:expr, $TRUE:expr, $FALSE:expr) => {{
         let true_values = if $TRUE.data_type() == &DataType::Null {
-            Arc::new(<$ARRAY_TYPE>::from(vec![None; $TRUE.len()])) as ArrayRef
+            Arc::new(<$ARRAY_TYPE>::new_null($TRUE.len())) as ArrayRef
         } else {
             $TRUE
         };
@@ -130,7 +140,7 @@ macro_rules! if_then_else {
             })?;
 
         let false_values = if $FALSE.data_type() == &DataType::Null {
-            Arc::new(<$ARRAY_TYPE>::from(vec![None; $FALSE.len()])) as ArrayRef
+            Arc::new(<$ARRAY_TYPE>::new_null($FALSE.len())) as ArrayRef
         } else {
             $FALSE
         };
@@ -146,25 +156,25 @@ macro_rules! if_then_else {
                 ))
             })?;
 
-        let mut builder = <$BUILDER_TYPE>::new($BOOLS.len());
+        let mut builder = <$BUILDER_TYPE>::new();
         for i in 0..$BOOLS.len() {
             if $BOOLS.is_null(i) {
                 if false_values.is_null(i) {
-                    builder.append_null()?;
+                    builder.append_null();
                 } else {
-                    builder.append_value(false_values.value(i))?;
+                    builder.append_value(false_values.value(i));
                 }
             } else if $BOOLS.value(i) {
                 if true_values.is_null(i) {
-                    builder.append_null()?;
+                    builder.append_null();
                 } else {
-                    builder.append_value(true_values.value(i))?;
+                    builder.append_value(true_values.value(i));
                 }
             } else {
                 if false_values.is_null(i) {
-                    builder.append_null()?;
+                    builder.append_null();
                 } else {
-                    builder.append_value(false_values.value(i))?;
+                    builder.append_value(false_values.value(i));
                 }
             }
         }
@@ -329,13 +339,13 @@ impl CaseExpr {
                 &Operator::Eq,
                 base_value.data_type(),
             )?;
-            let when_value = cast(&when_value, &common_type).map_err(|e| {
+            let when_value = cast_array(&when_value, &common_type).map_err(|e| {
                 DataFusionError::Execution(format!(
                     "Unable to cast when value to common type: {}",
                     e,
                 ))
             })?;
-            let base_value = cast(&base_value, &common_type).map_err(|e| {
+            let base_value = cast_array(&base_value, &common_type).map_err(|e| {
                 DataFusionError::Execution(format!(
                     "Unable to cast base value to common type: {}",
                     e,
@@ -343,7 +353,7 @@ impl CaseExpr {
             })?;
 
             // build boolean array representing which rows match the "when" value
-            let when_match = eq_dyn(&when_value, base_value.as_ref())?;
+            let when_match = compare_datum(ComparisonOp::Eq, &when_value, &base_value)?;
 
             let then_value = self.when_then_expr[i]
                 .1
@@ -351,7 +361,7 @@ impl CaseExpr {
             let then_value = then_value.into_array(batch.num_rows());
 
             // Variable return_type uses the first when_then_expr, but it can be different across then expressions
-            let then_value = cast(&then_value, &return_type).map_err(|e| {
+            let then_value = cast_array(&then_value, &return_type).map_err(|e| {
                 DataFusionError::Execution(format!(
                     "Unable to cast then value to common type: {}",
                     e,
@@ -361,7 +371,10 @@ impl CaseExpr {
             current_value =
                 if_then_else(&when_match, then_value, current_value, &return_type)?;
 
-            remainder = and(&remainder, &or_kleene(&not(&when_match)?, &base_nulls)?)?;
+            // a NULL comparison (e.g. `WHEN NULL`) does not match, the row stays for the
+            // next WHEN and the ELSE
+            let when_unmatched = or_kleene(&not(&when_match)?, &is_null(&when_match)?)?;
+            remainder = and(&remainder, &or_kleene(&when_unmatched, &base_nulls)?)?;
         }
 
         if let Some(e) = &self.else_expr {
@@ -374,7 +387,7 @@ impl CaseExpr {
                 .evaluate_selection(batch, &remainder)?
                 .into_array(batch.num_rows());
             // `try_cast` above is best effort, so the ELSE type still has to be enforced
-            let else_ = cast(&else_, &return_type).map_err(|err| {
+            let else_ = cast_array(&else_, &return_type).map_err(|err| {
                 DataFusionError::Execution(format!(
                     "Unable to cast else value to common type: {}",
                     err,
@@ -421,7 +434,7 @@ impl CaseExpr {
 
             // Each THEN branch can have its own type, they all have to be brought to the
             // single return type of the CASE expression
-            let then_value = cast(&then_value, &return_type).map_err(|e| {
+            let then_value = cast_array(&then_value, &return_type).map_err(|e| {
                 DataFusionError::Execution(format!(
                     "Unable to cast then value to common type: {}",
                     e,
@@ -447,7 +460,7 @@ impl CaseExpr {
                 .evaluate_selection(batch, &remainder)?
                 .into_array(batch.num_rows());
             // `try_cast` above is best effort, so the ELSE type still has to be enforced
-            let else_ = cast(&else_, &return_type).map_err(|err| {
+            let else_ = cast_array(&else_, &return_type).map_err(|err| {
                 DataFusionError::Execution(format!(
                     "Unable to cast else value to common type: {}",
                     err,
@@ -482,7 +495,9 @@ impl PhysicalExpr for CaseExpr {
         } else if let Some(e) = &self.else_expr {
             e.nullable(input_schema)
         } else {
-            Ok(false)
+            // CASE produces NULL if there is no `else` expr
+            // (aka when none of the `when_then_exprs` match)
+            Ok(true)
         }
     }
 
@@ -1000,11 +1015,11 @@ mod tests {
         .collect();
 
         //let valid_array = vec![true, false, false, true, false, tru
-        let null_buffer = Buffer::from_slice_ref(&[0b00101001u8]);
+        let null_buffer = Buffer::from_slice_ref([0b00101001u8]);
         let load4 = ArrayDataBuilder::new(load4.data_type().clone())
             .len(load4.len())
-            .null_bit_buffer(null_buffer)
-            .buffers(load4.data().buffers().to_vec())
+            .null_bit_buffer(Some(null_buffer))
+            .buffers(load4.to_data().buffers().to_vec())
             .build()
             .unwrap();
         let load4: Float64Array = load4.into();
@@ -1012,5 +1027,38 @@ mod tests {
         let batch =
             RecordBatch::try_from_iter(vec![("load4", Arc::new(load4) as ArrayRef)])?;
         Ok(batch)
+    }
+
+    #[test]
+    fn case_with_expr_timestamp_timezone_coercion() -> Result<()> {
+        // the base value has no timezone, the WHEN value has one: coercing the base value
+        // to the common type only attaches the timezone, it does not shift the values
+        let ts = 1_577_836_800_000_000_000_i64;
+        let schema = Schema::new(vec![Field::new(
+            "a",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            true,
+        )]);
+        let a = TimestampNanosecondArray::from(vec![Some(ts), Some(ts + 1), None]);
+        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![Arc::new(a)])?;
+
+        // CASE a WHEN <ts in +01:00> THEN 1 ELSE 2 END
+        let when = lit(ScalarValue::TimestampNanosecond(
+            Some(ts),
+            Some("+01:00".into()),
+        ));
+        let expr = case(
+            Some(col("a", &schema)?),
+            &[(when, lit(ScalarValue::Int32(Some(1))))],
+            Some(lit(ScalarValue::Int32(Some(2)))),
+        )?;
+        let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+        let result = result
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("failed to downcast to Int32Array");
+        assert_eq!(result, &Int32Array::from(vec![Some(1), Some(2), Some(2)]));
+
+        Ok(())
     }
 }

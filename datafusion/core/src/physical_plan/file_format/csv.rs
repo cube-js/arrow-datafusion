@@ -34,6 +34,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::task::{self, JoinHandle};
 
+use super::csv_arrow13::Arrow13CsvReader;
 use super::file_stream::{BatchIter, FileStream};
 use super::FileScanConfig;
 
@@ -122,21 +123,22 @@ impl ExecutionPlan for CsvExec {
         let file_projection = self.base_config.file_column_projection_indices();
         let has_header = self.has_header;
         let delimiter = self.delimiter;
-        let start_line = usize::from(has_header);
 
         let fun = move |file, remaining: &Option<usize>| {
-            let bounds = remaining.map(|x| (0, x + start_line));
-            let datetime_format = None;
-            Box::new(csv::Reader::new(
+            // arrow 13 `csv::Reader` semantics (empty strings, local timestamps, ...),
+            // reading at most `remaining` records
+            match Arrow13CsvReader::try_new(
                 file,
                 Arc::clone(&file_schema),
                 has_header,
-                Some(delimiter),
+                delimiter,
                 batch_size,
-                bounds,
+                *remaining,
                 file_projection.clone(),
-                datetime_format,
-            )) as BatchIter
+            ) {
+                Ok(reader) => Box::new(reader) as BatchIter,
+                Err(e) => Box::new(std::iter::once(Err(e))) as BatchIter,
+            }
         };
 
         Ok(Box::pin(FileStream::new(

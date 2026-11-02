@@ -36,6 +36,7 @@ mod in_list;
 mod is_not_null;
 mod is_null;
 mod lead_lag;
+mod like;
 mod literal;
 #[macro_use]
 mod min_max;
@@ -73,7 +74,8 @@ pub use binary::{binary, BinaryExpr};
 pub use bool_and_or::{BoolAnd, BoolOr};
 pub use case::{case, CaseExpr};
 pub use cast::{
-    cast, cast_column, cast_with_options, CastExpr, DEFAULT_DATAFUSION_CAST_OPTIONS,
+    can_cast_types, cast, cast_array_with_options, cast_column, cast_may_produce_null,
+    cast_with_options, CastExpr, DEFAULT_DATAFUSION_CAST_OPTIONS,
 };
 pub use column::{col, Column};
 pub use correlation::Correlation;
@@ -123,7 +125,7 @@ mod tests {
     #[macro_export]
     macro_rules! generic_test_op {
         ($ARRAY:expr, $DATATYPE:expr, $OP:ident, $EXPECTED:expr, $EXPECTED_DATATYPE:expr) => {{
-            let schema = Schema::new(vec![Field::new("a", $DATATYPE, false)]);
+            let schema = Schema::new(vec![Field::new("a", $DATATYPE, true)]);
 
             let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![$ARRAY])?;
 
@@ -146,8 +148,8 @@ mod tests {
     macro_rules! generic_test_op2 {
         ($ARRAY1:expr, $ARRAY2:expr, $DATATYPE1:expr, $DATATYPE2:expr, $OP:ident, $EXPECTED:expr, $EXPECTED_DATATYPE:expr) => {{
             let schema = Schema::new(vec![
-                Field::new("a", $DATATYPE1, false),
-                Field::new("b", $DATATYPE2, false),
+                Field::new("a", $DATATYPE1, true),
+                Field::new("b", $DATATYPE2, true),
             ]);
             let batch =
                 RecordBatch::try_new(Arc::new(schema.clone()), vec![$ARRAY1, $ARRAY2])?;

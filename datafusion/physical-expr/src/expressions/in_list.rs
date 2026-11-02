@@ -23,7 +23,7 @@ use std::sync::Arc;
 use arrow::array::GenericStringArray;
 use arrow::array::{
     ArrayRef, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, StringOffsetSizeTrait, TimestampMicrosecondArray,
+    Int64Array, Int8Array, OffsetSizeTrait, TimestampMicrosecondArray,
     TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
     UInt16Array, UInt32Array, UInt64Array, UInt8Array,
 };
@@ -35,7 +35,7 @@ use arrow::{
 
 use crate::PhysicalExpr;
 use arrow::array::*;
-use arrow::buffer::{Buffer, MutableBuffer};
+use arrow::buffer::BooleanBuffer;
 use arrow::datatypes::TimeUnit;
 use datafusion_common::ScalarValue;
 use datafusion_common::{DataFusionError, Result};
@@ -43,25 +43,11 @@ use datafusion_expr::ColumnarValue;
 
 macro_rules! compare_op_scalar {
     ($left: expr, $right:expr, $op:expr) => {{
-        let null_bit_buffer = $left.data().null_buffer().cloned();
-
-        let comparison =
-            (0..$left.len()).map(|i| unsafe { $op($left.value_unchecked(i), $right) });
-        // same as $left.len()
-        let buffer = unsafe { MutableBuffer::from_trusted_len_iter_bool(comparison) };
-
-        let data = unsafe {
-            ArrayData::new_unchecked(
-                DataType::Boolean,
-                $left.len(),
-                None,
-                null_bit_buffer,
-                0,
-                vec![Buffer::from(buffer)],
-                vec![],
-            )
-        };
-        Ok(BooleanArray::from(data))
+        let left = $left;
+        let values = BooleanBuffer::collect_bool(left.len(), |i| unsafe {
+            $op(left.value_unchecked(i), $right)
+        });
+        Ok(BooleanArray::new(values, left.nulls().cloned()))
     }};
 }
 
@@ -208,14 +194,14 @@ fn not_in_list_primitive<T: ArrowPrimitiveType>(
 }
 
 // whether each value on the left (can be null) is contained in the non-null list
-fn in_list_utf8<OffsetSize: StringOffsetSizeTrait>(
+fn in_list_utf8<OffsetSize: OffsetSizeTrait>(
     array: &GenericStringArray<OffsetSize>,
     values: &[&str],
 ) -> Result<BooleanArray> {
     compare_op_scalar!(array, values, |x, v: &[&str]| v.contains(&x))
 }
 
-fn not_in_list_utf8<OffsetSize: StringOffsetSizeTrait>(
+fn not_in_list_utf8<OffsetSize: OffsetSizeTrait>(
     array: &GenericStringArray<OffsetSize>,
     values: &[&str],
 ) -> Result<BooleanArray> {
@@ -253,7 +239,7 @@ impl InListExpr {
 
     /// Compare for specific utf8 types
     #[allow(clippy::unnecessary_wraps)]
-    fn compare_utf8<T: StringOffsetSizeTrait>(
+    fn compare_utf8<T: OffsetSizeTrait>(
         &self,
         array: ArrayRef,
         list_values: Vec<ColumnarValue>,
@@ -338,7 +324,16 @@ impl PhysicalExpr for InListExpr {
     }
 
     fn nullable(&self, input_schema: &Schema) -> Result<bool> {
-        self.expr.nullable(input_schema)
+        // `1 IN (2, NULL)` is NULL
+        if self.expr.nullable(input_schema)? {
+            return Ok(true);
+        }
+        for item in &self.list {
+            if item.nullable(input_schema)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn evaluate(&self, batch: &RecordBatch) -> Result<ColumnarValue> {

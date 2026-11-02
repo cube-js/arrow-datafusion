@@ -52,12 +52,14 @@ use arrow::{
 use log::{debug, warn};
 use parquet::arrow::ArrowWriter;
 use parquet::file::{
-    metadata::RowGroupMetaData, reader::SerializedFileReader,
-    serialized_reader::ReadOptionsBuilder, statistics::Statistics as ParquetStatistics,
+    metadata::RowGroupMetaData, statistics::Statistics as ParquetStatistics,
 };
 
 use fmt::Debug;
-use parquet::arrow::{ArrowReader, ParquetFileArrowReader};
+use parquet::arrow::arrow_reader::{
+    ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReaderBuilder,
+};
+use parquet::arrow::ProjectionMask;
 use parquet::file::properties::WriterProperties;
 
 use tokio::task::JoinHandle;
@@ -320,19 +322,24 @@ struct RowGroupPruningStatistics<'a> {
 /// Extract the min/max statistics from a `ParquetStatistics` object
 macro_rules! get_statistic {
     ($column_statistics:expr, $func:ident, $bytes_func:ident) => {{
-        if !$column_statistics.has_min_max_set() {
+        // arrow 13 `Statistics::has_min_max_set`: both min and max are present
+        if $column_statistics.min_bytes_opt().is_none()
+            || $column_statistics.max_bytes_opt().is_none()
+        {
             return None;
         }
         match $column_statistics {
-            ParquetStatistics::Boolean(s) => Some(ScalarValue::Boolean(Some(*s.$func()))),
-            ParquetStatistics::Int32(s) => Some(ScalarValue::Int32(Some(*s.$func()))),
-            ParquetStatistics::Int64(s) => Some(ScalarValue::Int64(Some(*s.$func()))),
+            ParquetStatistics::Boolean(s) => {
+                Some(ScalarValue::Boolean(Some(*s.$func()?)))
+            }
+            ParquetStatistics::Int32(s) => Some(ScalarValue::Int32(Some(*s.$func()?))),
+            ParquetStatistics::Int64(s) => Some(ScalarValue::Int64(Some(*s.$func()?))),
             // 96 bit ints not supported
             ParquetStatistics::Int96(_) => None,
-            ParquetStatistics::Float(s) => Some(ScalarValue::Float32(Some(*s.$func()))),
-            ParquetStatistics::Double(s) => Some(ScalarValue::Float64(Some(*s.$func()))),
+            ParquetStatistics::Float(s) => Some(ScalarValue::Float32(Some(*s.$func()?))),
+            ParquetStatistics::Double(s) => Some(ScalarValue::Float64(Some(*s.$func()?))),
             ParquetStatistics::ByteArray(s) => {
-                let s = std::str::from_utf8(s.$bytes_func())
+                let s = std::str::from_utf8(s.$bytes_func()?)
                     .map(|s| s.to_string())
                     .ok();
                 Some(ScalarValue::Utf8(s))
@@ -385,7 +392,8 @@ macro_rules! get_null_count_values {
                 .row_group_metadata
                 .column(column_index)
                 .statistics()
-                .map(|s| s.null_count()),
+                // arrow 13 parquet reported a missing null count as 0
+                .map(|s| s.null_count_opt().unwrap_or(0)),
         );
         Some(value.to_array())
     }};
@@ -393,11 +401,11 @@ macro_rules! get_null_count_values {
 
 impl<'a> PruningStatistics for RowGroupPruningStatistics<'a> {
     fn min_values(&self, column: &Column) -> Option<ArrayRef> {
-        get_min_max_values!(self, column, min, min_bytes)
+        get_min_max_values!(self, column, min_opt, min_bytes_opt)
     }
 
     fn max_values(&self, column: &Column) -> Option<ArrayRef> {
-        get_min_max_values!(self, column, max, max_bytes)
+        get_min_max_values!(self, column, max_opt, max_bytes_opt)
     }
 
     fn num_containers(&self) -> usize {
@@ -468,25 +476,42 @@ fn read_partition(
         let object_reader =
             object_store.file_reader(partitioned_file.file_meta.sized_file.clone())?;
 
-        let mut opt = ReadOptionsBuilder::new();
-        if let Some(pruning_predicate) = pruning_predicate {
-            opt = opt.with_predicate(build_row_group_predicate(
-                pruning_predicate,
-                file_metrics,
-            ));
-        }
+        let chunk_reader = ChunkObjectReader(object_reader);
+        let reader_metadata =
+            ArrowReaderMetadata::load(&chunk_reader, ArrowReaderOptions::new())?;
 
-        let file_reader = SerializedFileReader::new_with_options(
-            ChunkObjectReader(object_reader),
-            opt.build(),
-        )?;
+        // Row group pruning (arrow 13: `ReadOptionsBuilder::with_predicate` on the
+        // `SerializedFileReader` wrapped by `ParquetFileArrowReader`).
+        let row_groups_metadata = reader_metadata.metadata().row_groups();
+        let row_groups: Vec<usize> = match pruning_predicate {
+            Some(pruning_predicate) => {
+                let mut predicate =
+                    build_row_group_predicate(pruning_predicate, file_metrics);
+                row_groups_metadata
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, rg)| predicate(rg, *i))
+                    .map(|(i, _)| i)
+                    .collect()
+            }
+            None => (0..row_groups_metadata.len()).collect(),
+        };
 
-        let mut arrow_reader = ParquetFileArrowReader::new(Arc::new(file_reader));
+        let builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
+            chunk_reader,
+            reader_metadata,
+        );
         let adapted_projections =
-            schema_adapter.map_projections(&arrow_reader.get_schema()?, projection)?;
+            schema_adapter.map_projections(builder.schema(), projection)?;
+        // arrow 13 `get_record_reader_by_columns` selected leaf columns
+        let projection_mask =
+            ProjectionMask::leaves(builder.parquet_schema(), adapted_projections);
 
-        let mut batch_reader =
-            arrow_reader.get_record_reader_by_columns(adapted_projections, batch_size)?;
+        let mut batch_reader = builder
+            .with_projection(projection_mask)
+            .with_row_groups(row_groups)
+            .with_batch_size(batch_size)
+            .build()?;
         loop {
             match batch_reader.next() {
                 Some(Ok(batch)) => {
@@ -680,8 +705,12 @@ mod tests {
         field_name: &str,
         array: ArrayRef,
     ) -> RecordBatch {
-        let mut fields = batch.schema().fields().clone();
-        fields.push(Field::new(field_name, array.data_type().clone(), true));
+        let mut fields = batch.schema().fields().to_vec();
+        fields.push(Arc::new(Field::new(
+            field_name,
+            array.data_type().clone(),
+            true,
+        )));
         let schema = Arc::new(Schema::new(fields));
 
         let mut columns = batch.columns().to_vec();
@@ -691,7 +720,7 @@ mod tests {
 
     fn create_batch(columns: Vec<(&str, ArrayRef)>) -> RecordBatch {
         columns.into_iter().fold(
-            RecordBatch::new_empty(Arc::new(Schema::new(vec![]))),
+            RecordBatch::new_empty(Arc::new(Schema::empty())),
             |batch, (field_name, arr)| add_to_batch(&batch, field_name, arr.clone()),
         )
     }
@@ -701,11 +730,8 @@ mod tests {
         let c1: ArrayRef =
             Arc::new(StringArray::from(vec![Some("Foo"), None, Some("bar")]));
         // batch1: c1(string)
-        let batch1 = add_to_batch(
-            &RecordBatch::new_empty(Arc::new(Schema::new(vec![]))),
-            "c1",
-            c1,
-        );
+        let batch1 =
+            add_to_batch(&RecordBatch::new_empty(Arc::new(Schema::empty())), "c1", c1);
 
         // batch2: c1(string) and c2(int64)
         let c2: ArrayRef = Arc::new(Int64Array::from(vec![Some(1), Some(2), None]));
@@ -1048,11 +1074,23 @@ mod tests {
         let schema_descr = get_test_schema_descr(vec![("c1", PhysicalType::INT32)]);
         let rgm1 = get_row_group_meta_data(
             &schema_descr,
-            vec![ParquetStatistics::int32(Some(1), Some(10), None, 0, false)],
+            vec![ParquetStatistics::int32(
+                Some(1),
+                Some(10),
+                None,
+                Some(0),
+                false,
+            )],
         );
         let rgm2 = get_row_group_meta_data(
             &schema_descr,
-            vec![ParquetStatistics::int32(Some(11), Some(20), None, 0, false)],
+            vec![ParquetStatistics::int32(
+                Some(11),
+                Some(20),
+                None,
+                Some(0),
+                false,
+            )],
         );
         let row_group_metadata = [rgm1, rgm2];
         let mut row_group_predicate =
@@ -1078,11 +1116,17 @@ mod tests {
         let schema_descr = get_test_schema_descr(vec![("c1", PhysicalType::INT32)]);
         let rgm1 = get_row_group_meta_data(
             &schema_descr,
-            vec![ParquetStatistics::int32(None, None, None, 0, false)],
+            vec![ParquetStatistics::int32(None, None, None, Some(0), false)],
         );
         let rgm2 = get_row_group_meta_data(
             &schema_descr,
-            vec![ParquetStatistics::int32(Some(11), Some(20), None, 0, false)],
+            vec![ParquetStatistics::int32(
+                Some(11),
+                Some(20),
+                None,
+                Some(0),
+                false,
+            )],
         );
         let row_group_metadata = [rgm1, rgm2];
         let mut row_group_predicate =
@@ -1118,15 +1162,15 @@ mod tests {
         let rgm1 = get_row_group_meta_data(
             &schema_descr,
             vec![
-                ParquetStatistics::int32(Some(1), Some(10), None, 0, false),
-                ParquetStatistics::int32(Some(1), Some(10), None, 0, false),
+                ParquetStatistics::int32(Some(1), Some(10), None, Some(0), false),
+                ParquetStatistics::int32(Some(1), Some(10), None, Some(0), false),
             ],
         );
         let rgm2 = get_row_group_meta_data(
             &schema_descr,
             vec![
-                ParquetStatistics::int32(Some(11), Some(20), None, 0, false),
-                ParquetStatistics::int32(Some(11), Some(20), None, 0, false),
+                ParquetStatistics::int32(Some(11), Some(20), None, Some(0), false),
+                ParquetStatistics::int32(Some(11), Some(20), None, Some(0), false),
             ],
         );
         let row_group_metadata = [rgm1, rgm2];
@@ -1165,15 +1209,15 @@ mod tests {
         let rgm1 = get_row_group_meta_data(
             &schema_descr,
             vec![
-                ParquetStatistics::int32(Some(1), Some(10), None, 0, false),
-                ParquetStatistics::boolean(Some(false), Some(true), None, 0, false),
+                ParquetStatistics::int32(Some(1), Some(10), None, Some(0), false),
+                ParquetStatistics::boolean(Some(false), Some(true), None, Some(0), false),
             ],
         );
         let rgm2 = get_row_group_meta_data(
             &schema_descr,
             vec![
-                ParquetStatistics::int32(Some(11), Some(20), None, 0, false),
-                ParquetStatistics::boolean(Some(false), Some(true), None, 1, false),
+                ParquetStatistics::int32(Some(11), Some(20), None, Some(0), false),
+                ParquetStatistics::boolean(Some(false), Some(true), None, Some(1), false),
             ],
         );
         vec![rgm1, rgm2]
@@ -1227,9 +1271,9 @@ mod tests {
             .enumerate()
             .map(|(i, g)| row_group_predicate(g, i))
             .collect::<Vec<_>>();
-        // no row group is filtered out because the predicate expression can't be evaluated
-        // when a null array is generated for a statistics column,
-        assert_eq!(row_group_filter, vec![true, true]);
+        // bool = NULL always evaluates to NULL (and thus will not
+        // pass predicates. Ideally these should both be false
+        assert_eq!(row_group_filter, vec![false, true]);
 
         Ok(())
     }
@@ -1257,14 +1301,14 @@ mod tests {
 
     fn get_test_schema_descr(fields: Vec<(&str, PhysicalType)>) -> SchemaDescPtr {
         use parquet::schema::types::{SchemaDescriptor, Type as SchemaType};
-        let mut schema_fields = fields
+        let schema_fields = fields
             .iter()
             .map(|(n, t)| {
                 Arc::new(SchemaType::primitive_type_builder(n, *t).build().unwrap())
             })
             .collect::<Vec<_>>();
         let schema = SchemaType::group_type_builder("schema")
-            .with_fields(&mut schema_fields)
+            .with_fields(schema_fields)
             .build()
             .unwrap();
 

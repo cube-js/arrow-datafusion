@@ -18,7 +18,7 @@
 //! TableFun (UDTFs) Physical Node
 
 use std::any::Any;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -29,7 +29,7 @@ use crate::physical_plan::{
 };
 use arrow::array::{new_null_array, Array, ArrayRef, NullArray};
 use arrow::compute::kernels;
-use arrow::datatypes::{Field, Schema, SchemaRef};
+use arrow::datatypes::{Field, FieldRef, Metadata, Schema, SchemaRef};
 use arrow::error::Result as ArrowResult;
 use arrow::record_batch::RecordBatch;
 use datafusion_physical_expr::TableFunctionExpr;
@@ -80,8 +80,9 @@ impl TableFunExec {
             })
             .collect();
 
-        let mut total_fields = input_schema.fields().clone();
-        total_fields.append(&mut fields.unwrap());
+        let mut total_fields: Vec<FieldRef> =
+            input_schema.fields().iter().cloned().collect();
+        total_fields.extend(fields.unwrap().into_iter().map(Arc::new));
 
         let schema = Schema::new_with_metadata(total_fields, HashMap::new());
 
@@ -205,20 +206,18 @@ impl ExecutionPlan for TableFunExec {
 
 /// If e is a direct column reference, returns the field level
 /// metadata for that field, if any. Otherwise returns None
-fn get_field_metadata(
-    e: &Arc<dyn PhysicalExpr>,
-    input_schema: &Schema,
-) -> Option<BTreeMap<String, String>> {
+fn get_field_metadata(e: &Arc<dyn PhysicalExpr>, input_schema: &Schema) -> Metadata {
     let name = if let Some(column) = e.as_any().downcast_ref::<Column>() {
         column.name()
     } else {
-        return None;
+        return Metadata::new();
     };
 
     input_schema
         .field_with_name(name)
         .ok()
-        .and_then(|f| f.metadata().cloned())
+        .map(|f| f.metadata().clone())
+        .unwrap_or_default()
 }
 
 fn stats_table_fun(

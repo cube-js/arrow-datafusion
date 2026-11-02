@@ -17,10 +17,12 @@
 
 use super::{Expr, Like};
 use crate::logical_expr::{aggregate_function, function, window_function};
-use arrow::compute::can_cast_types;
 use arrow::datatypes::DataType;
 use datafusion_common::{DFField, DFSchema, DataFusionError, ExprSchema, Result};
 use datafusion_expr::binary_rule::{binary_operator_data_type, case_expression_coercion};
+use datafusion_physical_expr::expressions::{
+    can_cast_types, cast_may_produce_null, DEFAULT_DATAFUSION_CAST_OPTIONS,
+};
 use datafusion_physical_expr::field_util::get_indexed_field;
 
 /// trait to allow expr to typable with respect to a schema
@@ -188,8 +190,19 @@ impl ExprSchemable for Expr {
             | Expr::Not(expr)
             | Expr::Negative(expr)
             | Expr::Sort { expr, .. }
-            | Expr::Between { expr, .. }
-            | Expr::InList { expr, .. } => expr.nullable(input_schema),
+            | Expr::Between { expr, .. } => expr.nullable(input_schema),
+            // `1 IN (2, NULL)` is NULL
+            Expr::InList { expr, list, .. } => {
+                if expr.nullable(input_schema)? {
+                    return Ok(true);
+                }
+                for item in list {
+                    if item.nullable(input_schema)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
             Expr::Column(c) => input_schema.nullable(c),
             Expr::OuterColumn(_, _) | Expr::InSubquery { .. } => Ok(true),
             Expr::Literal(value) => Ok(value.is_null()),
@@ -208,10 +221,21 @@ impl ExprSchemable for Expr {
                 } else if let Some(e) = else_expr {
                     e.nullable(input_schema)
                 } else {
-                    Ok(false)
+                    // CASE produces NULL if there is no `else` expr
+                    // (aka when none of the `when_then_exprs` match)
+                    Ok(true)
                 }
             }
-            Expr::Cast { expr, .. } => expr.nullable(input_schema),
+            Expr::Cast { expr, data_type } => {
+                // a cast can turn values into NULL (e.g. an overflowing numeric cast,
+                // see `cast_may_produce_null`)
+                Ok(expr.nullable(input_schema)?
+                    || cast_may_produce_null(
+                        &expr.get_type(input_schema)?,
+                        data_type,
+                        &DEFAULT_DATAFUSION_CAST_OPTIONS,
+                    ))
+            }
             Expr::ScalarVariable(_, _)
             | Expr::TryCast { .. }
             | Expr::ScalarFunction { .. }

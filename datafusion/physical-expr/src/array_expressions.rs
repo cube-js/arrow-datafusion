@@ -41,19 +41,19 @@ macro_rules! array {
             downcast_vec!($ARGS, $ARRAY_TYPE).collect::<Result<Vec<&$ARRAY_TYPE>>>()?;
 
         let mut builder = FixedSizeListBuilder::<$BUILDER_TYPE>::new(
-            <$BUILDER_TYPE>::new(args[0].len()),
+            <$BUILDER_TYPE>::new(),
             args.len() as i32,
         );
         // for each entry in the array
         for index in 0..args[0].len() {
             for arg in &args {
                 if arg.is_null(index) {
-                    builder.values().append_null()?;
+                    builder.values().append_null();
                 } else {
-                    builder.values().append_value(arg.value(index))?;
+                    builder.values().append_value(arg.value(index));
                 }
             }
-            builder.append(true)?;
+            builder.append(true);
         }
         Ok(Arc::new(builder.finish()))
     }};

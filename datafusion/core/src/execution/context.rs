@@ -2033,7 +2033,8 @@ mod tests {
                     Field::new("f1", DataType::Utf8, false),
                     Field::new("f2", DataType::Int64, false),
                 ]
-                .to_vec(),
+                .to_vec()
+                .into(),
             )),
             Volatility::Immutable,
             struct_func,
@@ -2042,11 +2043,11 @@ mod tests {
         let result = plan_and_collect(&ctx, "SELECT struct_func(5)").await?;
 
         let expected = [
-            "+-------------------------+",
-            "| struct_func(Int64(5))   |",
-            "+-------------------------+",
-            "| {\"f1\": \"test\", \"f2\": 5} |",
-            "+-------------------------+",
+            "+-----------------------+",
+            "| struct_func(Int64(5)) |",
+            "+-----------------------+",
+            "| {f1: test, f2: 5}     |",
+            "+-----------------------+",
         ];
 
         assert_batches_eq!(expected, &result);
@@ -2085,17 +2086,17 @@ mod tests {
         .await?;
 
         let expected = vec![
-            "+-----+-------------------------+-----------------------------+---+",
-            "| asd | struct_func(x.qwe)      | integer_series(x.asd,x.qwe) | r |",
-            "+-----+-------------------------+-----------------------------+---+",
-            "| 1   | {\"f1\": \"test\", \"f2\": 3} | 1                           | 1 |",
-            "| 1   |                         | 2                           | 2 |",
-            "| 1   |                         | 3                           | 3 |",
-            "| 2   | {\"f1\": \"test\", \"f2\": 4} | 2                           | 1 |",
-            "| 2   |                         | 3                           | 2 |",
-            "| 2   |                         | 4                           | 3 |",
-            "| 2   |                         |                             | 4 |",
-            "+-----+-------------------------+-----------------------------+---+",
+            "+-----+--------------------+-----------------------------+---+",
+            "| asd | struct_func(x.qwe) | integer_series(x.asd,x.qwe) | r |",
+            "+-----+--------------------+-----------------------------+---+",
+            "| 1   | {f1: test, f2: 3}  | 1                           | 1 |",
+            "| 1   |                    | 2                           | 2 |",
+            "| 1   |                    | 3                           | 3 |",
+            "| 2   | {f1: test, f2: 4}  | 2                           | 1 |",
+            "| 2   |                    | 3                           | 2 |",
+            "| 2   |                    | 4                           | 3 |",
+            "| 2   |                    |                             | 4 |",
+            "+-----+--------------------+-----------------------------+---+",
         ];
 
         assert_batches_eq!(expected, &result);
@@ -2144,7 +2145,7 @@ mod tests {
                 .expect("cast failed");
 
             let mut batch_sizes: Vec<usize> = Vec::new();
-            let mut builder = Int64Builder::new(1);
+            let mut builder = Int64Builder::with_capacity(1);
 
             for (start, end) in start_arr.iter().zip(end_arr.iter()) {
                 let start_number = start.unwrap();
@@ -2157,7 +2158,7 @@ mod tests {
                 batch_sizes.push(count);
 
                 for i in start_number..end_number + 1 {
-                    builder.append_value(i).unwrap();
+                    builder.append_value(i);
                 }
             }
 
@@ -2172,16 +2173,16 @@ mod tests {
                 .downcast_ref::<Int64Array>()
                 .expect("cast failed");
 
-            let mut string_builder = StringBuilder::new(1);
-            let mut int_builder = Int64Builder::new(1);
+            let mut string_builder = StringBuilder::new();
+            let mut int_builder = Int64Builder::with_capacity(1);
 
             let mut batch_sizes: Vec<usize> = Vec::new();
             for start in start_arr.iter() {
                 let start_number = start.unwrap();
                 batch_sizes.push(1);
 
-                string_builder.append_value("test").unwrap();
-                int_builder.append_value(start_number).unwrap();
+                string_builder.append_value("test");
+                int_builder.append_value(start_number);
             }
 
             let mut fields = Vec::new();
@@ -2193,7 +2194,7 @@ mod tests {
 
             let mut builder = StructBuilder::new(fields, field_builders);
             for _start in start_arr.iter() {
-                builder.append(true).unwrap();
+                builder.append(true);
             }
 
             Ok((Arc::new(builder.finish()) as ArrayRef, batch_sizes))

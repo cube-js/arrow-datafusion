@@ -27,7 +27,7 @@ use arrow::{
         IntervalMonthDayNanoType, IntervalUnit, IntervalYearMonthType,
         TimestampNanosecondType,
     },
-    temporal_conversions::{date32_to_datetime, timestamp_ns_to_datetime},
+    temporal_conversions,
 };
 use chrono::{Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime};
 use datafusion_common::{DataFusionError, Result};
@@ -91,34 +91,34 @@ pub fn coerce_types_distinct(
     match op {
         Operator::Plus => match (lhs_type, rhs_type) {
             (Interval(iunit), Timestamp(_, tz)) => {
-                Some((Interval(iunit.clone()), Timestamp(Nanosecond, tz.clone())))
+                Some((Interval(*iunit), Timestamp(Nanosecond, tz.clone())))
             }
             (Null, Timestamp(_, tz)) => {
                 Some((Interval(MonthDayNano), Timestamp(Nanosecond, tz.clone())))
             }
             (Timestamp(_, tz), Interval(iunit)) => {
-                Some((Timestamp(Nanosecond, tz.clone()), Interval(iunit.clone())))
+                Some((Timestamp(Nanosecond, tz.clone()), Interval(*iunit)))
             }
             (Timestamp(_, tz), Null) => {
                 Some((Timestamp(Nanosecond, tz.clone()), Interval(MonthDayNano)))
             }
             (Interval(iunit), Date64) | (Interval(iunit), Date32) => {
-                Some((Interval(iunit.clone()), Timestamp(Nanosecond, None)))
+                Some((Interval(*iunit), Timestamp(Nanosecond, None)))
             }
             (Date64, Interval(iunit)) | (Date32, Interval(iunit)) => {
-                Some((Timestamp(Nanosecond, None), Interval(iunit.clone())))
+                Some((Timestamp(Nanosecond, None), Interval(*iunit)))
             }
             _ => None,
         },
         Operator::Minus => match (lhs_type, rhs_type) {
             (Timestamp(_, tz), Interval(iunit)) => {
-                Some((Timestamp(Nanosecond, tz.clone()), Interval(iunit.clone())))
+                Some((Timestamp(Nanosecond, tz.clone()), Interval(*iunit)))
             }
             (Timestamp(_, tz), Null) => {
                 Some((Timestamp(Nanosecond, tz.clone()), Interval(MonthDayNano)))
             }
             (Date64, Interval(iunit)) | (Date32, Interval(iunit)) => {
-                Some((Timestamp(Nanosecond, None), Interval(iunit.clone())))
+                Some((Timestamp(Nanosecond, None), Interval(*iunit)))
             }
             (Timestamp(_, tz), Timestamp(_, tz2)) => Some((
                 Timestamp(Nanosecond, tz.clone()),
@@ -132,8 +132,8 @@ pub fn coerce_types_distinct(
         Operator::Multiply => match (lhs_type, rhs_type) {
             // TODO: this isn't exactly correct and Utf8 should go the Float64 route,
             // but will crash rather than yield incorrect results, so is acceptable
-            (Utf8, Interval(unit)) => Some((Int64, Interval(unit.clone()))),
-            (Interval(unit), Utf8) => Some((Interval(unit.clone()), Int64)),
+            (Utf8, Interval(unit)) => Some((Int64, Interval(*unit))),
+            (Interval(unit), Utf8) => Some((Interval(*unit), Int64)),
             (Int64, Interval(unit))
             | (Int32, Interval(unit))
             | (Int16, Interval(unit))
@@ -142,7 +142,7 @@ pub fn coerce_types_distinct(
             | (UInt32, Interval(unit))
             | (UInt16, Interval(unit))
             | (UInt8, Interval(unit))
-            | (Null, Interval(unit)) => Some((Int64, Interval(unit.clone()))),
+            | (Null, Interval(unit)) => Some((Int64, Interval(*unit))),
             (Interval(unit), Int64)
             | (Interval(unit), Int32)
             | (Interval(unit), Int16)
@@ -151,7 +151,7 @@ pub fn coerce_types_distinct(
             | (Interval(unit), UInt32)
             | (Interval(unit), UInt16)
             | (Interval(unit), UInt8)
-            | (Interval(unit), Null) => Some((Interval(unit.clone()), Int64)),
+            | (Interval(unit), Null) => Some((Interval(*unit), Int64)),
             // For float * interval expression both operands are extended to most precise
             (Float64, Interval(_)) | (Float32, Interval(_)) | (Float16, Interval(_)) => {
                 Some((Float64, Interval(MonthDayNano)))
@@ -190,13 +190,13 @@ pub fn evaluate_distinct_with_resolved_args(
             (Timestamp(Nanosecond, None), Interval(_)) => {
                 Some(timestamp_add_interval(left, right, false))
             }
-            (Timestamp(Nanosecond, Some(tz)), Interval(_)) if tz == "UTC" => {
+            (Timestamp(Nanosecond, Some(tz)), Interval(_)) if tz.as_ref() == "UTC" => {
                 Some(timestamp_add_interval(left, right, false))
             }
             (Interval(_), Timestamp(Nanosecond, None)) => {
                 Some(timestamp_add_interval(right, left, false))
             }
-            (Interval(_), Timestamp(Nanosecond, Some(tz))) if tz == "UTC" => {
+            (Interval(_), Timestamp(Nanosecond, Some(tz))) if tz.as_ref() == "UTC" => {
                 Some(timestamp_add_interval(right, left, false))
             }
             _ => None,
@@ -205,7 +205,7 @@ pub fn evaluate_distinct_with_resolved_args(
             (Timestamp(Nanosecond, None), Interval(_)) => {
                 Some(timestamp_add_interval(left, right, true))
             }
-            (Timestamp(Nanosecond, Some(tz)), Interval(_)) if tz == "UTC" => {
+            (Timestamp(Nanosecond, Some(tz)), Interval(_)) if tz.as_ref() == "UTC" => {
                 Some(timestamp_add_interval(left, right, true))
             }
             (Timestamp(Nanosecond, None), Timestamp(Nanosecond, None)) => {
@@ -246,7 +246,7 @@ fn interval_multiply_int(
         DataType::Int64 => multipliers,
         t => {
             return Err(DataFusionError::Execution(format!(
-                "unsupported multiplicand type {}",
+                "unsupported multiplicand type {:?}",
                 t
             )))
         }
@@ -291,7 +291,7 @@ fn interval_multiply_int(
             Ok(Arc::new(result))
         }
         t => Err(DataFusionError::Execution(format!(
-            "multiplication expected Interval, got {}",
+            "multiplication expected Interval, got {:?}",
             t
         ))),
     }
@@ -305,7 +305,7 @@ fn interval_multiply_float(
         DataType::Float64 => multipliers,
         t => {
             return Err(DataFusionError::Execution(format!(
-                "unsupported multiplicand type {}",
+                "unsupported multiplicand type {:?}",
                 t
             )))
         }
@@ -327,7 +327,7 @@ fn interval_multiply_float(
             Ok(Arc::new(result))
         }
         t => Err(DataFusionError::Execution(format!(
-            "multiplication expected Interval(MonthDayNano), got {}",
+            "multiplication expected Interval(MonthDayNano), got {:?}",
             t
         ))),
     }
@@ -341,7 +341,7 @@ fn interval_divide_float(
         DataType::Float64 => divisors,
         t => {
             return Err(DataFusionError::Execution(format!(
-                "unsupported divisor type {}",
+                "unsupported divisor type {:?}",
                 t
             )))
         }
@@ -363,7 +363,7 @@ fn interval_divide_float(
             Ok(Arc::new(result))
         }
         t => Err(DataFusionError::Execution(format!(
-            "division expected Interval(MonthDayNano), got {}",
+            "division expected Interval(MonthDayNano), got {:?}",
             t
         ))),
     }
@@ -616,7 +616,7 @@ fn timestamp_add_interval(
             Ok(Arc::new(result))
         }
         t => Err(DataFusionError::Execution(format!(
-            "addition expected Interval, got {}",
+            "addition expected Interval, got {:?}",
             t
         ))),
     }
@@ -672,7 +672,7 @@ fn scalar_timestamp_add_interval_year_month(
     let timestamp = timestamp.unwrap();
     let interval = interval.unwrap();
 
-    let timestamp = timestamp_ns_to_datetime(timestamp);
+    let timestamp = timestamp_ns_to_datetime(timestamp)?;
     let interval = match negated {
         true => interval.checked_neg().ok_or_else(|| {
             DataFusionError::Execution("interval out of range".to_string())
@@ -712,7 +712,7 @@ fn scalar_timestamp_add_interval_day_time(
     let timestamp = timestamp.unwrap();
     let interval = interval.unwrap();
 
-    let timestamp = timestamp_ns_to_datetime(timestamp);
+    let timestamp = timestamp_ns_to_datetime(timestamp)?;
     let (days, millis) = IntervalDayTimeType::to_parts(interval);
     let (days, millis) = match negated {
         true => {
@@ -743,7 +743,7 @@ fn scalar_timestamp_add_interval_month_day_nano(
     let timestamp = timestamp.unwrap();
     let interval = interval.unwrap();
 
-    let timestamp = timestamp_ns_to_datetime(timestamp);
+    let timestamp = timestamp_ns_to_datetime(timestamp)?;
 
     let (months, days, nanos) = IntervalMonthDayNanoType::to_parts(interval);
 
@@ -794,9 +794,9 @@ fn scalar_timestamp_subtract_timestamp(
         return Ok(None);
     }
 
-    let datetime_left: NaiveDateTime = timestamp_ns_to_datetime(timestamp_left.unwrap());
+    let datetime_left: NaiveDateTime = timestamp_ns_to_datetime(timestamp_left.unwrap())?;
     let datetime_right: NaiveDateTime =
-        timestamp_ns_to_datetime(timestamp_right.unwrap());
+        timestamp_ns_to_datetime(timestamp_right.unwrap())?;
     let duration = datetime_left.signed_duration_since(datetime_right);
 
     duration_to_interval_day_nano(duration)
@@ -812,8 +812,8 @@ fn scalar_timestamp_subtract_date(
         return Ok(None);
     }
 
-    let datetime_left: NaiveDateTime = timestamp_ns_to_datetime(timestamp_left.unwrap());
-    let datetime_right: NaiveDateTime = date32_to_datetime(timestamp_right.unwrap());
+    let datetime_left: NaiveDateTime = timestamp_ns_to_datetime(timestamp_left.unwrap())?;
+    let datetime_right: NaiveDateTime = date32_to_datetime(timestamp_right.unwrap())?;
     let duration = datetime_left.signed_duration_since(datetime_right);
 
     duration_to_interval_day_nano(duration)
@@ -836,6 +836,19 @@ fn duration_to_interval_day_nano(
     Ok(Some(IntervalMonthDayNanoType::make_value(
         0, days, nanos_rem,
     )))
+}
+
+/// Converts a nanosecond timestamp to a `NaiveDateTime`
+fn timestamp_ns_to_datetime(v: TimestampNanosecond) -> Result<NaiveDateTime> {
+    temporal_conversions::timestamp_ns_to_datetime(v).ok_or_else(|| {
+        DataFusionError::Execution(format!("Timestamp {} is out of range", v))
+    })
+}
+
+/// Converts a `Date32` value to a `NaiveDateTime`
+fn date32_to_datetime(v: Date32) -> Result<NaiveDateTime> {
+    temporal_conversions::date32_to_datetime(v)
+        .ok_or_else(|| DataFusionError::Execution(format!("Date {} is out of range", v)))
 }
 
 fn change_ym(t: NaiveDateTime, y: i32, m: u32) -> Result<NaiveDateTime> {

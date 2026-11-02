@@ -52,7 +52,7 @@ impl Avg {
         // the result of avg just support FLOAT64 and Decimal data type.
         assert!(matches!(
             data_type,
-            DataType::Float64 | DataType::Decimal(_, _) | DataType::Null
+            DataType::Float64 | DataType::Decimal128(_, _) | DataType::Null
         ));
         Self {
             name: name.into(),
@@ -82,12 +82,12 @@ impl AggregateExpr for Avg {
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![
             Field::new(
-                &format_state_name(&self.name, "count"),
+                format_state_name(&self.name, "count"),
                 DataType::UInt64,
                 true,
             ),
             Field::new(
-                &format_state_name(&self.name, "sum"),
+                format_state_name(&self.name, "sum"),
                 self.data_type.clone(),
                 true,
             ),
@@ -129,7 +129,7 @@ impl Accumulator for AvgAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> Result<()> {
         let values = &values[0];
 
-        self.count += (values.len() - values.data().null_count()) as u64;
+        self.count += (values.len() - values.null_count()) as u64;
         self.sum = sum::sum(&self.sum, &sum::sum_batch(values)?)?;
         Ok(())
     }
@@ -183,16 +183,16 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..7)
                 .map(Some)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
 
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Avg,
             ScalarValue::Decimal128(Some(35000), 14, 4),
-            DataType::Decimal(14, 4)
+            DataType::Decimal128(14, 4)
         )
     }
 
@@ -201,15 +201,15 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..6)
                 .map(|i| if i == 2 { None } else { Some(i) })
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Avg,
             ScalarValue::Decimal128(Some(32500), 14, 4),
-            DataType::Decimal(14, 4)
+            DataType::Decimal128(14, 4)
         )
     }
 
@@ -219,15 +219,15 @@ mod tests {
         let array: ArrayRef = Arc::new(
             std::iter::repeat(None)
                 .take(6)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Avg,
             ScalarValue::Decimal128(None, 14, 4),
-            DataType::Decimal(14, 4)
+            DataType::Decimal128(14, 4)
         )
     }
 
