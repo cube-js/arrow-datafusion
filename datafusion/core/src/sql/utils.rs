@@ -17,7 +17,7 @@
 
 //! SQL Utility Functions
 
-use arrow::datatypes::{DataType, DECIMAL_DEFAULT_SCALE, DECIMAL_MAX_PRECISION};
+use arrow::datatypes::{DataType, DECIMAL128_MAX_PRECISION, DECIMAL_DEFAULT_SCALE};
 use datafusion_common::DFSchema;
 use sqlparser::ast::Ident;
 
@@ -765,19 +765,23 @@ pub(crate) fn make_decimal_type(
 ) -> Result<DataType> {
     // postgres like behavior
     let (precision, scale) = match (precision, scale) {
-        (Some(p), Some(s)) => (p as usize, s as usize),
-        (Some(p), None) => (p as usize, 0),
-        _ => (DECIMAL_MAX_PRECISION, DECIMAL_DEFAULT_SCALE),
+        (Some(p), Some(s)) => (p, s),
+        (Some(p), None) => (p, 0),
+        _ => (
+            DECIMAL128_MAX_PRECISION as u64,
+            DECIMAL_DEFAULT_SCALE as u64,
+        ),
     };
 
     // Arrow decimal is i128 meaning 38 maximum decimal digits
-    if precision > DECIMAL_MAX_PRECISION || scale > precision {
+    if precision > DECIMAL128_MAX_PRECISION as u64 || scale > precision {
         Err(DataFusionError::Internal(format!(
             "For decimal(precision, scale) precision must be less than or equal to 38 and scale can't be greater than precision. Got ({}, {})",
             precision, scale
         )))
     } else {
-        Ok(DataType::Decimal(precision, scale))
+        // Both fit: precision <= 38 and scale <= precision
+        Ok(DataType::Decimal128(precision as u8, scale as i8))
     }
 }
 

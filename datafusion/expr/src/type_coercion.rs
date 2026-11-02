@@ -193,14 +193,56 @@ pub fn can_coerce_from(type_into: &DataType, type_from: &DataType) -> bool {
                 | UInt64
                 | Float32
                 | Float64
-                | Decimal(_, _)
+                | Decimal128(_, _)
         ),
         Timestamp(TimeUnit::Nanosecond, None) => {
             matches!(type_from, Null | Timestamp(_, None) | Date32)
         }
         Utf8 | LargeUtf8 => true,
-        Null => can_cast_types(type_from, type_into),
+        Null => can_coerce_to_null(type_from),
         _ => false,
+    }
+}
+
+/// Return true if a value of type `type_from` can be coerced into `DataType::Null`.
+///
+/// Every type that has a null representation can be. arrow's [`can_cast_types`] only
+/// reports casts to `Null` from decimals, so it is consulted just for the remaining types.
+fn can_coerce_to_null(type_from: &DataType) -> bool {
+    use self::DataType::*;
+    match type_from {
+        Null
+        | Boolean
+        | Int8
+        | UInt8
+        | Int16
+        | UInt16
+        | Int32
+        | UInt32
+        | Float32
+        | Date32
+        | Time32(_)
+        | Int64
+        | UInt64
+        | Float64
+        | Decimal128(_, _)
+        | Date64
+        | Timestamp(_, _)
+        | Time64(_)
+        | Duration(_)
+        | Interval(_)
+        | FixedSizeBinary(_)
+        | Binary
+        | Utf8
+        | LargeBinary
+        | LargeUtf8
+        | List(_)
+        | LargeList(_)
+        | FixedSizeList(_, _)
+        | Struct(_)
+        | Map(_, _)
+        | Dictionary(_, _) => true,
+        _ => can_cast_types(type_from, &Null),
     }
 }
 
@@ -244,6 +286,44 @@ mod tests {
         for case in cases {
             assert_eq!(maybe_data_types(&case.0, &case.1), case.2)
         }
+    }
+
+    #[test]
+    fn test_can_coerce_from() {
+        use arrow::datatypes::{Field, IntervalUnit};
+        use std::sync::Arc;
+
+        assert!(can_coerce_from(
+            &DataType::Float64,
+            &DataType::Decimal128(10, 2)
+        ));
+        assert!(!can_coerce_from(
+            &DataType::Float32,
+            &DataType::Decimal128(10, 2)
+        ));
+        assert!(can_coerce_from(
+            &DataType::Timestamp(TimeUnit::Nanosecond, None),
+            &DataType::Timestamp(TimeUnit::Second, None)
+        ));
+        assert!(!can_coerce_from(
+            &DataType::Timestamp(TimeUnit::Nanosecond, None),
+            &DataType::Timestamp(TimeUnit::Second, Some("UTC".into()))
+        ));
+
+        // everything with a null representation coerces to Null
+        for from in [
+            DataType::Null,
+            DataType::Boolean,
+            DataType::Int64,
+            DataType::Decimal128(10, 2),
+            DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+            DataType::Interval(IntervalUnit::DayTime),
+            DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
+            DataType::Struct(vec![Field::new("a", DataType::Int32, true)].into()),
+        ] {
+            assert!(can_coerce_from(&DataType::Null, &from), "{:?}", from);
+        }
+        assert!(!can_coerce_from(&DataType::Null, &DataType::Float16));
     }
 
     #[test]

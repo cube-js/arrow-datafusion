@@ -44,14 +44,14 @@ macro_rules! compare_op_scalar {
         } else {
             $LEFT.len()
         };
-        let mut builder = BooleanBuilder::new(len);
+        let mut builder = BooleanBuilder::with_capacity(len);
 
         for i in 0..len {
             let left_i = if $VALUE_FROM_SCALAR { 0 } else { i };
             let list_i = if $LIST_FROM_SCALAR { 0 } else { i };
 
             if $LIST_VALUES.is_null(list_i) {
-                builder.append_value(false)?;
+                builder.append_value(false);
             } else {
                 let list_values = $LIST_VALUES.value(list_i);
                 let list_values = list_values
@@ -59,12 +59,12 @@ macro_rules! compare_op_scalar {
                     .downcast_ref::<$LIST_VALUES_TYPE>()
                     .unwrap();
                 if list_values.is_empty() {
-                    builder.append_value(false)?;
+                    builder.append_value(false);
                 } else if $LEFT.is_null(left_i) {
-                    builder.append_null()?;
+                    builder.append_null();
                 } else {
                     let result = $OP($LEFT.value(left_i), list_values);
-                    builder.append_option(result)?;
+                    builder.append_option(result);
                 }
             }
         }
@@ -206,7 +206,7 @@ fn wrap_option_bool(v: &BooleanArray, all: bool) -> Option<bool> {
     Some(all)
 }
 
-fn compare_utf8<OffsetSize: StringOffsetSizeTrait>(
+fn compare_utf8<OffsetSize: OffsetSizeTrait>(
     array: &GenericStringArray<OffsetSize>,
     list: &ListArray,
     list_from_scalar: bool,
@@ -260,7 +260,7 @@ fn compare_utf8<OffsetSize: StringOffsetSizeTrait>(
     )
 }
 
-fn wrap_option_utf8<OffsetSize: StringOffsetSizeTrait>(
+fn wrap_option_utf8<OffsetSize: OffsetSizeTrait>(
     v: &GenericStringArray<OffsetSize>,
     all: bool,
 ) -> Option<bool> {
@@ -303,7 +303,7 @@ impl AnyExpr {
     }
 
     /// Compare for specific utf8 types
-    fn compare_utf8<T: StringOffsetSizeTrait>(
+    fn compare_utf8<T: OffsetSizeTrait>(
         &self,
         array: ArrayRef,
         list: &ListArray,
@@ -600,7 +600,7 @@ mod tests {
         let field_a = Field::new("a", DataType::Int64, true);
         let field_b = Field::new(
             "b",
-            DataType::List(Box::new(Field::new("item", DataType::Int64, true))),
+            DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
             true,
         );
 
@@ -608,14 +608,14 @@ mod tests {
         let a = Int64Array::from(vec![Some(0), Some(3), None]);
         let col_a = col("a", &schema)?;
 
-        let values_builder = Int64Builder::new(3 * 3);
+        let values_builder = Int64Builder::with_capacity(3 * 3);
         let mut builder = ListBuilder::new(values_builder);
 
         for _ in 0..3 {
-            builder.values().append_value(0).unwrap();
-            builder.values().append_value(1).unwrap();
-            builder.values().append_value(2).unwrap();
-            builder.append(true).unwrap();
+            builder.values().append_value(0);
+            builder.values().append_value(1);
+            builder.values().append_value(2);
+            builder.append(true);
         }
 
         let b = builder.finish();
@@ -675,7 +675,7 @@ mod tests {
             field_a,
             Field::new(
                 "b",
-                DataType::List(Box::new(Field::new("d", DataType::Int64, true))),
+                DataType::List(Arc::new(Field::new("d", DataType::Int64, true))),
                 true,
             ),
         ]);
@@ -714,7 +714,7 @@ mod tests {
             field_a,
             Field::new(
                 "b",
-                DataType::List(Box::new(Field::new("d", DataType::Utf8, true))),
+                DataType::List(Arc::new(Field::new("d", DataType::Utf8, true))),
                 true,
             ),
         ]);
@@ -749,7 +749,7 @@ mod tests {
             field_a,
             Field::new(
                 "b",
-                DataType::List(Box::new(Field::new("d", DataType::Boolean, true))),
+                DataType::List(Arc::new(Field::new("d", DataType::Boolean, true))),
                 true,
             ),
         ]);

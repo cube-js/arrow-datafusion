@@ -27,4 +27,8 @@ pub use column::Column;
 pub use dfschema::{DFField, DFSchema, DFSchemaRef, ExprSchema, ToDFSchema};
 pub use error::{DataFusionError, Result};
 pub use outer_query_cursor::OuterQueryCursor;
-pub use scalar::{scalar_negate_interval_day_time, ScalarType, ScalarValue};
+pub use scalar::{
+    interval_day_time_from_i64, interval_day_time_to_i64,
+    interval_month_day_nano_from_i128, interval_month_day_nano_to_i128,
+    scalar_negate_interval_day_time, ScalarType, ScalarValue,
+};

@@ -121,7 +121,7 @@ async fn prune_date64() {
         .parse::<chrono::NaiveDate>()
         .unwrap()
         .and_time(chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-    let date = ScalarValue::Date64(Some(date.timestamp_millis()));
+    let date = ScalarValue::Date64(Some(date.and_utc().timestamp_millis()));
 
     let output = ContextWithParquet::new(Scenario::Dates)
         .await
@@ -595,7 +595,7 @@ async fn make_test_file(scenario: Scenario) -> NamedTempFile {
         .expect("tempfile creation");
 
     let props = WriterProperties::builder()
-        .set_max_row_group_size(5)
+        .set_max_row_group_row_count(Some(5))
         .build();
 
     let batches = match scenario {
@@ -680,6 +680,7 @@ fn make_timestamp_batch(offset: Duration) -> RecordBatch {
                 offset_nanos
                     + t.parse::<chrono::NaiveDateTime>()
                         .unwrap()
+                        .and_utc()
                         .timestamp_nanos_opt()
                         .unwrap()
             })
@@ -707,10 +708,10 @@ fn make_timestamp_batch(offset: Duration) -> RecordBatch {
         .map(|(i, _)| format!("Row {} + {}", i, offset))
         .collect::<Vec<_>>();
 
-    let arr_nanos = TimestampNanosecondArray::from_opt_vec(ts_nanos, None);
-    let arr_micros = TimestampMicrosecondArray::from_opt_vec(ts_micros, None);
-    let arr_millis = TimestampMillisecondArray::from_opt_vec(ts_millis, None);
-    let arr_seconds = TimestampSecondArray::from_opt_vec(ts_seconds, None);
+    let arr_nanos = TimestampNanosecondArray::from(ts_nanos);
+    let arr_micros = TimestampMicrosecondArray::from(ts_micros);
+    let arr_millis = TimestampMillisecondArray::from(ts_millis);
+    let arr_seconds = TimestampSecondArray::from(ts_seconds);
 
     let names = names.iter().map(|s| s.as_str()).collect::<Vec<_>>();
     let arr_names = StringArray::from(names);
@@ -804,7 +805,7 @@ fn make_date_batch(offset: Duration) -> RecordBatch {
                     .unwrap()
                     .and_time(chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap());
                 let t = t + offset;
-                t.timestamp_millis()
+                t.and_utc().timestamp_millis()
             })
         })
         .collect::<Vec<_>>();

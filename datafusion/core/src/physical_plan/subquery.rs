@@ -31,7 +31,7 @@ use crate::error::{DataFusionError, Result};
 use crate::logical_plan::{Subquery, SubqueryType};
 use crate::physical_plan::{DisplayFormatType, ExecutionPlan, Partitioning};
 use arrow::array::{new_null_array, BooleanArray};
-use arrow::datatypes::{Schema, SchemaRef};
+use arrow::datatypes::{FieldRef, Schema, SchemaRef};
 use arrow::error::{ArrowError, Result as ArrowResult};
 use arrow::record_batch::RecordBatch;
 
@@ -68,16 +68,19 @@ impl SubqueryExec {
     ) -> Result<Self> {
         let input_schema = input.schema();
 
-        let mut total_fields = input_schema.fields().clone();
+        let mut total_fields: Vec<FieldRef> =
+            input_schema.fields().iter().cloned().collect();
         for (q, t) in subqueries.iter().zip(types.iter()) {
-            total_fields.append(
-                &mut q
-                    .schema()
-                    .fields()
-                    .iter()
-                    .map(|f| Subquery::transform_field(f, *t))
-                    .collect(),
-            );
+            total_fields.extend(q.schema().fields().iter().map(|f| {
+                let field = Subquery::transform_field(f, *t);
+                // a scalar subquery yields NULL when it returns no rows, and
+                // arrow rejects NULLs in a non-nullable RecordBatch column
+                Arc::new(if matches!(t, SubqueryType::Scalar) {
+                    field.with_nullable(true)
+                } else {
+                    field
+                })
+            }));
         }
 
         let merged_schema = Schema::new_with_metadata(total_fields, HashMap::new());

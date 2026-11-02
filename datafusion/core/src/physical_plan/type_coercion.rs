@@ -80,8 +80,8 @@ mod tests {
             Schema::new(
                 t.iter()
                     .enumerate()
-                    .map(|(i, t)| Field::new(&format!("c{}", i), t.clone(), true))
-                    .collect(),
+                    .map(|(i, t)| Field::new(format!("c{}", i), t.clone(), true))
+                    .collect::<Vec<_>>(),
             )
         };
 

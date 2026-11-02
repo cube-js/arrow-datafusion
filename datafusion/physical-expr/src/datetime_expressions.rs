@@ -17,13 +17,17 @@
 
 //! DateTime expressions
 
+use arrow::array::{AsArray, Int32Array};
 use arrow::array::{
     Int64Array, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
 };
 use arrow::compute::cast;
+use arrow::compute::kernels::temporal::DatePart;
+use arrow::datatypes::Int32Type;
+use arrow::error::ArrowError;
 use arrow::{
-    array::{Array, ArrayRef, GenericStringArray, PrimitiveArray, StringOffsetSizeTrait},
-    compute::kernels::cast_utils::string_to_timestamp_nanos,
+    array::{Array, ArrayRef, GenericStringArray, OffsetSizeTrait, PrimitiveArray},
+    compute::kernels::cast_utils::string_to_datetime,
     datatypes::{
         ArrowPrimitiveType, DataType, IntervalDayTimeType, TimestampMicrosecondType,
         TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType,
@@ -40,6 +44,7 @@ use arrow::{
 };
 use chrono::prelude::*;
 use chrono::Duration;
+use chrono::LocalResult;
 use datafusion_common::{DataFusionError, Result};
 use datafusion_common::{ScalarType, ScalarValue};
 use datafusion_expr::ColumnarValue;
@@ -61,7 +66,7 @@ pub(crate) fn unary_string_to_primitive_function<'a, T, O, F>(
 ) -> Result<PrimitiveArray<O>>
 where
     O: ArrowPrimitiveType,
-    T: StringOffsetSizeTrait,
+    T: OffsetSizeTrait,
     F: Fn(&'a str) -> Result<O::Native>,
 {
     if args.len() != 1 {
@@ -129,9 +134,88 @@ where
     }
 }
 
-/// Calls string_to_timestamp_nanos and converts the error type
+/// The process-local time zone ([`chrono::Local`]), except that an ambiguous local time
+/// (a DST fall-back) resolves to its earliest instant, like arrow 13's
+/// `naive_datetime_to_timestamp` did (`chrono::Local` reports it as ambiguous, which
+/// arrow's parser rejects).
+#[derive(Clone, Copy, Debug)]
+struct LocalEarliest;
+
+impl TimeZone for LocalEarliest {
+    type Offset = FixedOffset;
+
+    fn from_offset(_offset: &FixedOffset) -> Self {
+        LocalEarliest
+    }
+
+    fn offset_from_local_date(&self, local: &NaiveDate) -> LocalResult<FixedOffset> {
+        match Local.offset_from_local_date(local) {
+            LocalResult::Ambiguous(earliest, _) => LocalResult::Single(earliest),
+            other => other,
+        }
+    }
+
+    fn offset_from_local_datetime(
+        &self,
+        local: &NaiveDateTime,
+    ) -> LocalResult<FixedOffset> {
+        match Local.offset_from_local_datetime(local) {
+            LocalResult::Ambiguous(earliest, _) => LocalResult::Single(earliest),
+            other => other,
+        }
+    }
+
+    fn offset_from_utc_date(&self, utc: &NaiveDate) -> FixedOffset {
+        Local.offset_from_utc_date(utc)
+    }
+
+    fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+        Local.offset_from_utc_datetime(utc)
+    }
+}
+
+/// Parses a timestamp string like arrow 13's `string_to_timestamp_nanos`: a string
+/// without an offset or time zone is a wall-clock time in the process-local time zone
+/// (arrow 60's `string_to_timestamp_nanos` reads it as UTC). A local time that does not
+/// exist (a DST gap) is an error and an ambiguous one takes the earliest instant, like
+/// in arrow 13. The accepted formats are those of arrow's `string_to_datetime`.
+///
+/// Errors are arrow 13's `CastError("Error parsing '..' as timestamp[: reason]")`.
+pub(crate) fn string_to_datetime_local(
+    s: &str,
+) -> std::result::Result<DateTime<Utc>, ArrowError> {
+    match string_to_datetime(&LocalEarliest, s) {
+        Ok(datetime) => Ok(datetime.with_timezone(&Utc)),
+        // the string is valid, but its wall-clock time does not exist in the local zone
+        Err(_) if string_to_datetime(&Utc, s).is_ok() => {
+            Err(ArrowError::CastError(format!(
+                "Error parsing '{}' as timestamp: local time representation is invalid",
+                s
+            )))
+        }
+        Err(_) => Err(ArrowError::CastError(format!(
+            "Error parsing '{}' as timestamp",
+            s
+        ))),
+    }
+}
+
+/// [`string_to_datetime_local`] as nanoseconds since the epoch, with arrow 13's error for
+/// a value out of the nanosecond range
+pub fn string_to_timestamp_nanos_local(s: &str) -> std::result::Result<i64, ArrowError> {
+    string_to_datetime_local(s)?
+        .timestamp_nanos_opt()
+        .ok_or_else(|| {
+            ArrowError::CastError(format!(
+                "Error parsing '{}' as timestamp: value is out of range for a nanosecond timestamp",
+                s
+            ))
+        })
+}
+
+/// Calls [`string_to_timestamp_nanos_local`] and converts the error type
 fn string_to_timestamp_nanos_shim(s: &str) -> Result<i64> {
-    string_to_timestamp_nanos(s).map_err(|e| e.into())
+    Ok(string_to_timestamp_nanos_local(s)?)
 }
 
 /// to_timestamp SQL function
@@ -361,7 +445,7 @@ pub fn make_now(
     move |_arg| {
         Ok(ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
             now_ts,
-            Some("UTC".to_owned()),
+            Some("UTC".into()),
         )))
     }
 }
@@ -404,7 +488,14 @@ pub fn make_utc_timestamp(
 }
 
 fn date_trunc_single(granularity: &str, value: i64) -> Result<i64> {
-    let value = timestamp_ns_to_datetime(value).with_nanosecond(0);
+    let value = timestamp_ns_to_datetime(value)
+        .ok_or_else(|| {
+            DataFusionError::Execution(format!(
+                "date_trunc: timestamp {} is out of range",
+                value
+            ))
+        })?
+        .with_nanosecond(0);
     let value = match granularity.to_lowercase().as_str() {
         "second" => value,
         "minute" => value.and_then(|d| d.with_second(0)),
@@ -495,6 +586,14 @@ pub fn date_trunc(args: &[ColumnarValue]) -> Result<ColumnarValue> {
             ));
         }
     })
+}
+
+/// ISO week number (arrow 13 `temporal::week`), via arrow `date_part(.., DatePart::Week)`.
+fn week<T: ArrowPrimitiveType>(
+    array: &PrimitiveArray<T>,
+) -> std::result::Result<Int32Array, ArrowError> {
+    let weeks = temporal::date_part(array, DatePart::Week)?;
+    Ok(weeks.as_primitive::<Int32Type>().clone())
 }
 
 macro_rules! extract_date_part {
@@ -673,7 +772,7 @@ pub fn date_part(args: &[ColumnarValue]) -> Result<ColumnarValue> {
             cube_ext::temporal::month,
             DataType::Float64
         ),
-        "week" => extract_date_part!(array, date_part, temporal::week, DataType::Float64),
+        "week" => extract_date_part!(array, date_part, week, DataType::Float64),
         "day" => extract_date_part_from_date_or_interval!(
             array,
             date_part,
@@ -722,6 +821,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::{ArrayRef, Int64Array, StringBuilder};
+    use arrow::compute::kernels::cast_utils::string_to_timestamp_nanos;
 
     use super::*;
 
@@ -729,14 +829,14 @@ mod tests {
     fn to_timestamp_arrays_and_nulls() -> Result<()> {
         // ensure that arrow array implementation is wired up and handles nulls correctly
 
-        let mut string_builder = StringBuilder::new(2);
+        let mut string_builder = StringBuilder::new();
         let mut ts_builder = TimestampNanosecondArray::builder(2);
 
-        string_builder.append_value("2020-09-08T13:42:29.190855Z")?;
-        ts_builder.append_value(1599572549190855000)?;
+        string_builder.append_value("2020-09-08T13:42:29.190855Z");
+        ts_builder.append_value(1599572549190855000);
 
-        string_builder.append_null()?;
-        ts_builder.append_null()?;
+        string_builder.append_null();
+        ts_builder.append_null();
         let expected_timestamps = &ts_builder.finish() as &dyn Array;
 
         let string_array =
@@ -863,12 +963,109 @@ mod tests {
     }
 
     #[test]
+    fn to_timestamp_naive_string_is_local_time() -> Result<()> {
+        // like arrow 13, a string without an offset is a process-local wall-clock time
+        let naive = NaiveDate::from_ymd_opt(2020, 9, 8)
+            .unwrap()
+            .and_hms_opt(13, 42, 29)
+            .unwrap();
+        let expected = Local
+            .from_local_datetime(&naive)
+            .earliest()
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap();
+        assert_eq!(
+            string_to_timestamp_nanos_local("2020-09-08 13:42:29")?,
+            expected
+        );
+        assert_eq!(
+            string_to_timestamp_nanos_local("2020-09-08T13:42:29")?,
+            expected
+        );
+        let midnight = Local
+            .from_local_datetime(&naive.date().and_hms_opt(0, 0, 0).unwrap())
+            .earliest()
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap();
+        assert_eq!(string_to_timestamp_nanos_local("2020-09-08")?, midnight);
+
+        // explicit offsets and time zones don't depend on the local time zone
+        assert_eq!(
+            string_to_timestamp_nanos_local("2020-09-08T13:42:29Z")?,
+            1_599_572_549_000_000_000
+        );
+        assert_eq!(
+            string_to_timestamp_nanos_local("2020-09-08 13:42:29+02:00")?,
+            1_599_565_349_000_000_000
+        );
+        assert_eq!(
+            string_to_timestamp_nanos_local("2020-09-08 13:42:29 America/New_York")?,
+            1_599_586_949_000_000_000
+        );
+
+        let result = to_timestamp(&[ColumnarValue::Scalar(ScalarValue::Utf8(Some(
+            "2020-09-08 13:42:29".to_string(),
+        )))])?;
+        match result {
+            ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(Some(v), None)) => {
+                assert_eq!(v, expected)
+            }
+            other => panic!("unexpected {:?}", other),
+        }
+
+        // arrow 13's error messages
+        assert_eq!(
+            string_to_timestamp_nanos_local("bad")
+                .unwrap_err()
+                .to_string(),
+            "Cast error: Error parsing 'bad' as timestamp"
+        );
+        assert_eq!(
+            string_to_timestamp_nanos_local("2263-01-01T00:00:00Z")
+                .unwrap_err()
+                .to_string(),
+            "Cast error: Error parsing '2263-01-01T00:00:00Z' as timestamp: value is out of range for a nanosecond timestamp"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn to_timestamp_local_gap_and_ambiguous_times() {
+        // DST transitions in the US and in Europe; which of them are gaps or ambiguous
+        // depends on the local time zone of the test process
+        for s in [
+            "2021-03-14 02:30:00",
+            "2021-11-07 01:30:00",
+            "2021-03-28 02:30:00",
+            "2021-10-31 02:30:00",
+        ] {
+            let naive = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap();
+            let result = string_to_timestamp_nanos_local(s);
+            match Local.from_local_datetime(&naive) {
+                LocalResult::None => assert_eq!(
+                    result.unwrap_err().to_string(),
+                    format!(
+                        "Cast error: Error parsing '{}' as timestamp: local time representation is invalid",
+                        s
+                    )
+                ),
+                // arrow 13 took the earliest instant of an ambiguous time
+                LocalResult::Single(datetime) | LocalResult::Ambiguous(datetime, _) => {
+                    assert_eq!(result.unwrap(), datetime.timestamp_nanos_opt().unwrap())
+                }
+            }
+        }
+    }
+
+    #[test]
     fn to_timestamp_invalid_input_type() -> Result<()> {
         // pass the wrong type of input array to to_timestamp and test
         // that we get an error.
 
         let mut builder = Int64Array::builder(1);
-        builder.append_value(1)?;
+        builder.append_value(1);
         let int64array = ColumnarValue::Array(Arc::new(builder.finish()));
 
         let expected_err =

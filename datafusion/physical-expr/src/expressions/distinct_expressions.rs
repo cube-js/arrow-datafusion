@@ -96,8 +96,8 @@ impl AggregateExpr for DistinctCount {
             .iter()
             .map(|state_data_type| {
                 Field::new(
-                    &format_state_name(&self.name, "count distinct"),
-                    DataType::List(Box::new(Field::new(
+                    format_state_name(&self.name, "count distinct"),
+                    DataType::List(Arc::new(Field::new(
                         "item",
                         state_data_type.clone(),
                         true,
@@ -269,7 +269,7 @@ impl AggregateExpr for DistinctArrayAgg {
     fn field(&self) -> Result<Field> {
         Ok(Field::new(
             &self.name,
-            DataType::List(Box::new(Field::new(
+            DataType::List(Arc::new(Field::new(
                 "item",
                 self.input_data_type.clone(),
                 true,
@@ -286,8 +286,8 @@ impl AggregateExpr for DistinctArrayAgg {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "distinct_array_agg"),
-            DataType::List(Box::new(Field::new(
+            format_state_name(&self.name, "distinct_array_agg"),
+            DataType::List(Arc::new(Field::new(
                 "item",
                 self.input_data_type.clone(),
                 true,
@@ -376,21 +376,21 @@ mod tests {
 
     macro_rules! build_list {
         ($LISTS:expr, $BUILDER_TYPE:ident) => {{
-            let mut builder = ListBuilder::new($BUILDER_TYPE::new(0));
+            let mut builder = ListBuilder::new($BUILDER_TYPE::new());
             for list in $LISTS.iter() {
                 match list {
                     Some(values) => {
                         for value in values.iter() {
                             match value {
-                                Some(v) => builder.values().append_value((*v).into())?,
-                                None => builder.values().append_null()?,
+                                Some(v) => builder.values().append_value((*v).into()),
+                                None => builder.values().append_null(),
                             }
                         }
 
-                        builder.append(true)?;
+                        builder.append(true);
                     }
                     None => {
-                        builder.append(false)?;
+                        builder.append(false);
                     }
                 }
             }
@@ -945,7 +945,7 @@ mod tests {
                     Box::new(DataType::Int32),
                 ),
             ])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -967,7 +967,7 @@ mod tests {
                     Box::new(DataType::Int32),
                 ),
             ])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -980,7 +980,7 @@ mod tests {
                 Some(Box::new(vec![ScalarValue::from(9i32)])),
                 Box::new(DataType::Int32),
             )])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -989,7 +989,7 @@ mod tests {
 
         let list = ScalarValue::List(
             Some(Box::new(vec![l1.clone(), l2.clone(), l3.clone()])),
-            Box::new(DataType::List(Box::new(Field::new(
+            Box::new(DataType::List(Arc::new(Field::new(
                 "item",
                 DataType::Int32,
                 true,
@@ -1002,9 +1002,9 @@ mod tests {
         check_distinct_array_agg(
             array,
             list,
-            DataType::List(Box::new(Field::new(
+            DataType::List(Arc::new(Field::new(
                 "item",
-                DataType::List(Box::new(Field::new("item", DataType::Int32, true))),
+                DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
                 true,
             ))),
         )

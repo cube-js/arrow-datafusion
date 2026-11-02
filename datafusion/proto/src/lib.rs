@@ -33,7 +33,9 @@ mod roundtrip_tests {
     use datafusion::physical_plan::functions::make_scalar_function;
     use datafusion::physical_plan::Accumulator;
     use datafusion::{
-        arrow::datatypes::{DataType, Field, IntervalUnit, TimeUnit, UnionMode},
+        arrow::datatypes::{
+            DataType, Field, IntervalUnit, TimeUnit, UnionFields, UnionMode,
+        },
         logical_expr::{BuiltinScalarFunction::Sqrt, Volatility},
         logical_plan::{col, Expr, Like},
         physical_plan::aggregates,
@@ -57,8 +59,13 @@ mod roundtrip_tests {
         };
     }
 
-    fn new_box_field(name: &str, dt: DataType, nullable: bool) -> Box<Field> {
-        Box::new(Field::new(name, dt, nullable))
+    fn new_box_field(name: &str, dt: DataType, nullable: bool) -> Arc<Field> {
+        Arc::new(Field::new(name, dt, nullable))
+    }
+
+    // arrow 13 unions had implicit type ids 0..n
+    fn union_fields(fields: Vec<Field>) -> UnionFields {
+        UnionFields::try_new((0..fields.len()).map(|i| i as i8), fields).unwrap()
     }
 
     #[test]
@@ -191,19 +198,19 @@ mod roundtrip_tests {
             ScalarValue::Date32(Some(i32::MAX)),
             ScalarValue::TimestampNanosecond(Some(0), None),
             ScalarValue::TimestampNanosecond(Some(i64::MAX), None),
-            ScalarValue::TimestampNanosecond(Some(0), Some("UTC".to_string())),
+            ScalarValue::TimestampNanosecond(Some(0), Some("UTC".into())),
             ScalarValue::TimestampNanosecond(None, None),
             ScalarValue::TimestampMicrosecond(Some(0), None),
             ScalarValue::TimestampMicrosecond(Some(i64::MAX), None),
-            ScalarValue::TimestampMicrosecond(Some(0), Some("UTC".to_string())),
+            ScalarValue::TimestampMicrosecond(Some(0), Some("UTC".into())),
             ScalarValue::TimestampMicrosecond(None, None),
             ScalarValue::TimestampMillisecond(Some(0), None),
             ScalarValue::TimestampMillisecond(Some(i64::MAX), None),
-            ScalarValue::TimestampMillisecond(Some(0), Some("UTC".to_string())),
+            ScalarValue::TimestampMillisecond(Some(0), Some("UTC".into())),
             ScalarValue::TimestampMillisecond(None, None),
             ScalarValue::TimestampSecond(Some(0), None),
             ScalarValue::TimestampSecond(Some(i64::MAX), None),
-            ScalarValue::TimestampSecond(Some(0), Some("UTC".to_string())),
+            ScalarValue::TimestampSecond(Some(0), Some("UTC".into())),
             ScalarValue::TimestampSecond(None, None),
             ScalarValue::List(
                 Some(Box::new(vec![
@@ -309,7 +316,7 @@ mod roundtrip_tests {
             DataType::FixedSizeBinary(1234),
             DataType::FixedSizeBinary(-432),
             DataType::LargeBinary,
-            DataType::Decimal(1345, 5431),
+            DataType::Decimal128(200, 100),
             // Recursive list tests
             DataType::List(new_box_field("Level1", DataType::Binary, true)),
             DataType::List(new_box_field(
@@ -336,60 +343,75 @@ mod roundtrip_tests {
                 41,
             ),
             // Struct Testing
-            DataType::Struct(vec![
-                Field::new("nullable", DataType::Boolean, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("datatype", DataType::Binary, false),
-            ]),
-            DataType::Struct(vec![
-                Field::new("nullable", DataType::Boolean, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("datatype", DataType::Binary, false),
-                Field::new(
-                    "nested_struct",
-                    DataType::Struct(vec![
-                        Field::new("nullable", DataType::Boolean, false),
-                        Field::new("name", DataType::Utf8, false),
-                        Field::new("datatype", DataType::Binary, false),
-                    ]),
-                    true,
-                ),
-            ]),
-            DataType::Union(
+            DataType::Struct(
                 vec![
                     Field::new("nullable", DataType::Boolean, false),
                     Field::new("name", DataType::Utf8, false),
                     Field::new("datatype", DataType::Binary, false),
-                ],
-                UnionMode::Dense,
+                ]
+                .into(),
             ),
-            DataType::Union(
+            DataType::Struct(
                 vec![
                     Field::new("nullable", DataType::Boolean, false),
                     Field::new("name", DataType::Utf8, false),
                     Field::new("datatype", DataType::Binary, false),
                     Field::new(
                         "nested_struct",
-                        DataType::Struct(vec![
-                            Field::new("nullable", DataType::Boolean, false),
-                            Field::new("name", DataType::Utf8, false),
-                            Field::new("datatype", DataType::Binary, false),
-                        ]),
+                        DataType::Struct(
+                            vec![
+                                Field::new("nullable", DataType::Boolean, false),
+                                Field::new("name", DataType::Utf8, false),
+                                Field::new("datatype", DataType::Binary, false),
+                            ]
+                            .into(),
+                        ),
                         true,
                     ),
-                ],
+                ]
+                .into(),
+            ),
+            DataType::Union(
+                union_fields(vec![
+                    Field::new("nullable", DataType::Boolean, false),
+                    Field::new("name", DataType::Utf8, false),
+                    Field::new("datatype", DataType::Binary, false),
+                ]),
+                UnionMode::Dense,
+            ),
+            DataType::Union(
+                union_fields(vec![
+                    Field::new("nullable", DataType::Boolean, false),
+                    Field::new("name", DataType::Utf8, false),
+                    Field::new("datatype", DataType::Binary, false),
+                    Field::new(
+                        "nested_struct",
+                        DataType::Struct(
+                            vec![
+                                Field::new("nullable", DataType::Boolean, false),
+                                Field::new("name", DataType::Utf8, false),
+                                Field::new("datatype", DataType::Binary, false),
+                            ]
+                            .into(),
+                        ),
+                        true,
+                    ),
+                ]),
                 UnionMode::Sparse,
             ),
             DataType::Dictionary(
                 Box::new(DataType::Utf8),
-                Box::new(DataType::Struct(vec![
-                    Field::new("nullable", DataType::Boolean, false),
-                    Field::new("name", DataType::Utf8, false),
-                    Field::new("datatype", DataType::Binary, false),
-                ])),
+                Box::new(DataType::Struct(
+                    vec![
+                        Field::new("nullable", DataType::Boolean, false),
+                        Field::new("name", DataType::Utf8, false),
+                        Field::new("datatype", DataType::Binary, false),
+                    ]
+                    .into(),
+                )),
             ),
             DataType::Dictionary(
-                Box::new(DataType::Decimal(10, 50)),
+                Box::new(DataType::Decimal128(10, 50)),
                 Box::new(DataType::FixedSizeList(
                     new_box_field("Level1", DataType::Binary, true),
                     4,
@@ -461,7 +483,7 @@ mod roundtrip_tests {
             DataType::LargeBinary,
             DataType::Utf8,
             DataType::LargeUtf8,
-            DataType::Decimal(1345, 5431),
+            DataType::Decimal128(200, 100),
             // Recursive list tests
             DataType::List(new_box_field("Level1", DataType::Binary, true)),
             DataType::List(new_box_field(
@@ -488,60 +510,75 @@ mod roundtrip_tests {
                 41,
             ),
             // Struct Testing
-            DataType::Struct(vec![
-                Field::new("nullable", DataType::Boolean, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("datatype", DataType::Binary, false),
-            ]),
-            DataType::Struct(vec![
-                Field::new("nullable", DataType::Boolean, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("datatype", DataType::Binary, false),
-                Field::new(
-                    "nested_struct",
-                    DataType::Struct(vec![
-                        Field::new("nullable", DataType::Boolean, false),
-                        Field::new("name", DataType::Utf8, false),
-                        Field::new("datatype", DataType::Binary, false),
-                    ]),
-                    true,
-                ),
-            ]),
-            DataType::Union(
+            DataType::Struct(
                 vec![
                     Field::new("nullable", DataType::Boolean, false),
                     Field::new("name", DataType::Utf8, false),
                     Field::new("datatype", DataType::Binary, false),
-                ],
-                UnionMode::Sparse,
+                ]
+                .into(),
             ),
-            DataType::Union(
+            DataType::Struct(
                 vec![
                     Field::new("nullable", DataType::Boolean, false),
                     Field::new("name", DataType::Utf8, false),
                     Field::new("datatype", DataType::Binary, false),
                     Field::new(
                         "nested_struct",
-                        DataType::Struct(vec![
-                            Field::new("nullable", DataType::Boolean, false),
-                            Field::new("name", DataType::Utf8, false),
-                            Field::new("datatype", DataType::Binary, false),
-                        ]),
+                        DataType::Struct(
+                            vec![
+                                Field::new("nullable", DataType::Boolean, false),
+                                Field::new("name", DataType::Utf8, false),
+                                Field::new("datatype", DataType::Binary, false),
+                            ]
+                            .into(),
+                        ),
                         true,
                     ),
-                ],
+                ]
+                .into(),
+            ),
+            DataType::Union(
+                union_fields(vec![
+                    Field::new("nullable", DataType::Boolean, false),
+                    Field::new("name", DataType::Utf8, false),
+                    Field::new("datatype", DataType::Binary, false),
+                ]),
+                UnionMode::Sparse,
+            ),
+            DataType::Union(
+                union_fields(vec![
+                    Field::new("nullable", DataType::Boolean, false),
+                    Field::new("name", DataType::Utf8, false),
+                    Field::new("datatype", DataType::Binary, false),
+                    Field::new(
+                        "nested_struct",
+                        DataType::Struct(
+                            vec![
+                                Field::new("nullable", DataType::Boolean, false),
+                                Field::new("name", DataType::Utf8, false),
+                                Field::new("datatype", DataType::Binary, false),
+                            ]
+                            .into(),
+                        ),
+                        true,
+                    ),
+                ]),
                 UnionMode::Dense,
             ),
             DataType::Dictionary(
                 Box::new(DataType::Utf8),
-                Box::new(DataType::Struct(vec![
-                    Field::new("nullable", DataType::Boolean, false),
-                    Field::new("name", DataType::Utf8, false),
-                    Field::new("datatype", DataType::Binary, false),
-                ])),
+                Box::new(DataType::Struct(
+                    vec![
+                        Field::new("nullable", DataType::Boolean, false),
+                        Field::new("name", DataType::Utf8, false),
+                        Field::new("datatype", DataType::Binary, false),
+                    ]
+                    .into(),
+                )),
             ),
             DataType::Dictionary(
-                Box::new(DataType::Decimal(10, 50)),
+                Box::new(DataType::Decimal128(10, 50)),
                 Box::new(DataType::FixedSizeList(
                     new_box_field("Level1", DataType::Binary, true),
                     4,
@@ -805,9 +842,9 @@ mod roundtrip_tests {
             Arc::new(DataType::Float64),
             Volatility::Immutable,
             // This is the accumulator factory; DataFusion uses it to create new accumulators.
-            Arc::new(|| Ok(Box::new(Dummy {}))),
+            Arc::new(|_| Ok(Box::new(Dummy {}))),
             // This is the description of the state. `state()` must match the types here.
-            Arc::new(vec![DataType::Float64, DataType::UInt32]),
+            Arc::new(|_, _| Ok(Arc::new(vec![DataType::Float64, DataType::UInt32]))),
         );
 
         let test_expr = Expr::AggregateUDF {

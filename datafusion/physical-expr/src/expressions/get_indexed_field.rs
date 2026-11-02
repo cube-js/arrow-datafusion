@@ -67,7 +67,7 @@ impl GetIndexedFieldExpr {
                                 "Field {} not found in struct",
                                 v
                             ))),
-                            Some(f) => return Ok(f.clone()),
+                            Some(f) => return Ok(f.as_ref().clone()),
                         }
                     }
                 }
@@ -81,7 +81,7 @@ impl GetIndexedFieldExpr {
                 Ok(Field::new("unknown", lt.data_type().clone(), false))
             },
             other => Err(DataFusionError::Plan(format!(
-                "The expression to get an indexed field is only valid for `List` and `Struct` types, actual: {}",
+                "The expression to get an indexed field is only valid for `List` and `Struct` types, actual: {:?}",
                 other
             ))),
         }
@@ -158,7 +158,7 @@ impl PhysicalExpr for GetIndexedFieldExpr {
                         Some(col) => Ok(ColumnarValue::Array(col.clone()))
                     }
                 }
-                (dt, key) => Err(DataFusionError::Execution(format!("get indexed field is only possible on lists with int64 indexes. Tried {} with {:?} index", dt, key))),
+                (dt, key) => Err(DataFusionError::Execution(format!("get indexed field is only possible on lists with int64 indexes. Tried {:?} with {:?} index", dt, key))),
             },
             ColumnarValue::Array(wrapper) => match (left.data_type(), wrapper.data_type()) {
                 (DataType::List(_), _) if wrapper.is_null(0) => {
@@ -225,7 +225,7 @@ mod tests {
     use datafusion_common::Result;
 
     fn build_utf8_lists(list_of_lists: Vec<Vec<Option<&str>>>) -> GenericListArray<i32> {
-        let builder = StringBuilder::new(list_of_lists.len());
+        let builder = StringBuilder::new();
         let mut lb = ListBuilder::new(builder);
         for values in list_of_lists {
             let builder = lb.values();
@@ -234,9 +234,8 @@ mod tests {
                     None => builder.append_null(),
                     Some(v) => builder.append_value(v),
                 }
-                .unwrap()
             }
-            lb.append(true).unwrap();
+            lb.append(true);
         }
 
         lb.finish()
@@ -266,7 +265,7 @@ mod tests {
     fn list_schema(col: &str) -> Schema {
         Schema::new(vec![Field::new(
             col,
-            DataType::List(Box::new(Field::new("item", DataType::Utf8, true))),
+            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
             true,
         )])
     }
@@ -293,7 +292,7 @@ mod tests {
     #[test]
     fn get_indexed_field_empty_list() -> Result<()> {
         let schema = list_schema("l");
-        let builder = StringBuilder::new(0);
+        let builder = StringBuilder::new();
         let mut lb = ListBuilder::new(builder);
         let expr = col("l", &schema).unwrap();
         let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(lb.finish())])?;
@@ -310,7 +309,7 @@ mod tests {
         key: Arc<dyn PhysicalExpr>,
         expected: &str,
     ) -> Result<()> {
-        let builder = StringBuilder::new(3);
+        let builder = StringBuilder::new();
         let mut lb = ListBuilder::new(builder);
         let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(lb.finish())])?;
         let expr = Arc::new(GetIndexedFieldExpr::new(expr, key));
@@ -335,7 +334,7 @@ mod tests {
             schema,
             expr,
             lit(ScalarValue::Int8(Some(0))),
-            r#"Execution error: get indexed field is only possible on lists with int64 indexes. Tried List(Field { name: "item", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None }) with Int8(0) index"#,
+            r#"Execution error: get indexed field is only possible on lists with int64 indexes. Tried List(Field { data_type: Utf8, nullable: true }) with Int8(0) index"#,
         )
     }
 
@@ -344,7 +343,7 @@ mod tests {
         list_of_tuples: Vec<(Option<i64>, Vec<Option<&str>>)>,
     ) -> StructArray {
         let foo_builder = Int64Array::builder(list_of_tuples.len());
-        let str_builder = StringBuilder::new(list_of_tuples.len());
+        let str_builder = StringBuilder::new();
         let bar_builder = ListBuilder::new(str_builder);
         let mut builder = StructBuilder::new(
             fields,
@@ -356,8 +355,7 @@ mod tests {
                 None => fb.append_null(),
                 Some(v) => fb.append_value(v),
             }
-            .unwrap();
-            builder.append(true).unwrap();
+            builder.append(true);
             let lb = builder
                 .field_builder::<ListBuilder<StringBuilder>>(1)
                 .unwrap();
@@ -366,9 +364,8 @@ mod tests {
                     None => lb.values().append_null(),
                     Some(v) => lb.values().append_value(v),
                 }
-                .unwrap();
             }
-            lb.append(true).unwrap();
+            lb.append(true);
         }
         builder.finish()
     }
@@ -383,13 +380,13 @@ mod tests {
             Field::new("foo", DataType::Int64, true),
             Field::new(
                 "bar",
-                DataType::List(Box::new(Field::new("item", DataType::Utf8, true))),
+                DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
                 true,
             ),
         ];
         let schema = Schema::new(vec![Field::new(
             struct_col,
-            DataType::Struct(fields.clone()),
+            DataType::Struct(fields.clone().into()),
             true,
         )]);
         let struct_col = build_struct(fields, list_of_tuples.clone());

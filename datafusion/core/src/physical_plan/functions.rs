@@ -3102,7 +3102,7 @@ mod tests {
         assert_eq!(
             expr.data_type(&schema)?,
             // type equals to a common coercion
-            DataType::FixedSizeList(Box::new(Field::new("item", expected_type, true)), 2)
+            DataType::FixedSizeList(Arc::new(Field::new("item", expected_type, true)), 2)
         );
 
         // evaluate works
@@ -3167,7 +3167,7 @@ mod tests {
         // type is correct
         assert_eq!(
             expr.data_type(&schema)?,
-            DataType::List(Box::new(Field::new("item", DataType::Utf8, true)))
+            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true)))
         );
 
         // evaluate works
@@ -3206,7 +3206,7 @@ mod tests {
         // type is correct
         assert_eq!(
             expr.data_type(&schema)?,
-            DataType::List(Box::new(Field::new("item", DataType::Utf8, true)))
+            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true)))
         );
 
         // evaluate works

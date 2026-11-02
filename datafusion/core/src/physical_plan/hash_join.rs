@@ -783,8 +783,8 @@ fn build_join_indexes(
             ))
         }
         JoinType::Left => {
-            let mut left_indices = UInt64Builder::new(0);
-            let mut right_indices = UInt32Builder::new(0);
+            let mut left_indices = UInt64Builder::with_capacity(0);
+            let mut right_indices = UInt32Builder::with_capacity(0);
 
             // First visit all of the rows
             for (row, hash_value) in hash_values.iter().enumerate() {
@@ -800,8 +800,8 @@ fn build_join_indexes(
                             &keys_values,
                             *null_equals_null,
                         )? {
-                            left_indices.append_value(i)?;
-                            right_indices.append_value(row as u32)?;
+                            left_indices.append_value(i);
+                            right_indices.append_value(row as u32);
                         }
                     }
                 };
@@ -809,8 +809,8 @@ fn build_join_indexes(
             Ok((left_indices.finish(), right_indices.finish()))
         }
         JoinType::Right | JoinType::Full => {
-            let mut left_indices = UInt64Builder::new(0);
-            let mut right_indices = UInt32Builder::new(0);
+            let mut left_indices = UInt64Builder::with_capacity(0);
+            let mut right_indices = UInt32Builder::with_capacity(0);
 
             for (row, hash_value) in hash_values.iter().enumerate() {
                 match left.0.get(*hash_value, |(hash, _)| *hash_value == *hash) {
@@ -824,22 +824,22 @@ fn build_join_indexes(
                                 &keys_values,
                                 *null_equals_null,
                             )? {
-                                left_indices.append_value(i)?;
-                                right_indices.append_value(row as u32)?;
+                                left_indices.append_value(i);
+                                right_indices.append_value(row as u32);
                                 no_match = false;
                             }
                         }
                         // If no rows matched left, still must keep the right
                         // with all nulls for left
                         if no_match {
-                            left_indices.append_null()?;
-                            right_indices.append_value(row as u32)?;
+                            left_indices.append_null();
+                            right_indices.append_value(row as u32);
                         }
                     }
                     None => {
                         // when no match, add the row with None for the left side
-                        left_indices.append_null()?;
-                        right_indices.append_value(row as u32)?;
+                        left_indices.append_null();
+                        right_indices.append_value(row as u32);
                     }
                 }
             }
@@ -2037,13 +2037,13 @@ mod tests {
             &false,
         )?;
 
-        let mut left_ids = UInt64Builder::new(0);
-        left_ids.append_value(0)?;
-        left_ids.append_value(1)?;
+        let mut left_ids = UInt64Builder::with_capacity(0);
+        left_ids.append_value(0);
+        left_ids.append_value(1);
 
-        let mut right_ids = UInt32Builder::new(0);
-        right_ids.append_value(0)?;
-        right_ids.append_value(1)?;
+        let mut right_ids = UInt32Builder::with_capacity(0);
+        right_ids.append_value(0);
+        right_ids.append_value(1);
 
         assert_eq!(left_ids.finish(), l);
 

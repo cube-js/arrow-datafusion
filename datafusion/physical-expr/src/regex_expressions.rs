@@ -21,8 +21,9 @@
 
 //! Regex expressions
 
-use arrow::array::{ArrayRef, GenericStringArray, StringOffsetSizeTrait};
-use arrow::compute;
+use arrow::array::{
+    ArrayRef, GenericStringArray, GenericStringBuilder, ListBuilder, OffsetSizeTrait,
+};
 use datafusion_common::{DataFusionError, Result};
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
@@ -44,19 +45,88 @@ macro_rules! downcast_string_arg {
     }};
 }
 
+/// Row-wise `regexp_match` kernel with the arrow 13 semantics: every row has its own
+/// pattern (and optional flags), only the capture groups (never the whole match) are
+/// returned, and an empty pattern yields `{""}`.
+///
+/// arrow-rs 60's `regexp_match` returns the whole match when a pattern has no capture
+/// groups, so it is not a drop-in replacement.
+fn regexp_match_kernel<T: OffsetSizeTrait>(
+    array: &GenericStringArray<T>,
+    regex_array: &GenericStringArray<T>,
+    flags_array: Option<&GenericStringArray<T>>,
+) -> Result<ArrayRef> {
+    let mut patterns: HashMap<String, Regex> = HashMap::new();
+    let builder: GenericStringBuilder<T> = GenericStringBuilder::new();
+    let mut list_builder = ListBuilder::new(builder);
+
+    let complete_pattern = match flags_array {
+        Some(flags) => Box::new(regex_array.iter().zip(flags.iter()).map(
+            |(pattern, flags)| {
+                pattern.map(|pattern| match flags {
+                    Some(value) => format!("(?{}){}", value, pattern),
+                    None => pattern.to_string(),
+                })
+            },
+        )) as Box<dyn Iterator<Item = Option<String>>>,
+        None => Box::new(
+            regex_array
+                .iter()
+                .map(|pattern| pattern.map(|pattern| pattern.to_string())),
+        ),
+    };
+
+    for (value, pattern) in array.iter().zip(complete_pattern) {
+        match (value, pattern) {
+            (Some(_), Some(pattern)) if pattern.is_empty() => {
+                list_builder.values().append_value("");
+                list_builder.append(true);
+            }
+            (Some(value), Some(pattern)) => {
+                let re = match patterns.get(&pattern) {
+                    Some(re) => re.clone(),
+                    None => {
+                        let re = Regex::new(pattern.as_str()).map_err(|e| {
+                            DataFusionError::ArrowError(
+                                arrow::error::ArrowError::ComputeError(format!(
+                                    "Regular expression did not compile: {:?}",
+                                    e
+                                )),
+                            )
+                        })?;
+                        patterns.insert(pattern, re.clone());
+                        re
+                    }
+                };
+                match re.captures(value) {
+                    Some(caps) => {
+                        for m in caps.iter().skip(1).flatten() {
+                            list_builder.values().append_value(m.as_str());
+                        }
+                        list_builder.append(true);
+                    }
+                    None => list_builder.append(false),
+                }
+            }
+            _ => list_builder.append(false),
+        }
+    }
+    Ok(Arc::new(list_builder.finish()))
+}
+
 /// extract a specific group from a string column, using a regular expression
-pub fn regexp_match<T: StringOffsetSizeTrait>(args: &[ArrayRef]) -> Result<ArrayRef> {
+pub fn regexp_match<T: OffsetSizeTrait>(args: &[ArrayRef]) -> Result<ArrayRef> {
     match args.len() {
         2 => {
             let values = downcast_string_arg!(args[0], "string", T);
             let regex = downcast_string_arg!(args[1], "pattern", T);
-            compute::regexp_match(values, regex, None).map_err(DataFusionError::ArrowError)
+            regexp_match_kernel(values, regex, None)
         }
         3 => {
             let values = downcast_string_arg!(args[0], "string", T);
             let regex = downcast_string_arg!(args[1], "pattern", T);
             let flags = Some(downcast_string_arg!(args[2], "flags", T));
-            compute::regexp_match(values, regex,  flags).map_err(DataFusionError::ArrowError)
+            regexp_match_kernel(values, regex, flags)
         }
         other => Err(DataFusionError::Internal(format!(
             "regexp_match was called with {} arguments. It requires at least 2 and at most 3.",
@@ -79,7 +149,7 @@ fn regex_replace_posix_groups(replacement: &str) -> String {
 /// Replaces substring(s) matching a POSIX regular expression.
 ///
 /// example: `regexp_replace('Thomas', '.[mN]a.', 'M') = 'ThM'`
-pub fn regexp_replace<T: StringOffsetSizeTrait>(args: &[ArrayRef]) -> Result<ArrayRef> {
+pub fn regexp_replace<T: OffsetSizeTrait>(args: &[ArrayRef]) -> Result<ArrayRef> {
     // creating Regex is expensive so create hashmap for memoization
     let mut patterns: HashMap<String, Regex> = HashMap::new();
 
@@ -220,15 +290,15 @@ mod tests {
         let patterns =
             StringArray::from(vec!["^(a)", "^(A)", "(b|d)", "(B|D)", "^(b|c)"]);
 
-        let elem_builder: GenericStringBuilder<i32> = GenericStringBuilder::new(0);
+        let elem_builder: GenericStringBuilder<i32> = GenericStringBuilder::new();
         let mut expected_builder = ListBuilder::new(elem_builder);
-        expected_builder.values().append_value("a").unwrap();
-        expected_builder.append(true).unwrap();
-        expected_builder.append(false).unwrap();
-        expected_builder.values().append_value("b").unwrap();
-        expected_builder.append(true).unwrap();
-        expected_builder.append(false).unwrap();
-        expected_builder.append(false).unwrap();
+        expected_builder.values().append_value("a");
+        expected_builder.append(true);
+        expected_builder.append(false);
+        expected_builder.values().append_value("b");
+        expected_builder.append(true);
+        expected_builder.append(false);
+        expected_builder.append(false);
         let expected = expected_builder.finish();
 
         let re = regexp_match::<i32>(&[Arc::new(values), Arc::new(patterns)]).unwrap();
@@ -243,17 +313,17 @@ mod tests {
             StringArray::from(vec!["^(a)", "^(A)", "(b|d)", "(B|D)", "^(b|c)"]);
         let flags = StringArray::from(vec!["i"; 5]);
 
-        let elem_builder: GenericStringBuilder<i32> = GenericStringBuilder::new(0);
+        let elem_builder: GenericStringBuilder<i32> = GenericStringBuilder::new();
         let mut expected_builder = ListBuilder::new(elem_builder);
-        expected_builder.values().append_value("a").unwrap();
-        expected_builder.append(true).unwrap();
-        expected_builder.values().append_value("a").unwrap();
-        expected_builder.append(true).unwrap();
-        expected_builder.values().append_value("b").unwrap();
-        expected_builder.append(true).unwrap();
-        expected_builder.values().append_value("b").unwrap();
-        expected_builder.append(true).unwrap();
-        expected_builder.append(false).unwrap();
+        expected_builder.values().append_value("a");
+        expected_builder.append(true);
+        expected_builder.values().append_value("a");
+        expected_builder.append(true);
+        expected_builder.values().append_value("b");
+        expected_builder.append(true);
+        expected_builder.values().append_value("b");
+        expected_builder.append(true);
+        expected_builder.append(false);
         let expected = expected_builder.finish();
 
         let re =

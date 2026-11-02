@@ -20,17 +20,16 @@
 use crate::arrow::array::{
     make_array, Array, ArrayBuilder, ArrayData, ArrayDataBuilder, ArrayRef,
     BooleanBuilder, LargeStringArray, ListBuilder, NullArray, OffsetSizeTrait,
-    PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder,
-    StringDictionaryBuilder,
+    PrimitiveArray, StringArray, StringBuilder, StringDictionaryBuilder,
 };
 use crate::arrow::buffer::{Buffer, MutableBuffer};
 use crate::arrow::datatypes::{
     ArrowDictionaryKeyType, ArrowNumericType, ArrowPrimitiveType, DataType, Date32Type,
-    Date64Type, Field, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type,
-    Int8Type, Schema, Time32MillisecondType, Time32SecondType, Time64MicrosecondType,
-    Time64NanosecondType, TimeUnit, TimestampMicrosecondType, TimestampMillisecondType,
-    TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type, UInt64Type,
-    UInt8Type,
+    Date64Type, Field, FieldRef, Float32Type, Float64Type, Int16Type, Int32Type,
+    Int64Type, Int8Type, Schema, Time32MillisecondType, Time32SecondType,
+    Time64MicrosecondType, Time64NanosecondType, TimeUnit, TimestampMicrosecondType,
+    TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type,
+    UInt32Type, UInt64Type, UInt8Type,
 };
 use crate::arrow::error::ArrowError;
 use crate::arrow::record_batch::RecordBatch;
@@ -117,14 +116,13 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
         let projection = self.projection.clone().unwrap_or_else(Vec::new);
         let arrays =
             self.build_struct_array(rows.as_slice(), self.schema.fields(), &projection);
-        let projected_fields: Vec<Field> = if projection.is_empty() {
+        let projected_fields: Vec<FieldRef> = if projection.is_empty() {
             self.schema.fields().to_vec()
         } else {
             projection
                 .iter()
-                .map(|name| self.schema.column_with_name(name))
-                .flatten()
-                .map(|(_, field)| field.clone())
+                .filter_map(|name| self.schema.fields().find(name))
+                .map(|(_, field)| Arc::clone(field))
                 .collect()
         };
         let projected_schema = Arc::new(Schema::new(projected_fields));
@@ -136,16 +134,16 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
         rows: RecordSlice,
         col_name: &str,
     ) -> ArrowResult<ArrayRef> {
-        let mut builder = BooleanBuilder::new(rows.len());
+        let mut builder = BooleanBuilder::with_capacity(rows.len());
         for row in rows {
             if let Some(value) = self.field_lookup(col_name, row) {
                 if let Some(boolean) = resolve_boolean(&value) {
-                    builder.append_value(boolean)?
+                    builder.append_value(boolean)
                 } else {
-                    builder.append_null()?;
+                    builder.append_null();
                 }
             } else {
-                builder.append_null()?;
+                builder.append_null();
             }
         }
         Ok(Arc::new(builder.finish()))
@@ -180,9 +178,11 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
     where
         T: ArrowPrimitiveType + ArrowDictionaryKeyType,
     {
-        let key_builder = PrimitiveBuilder::<T>::new(row_len);
-        let values_builder = StringBuilder::new(row_len * 5);
-        Ok(StringDictionaryBuilder::new(key_builder, values_builder))
+        Ok(StringDictionaryBuilder::with_capacity(
+            row_len,
+            row_len,
+            row_len * 5,
+        ))
     }
 
     fn build_wrapped_list_array(
@@ -267,7 +267,8 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
     {
         let mut builder: Box<dyn ArrayBuilder> = match data_type {
             DataType::Utf8 => {
-                let values_builder = StringBuilder::new(rows.len() * 5);
+                let values_builder =
+                    StringBuilder::with_capacity(rows.len(), rows.len() * 5);
                 Box::new(ListBuilder::new(values_builder))
             }
             DataType::Dictionary(_, _) => {
@@ -317,14 +318,14 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
                             ))?;
                         for val in vals {
                             if let Some(v) = val {
-                                builder.values().append_value(&v)?
+                                builder.values().append_value(&v)
                             } else {
-                                builder.values().append_null()?
+                                builder.values().append_null()
                             };
                         }
 
                         // Append to the list
-                        builder.append(true)?;
+                        builder.append(true);
                     }
                     DataType::Dictionary(_, _) => {
                         let builder = builder.as_any_mut().downcast_mut::<ListBuilder<StringDictionaryBuilder<D>>>().ok_or_else(||ArrowError::SchemaError(
@@ -334,12 +335,12 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
                             if let Some(v) = val {
                                 let _ = builder.values().append(&v)?;
                             } else {
-                                builder.values().append_null()?
+                                builder.values().append_null()
                             };
                         }
 
                         // Append to the list
-                        builder.append(true)?;
+                        builder.append(true);
                     }
                     e => {
                         return Err(SchemaError(format!(
@@ -371,10 +372,10 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
                 if let Ok(str_v) = resolve_string(&value) {
                     builder.append(str_v).map(drop)?
                 } else {
-                    builder.append_null()?
+                    builder.append_null()
                 }
             } else {
-                builder.append_null()?
+                builder.append_null()
             }
         }
         Ok(Arc::new(builder.finish()) as ArrayRef)
@@ -452,7 +453,7 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
         });
         let valid_len = cur_offset.to_usize().unwrap();
         let array_data = match list_field.data_type() {
-            DataType::Null => NullArray::new(valid_len).data().clone(),
+            DataType::Null => NullArray::new(valid_len).to_data(),
             DataType::Boolean => {
                 let num_bytes = bit_util::ceil(valid_len, 8);
                 let mut bool_values = MutableBuffer::from_len_zeroed(num_bytes);
@@ -484,7 +485,7 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
                 ArrayData::builder(list_field.data_type().clone())
                     .len(valid_len)
                     .add_buffer(bool_values.into())
-                    .null_bit_buffer(bool_nulls.into())
+                    .null_bit_buffer(Some(bool_nulls.into()))
                     .build()
                     .unwrap()
             }
@@ -513,22 +514,20 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
             DataType::Utf8 => flatten_string_values(rows)
                 .into_iter()
                 .collect::<StringArray>()
-                .data()
-                .clone(),
+                .to_data(),
             DataType::LargeUtf8 => flatten_string_values(rows)
                 .into_iter()
                 .collect::<LargeStringArray>()
-                .data()
-                .clone(),
+                .to_data(),
             DataType::List(field) => {
                 let child =
                     self.build_nested_list_array::<i32>(&flatten_values(rows), field)?;
-                child.data().clone()
+                child.to_data()
             }
             DataType::LargeList(field) => {
                 let child =
                     self.build_nested_list_array::<i64>(&flatten_values(rows), field)?;
-                child.data().clone()
+                child.to_data()
             }
             DataType::Struct(fields) => {
                 // extract list values, with non-lists converted to Value::Null
@@ -564,14 +563,13 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
                     })
                     .collect();
                 let rows = rows.iter().collect::<Vec<&Vec<(String, Value)>>>();
-                let arrays =
-                    self.build_struct_array(rows.as_slice(), fields.as_slice(), &[])?;
+                let arrays = self.build_struct_array(rows.as_slice(), fields, &[])?;
                 let data_type = DataType::Struct(fields.clone());
                 let buf = null_buffer.into();
                 ArrayDataBuilder::new(data_type)
                     .len(rows.len())
-                    .null_bit_buffer(buf)
-                    .child_data(arrays.into_iter().map(|a| a.data().clone()).collect())
+                    .null_bit_buffer(Some(buf))
+                    .child_data(arrays.into_iter().map(|a| a.to_data()).collect())
                     .build()
                     .unwrap()
             }
@@ -583,11 +581,11 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
             }
         };
         // build list
-        let list_data = ArrayData::builder(DataType::List(Box::new(list_field.clone())))
+        let list_data = ArrayData::builder(DataType::List(Arc::new(list_field.clone())))
             .len(list_len)
             .add_buffer(Buffer::from_slice_ref(&offsets))
             .add_child_data(array_data)
-            .null_bit_buffer(list_nulls.into())
+            .null_bit_buffer(Some(Buffer::from(&*list_nulls)))
             .build()
             .unwrap();
         Ok(Arc::new(GenericListArray::<OffsetSize>::from(list_data)))
@@ -604,7 +602,7 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
     fn build_struct_array(
         &self,
         rows: RecordSlice,
-        struct_fields: &[Field],
+        struct_fields: &[FieldRef],
         projection: &[String],
     ) -> ArrowResult<Vec<ArrayRef>> {
         let arrays: ArrowResult<Vec<ArrayRef>> = struct_fields
@@ -778,10 +776,8 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
                         let data_type = DataType::Struct(fields.clone());
                         let data = ArrayDataBuilder::new(data_type)
                             .len(len)
-                            .null_bit_buffer(null_buffer.into())
-                            .child_data(
-                                arrays.into_iter().map(|a| a.data().clone()).collect(),
-                            )
+                            .null_bit_buffer(Some(null_buffer.into()))
+                            .child_data(arrays.into_iter().map(|a| a.to_data()).collect())
                             .build()
                             .unwrap();
                         Ok(make_array(data))
@@ -819,7 +815,7 @@ impl<'a, R: Read> AvroArrowArrayReader<'a, R> {
             })
             .collect::<Vec<Option<T::Native>>>();
         let array = values.iter().collect::<PrimitiveArray<T>>();
-        array.data().clone()
+        array.to_data()
     }
 
     fn field_lookup<'b>(
@@ -861,6 +857,7 @@ fn flatten_string_values(values: &[&Value]) -> Vec<Option<String>> {
     values
         .iter()
         .flat_map(|row| {
+            let row = maybe_resolve_union(row);
             if let Value::Array(values) = row {
                 values
                     .iter()
@@ -988,8 +985,9 @@ mod test {
     use arrow::array::{Int32Array, Int64Array, ListArray, TimestampMicrosecondArray};
     use arrow::datatypes::DataType;
     use std::fs::File;
+    use std::sync::Arc;
 
-    fn build_reader(name: &str, batch_size: usize) -> Reader<File> {
+    fn build_reader(name: &str, batch_size: usize) -> Reader<'_, File> {
         let testdata = crate::test_util::arrow_test_data();
         let filename = format!("{}/avro/{}", testdata, name);
         let builder = ReaderBuilder::new()
@@ -1050,7 +1048,7 @@ mod test {
             .unwrap();
         assert_eq!(
             *a_array.data_type(),
-            DataType::List(Box::new(Field::new("bigint", DataType::Int64, true)))
+            DataType::List(Arc::new(Field::new("bigint", DataType::Int64, true)))
         );
         let array = a_array.value(0);
         assert_eq!(*array.data_type(), DataType::Int64);

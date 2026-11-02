@@ -88,7 +88,7 @@ impl PercentileCont {
             DataType::Float64 | DataType::Interval(_) => (),
             typ => {
                 return Err(DataFusionError::Plan(format!(
-                    "WITHIN GROUP (ORDER BY ...) must be Float64 or Interval, got {}",
+                    "WITHIN GROUP (ORDER BY ...) must be Float64 or Interval, got {:?}",
                     typ
                 )))
             }
@@ -121,33 +121,33 @@ impl AggregateExpr for PercentileCont {
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![
             Field::new(
-                &format_state_name(&self.name, "max_size"),
+                format_state_name(&self.name, "max_size"),
                 DataType::UInt64,
                 false,
             ),
             Field::new(
-                &format_state_name(&self.name, "sum"),
+                format_state_name(&self.name, "sum"),
                 DataType::Float64,
                 false,
             ),
             Field::new(
-                &format_state_name(&self.name, "count"),
+                format_state_name(&self.name, "count"),
                 DataType::Float64,
                 false,
             ),
             Field::new(
-                &format_state_name(&self.name, "max"),
+                format_state_name(&self.name, "max"),
                 DataType::Float64,
                 false,
             ),
             Field::new(
-                &format_state_name(&self.name, "min"),
+                format_state_name(&self.name, "min"),
                 DataType::Float64,
                 false,
             ),
             Field::new(
-                &format_state_name(&self.name, "centroids"),
-                DataType::List(Box::new(Field::new("item", DataType::Float64, true))),
+                format_state_name(&self.name, "centroids"),
+                DataType::List(Arc::new(Field::new("item", DataType::Float64, true))),
                 false,
             ),
         ])

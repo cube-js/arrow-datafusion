@@ -15,18 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::sync::Arc;
-
-use crate::expressions::binary::{eq_decimal, eq_decimal_scalar, eq_null};
+use crate::expressions::binary::{compare_array_scalar, compare_datum, ComparisonOp};
 use arrow::array::Array;
 use arrow::array::*;
-use arrow::compute::kernels::boolean::nullif;
-use arrow::compute::kernels::comparison::{
-    eq, eq_bool, eq_bool_scalar, eq_scalar, eq_utf8, eq_utf8_scalar,
-};
-use arrow::datatypes::{DataType, TimeUnit};
+use arrow::compute::kernels::nullif::nullif;
+use arrow::datatypes::DataType;
 use cube_ext::nullif_func_str;
-use datafusion_common::ScalarValue;
 use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::ColumnarValue;
 
@@ -41,7 +35,7 @@ macro_rules! compute_bool_array_op {
             .as_any()
             .downcast_ref::<BooleanArray>()
             .expect("compute_op failed to downcast array");
-        Ok(Arc::new($OP(&ll, &rr)?) as ArrayRef)
+        Ok($OP(ll, rr)?)
     }};
 }
 
@@ -92,25 +86,25 @@ pub fn nullif_func(args: &[ColumnarValue]) -> Result<ColumnarValue> {
             let right = rhs.to_array_of_size(1);
 
             // Get args0 == args1 evaluated and produce a boolean array
-            let cond_array = binary_array_op!(left, right, eq)?;
+            let cond_array = compare_datum(ComparisonOp::Eq, &left, &right)?;
 
             // Now, invoke nullif on the result
-            let array = primitive_bool_array_op!(left, *cond_array, nullif)?;
+            let array = primitive_bool_array_op!(left, cond_array, nullif)?;
             Ok(ColumnarValue::Array(array))
         }
         (ColumnarValue::Array(lhs), ColumnarValue::Array(rhs)) => {
             // Get args0 == args1 evaluated and produce a boolean array
-            let cond_array = binary_array_op!(lhs, rhs, eq)?;
+            let cond_array = compare_datum(ComparisonOp::Eq, lhs, rhs)?;
 
             // Now, invoke nullif on the result
-            let array = primitive_bool_array_op!(lhs, *cond_array, nullif)?;
+            let array = primitive_bool_array_op!(lhs, cond_array, nullif)?;
             Ok(ColumnarValue::Array(array))
         }
         // align
         (ColumnarValue::Array(lhs), ColumnarValue::Scalar(rhs)) => {
-            let cond_array = binary_array_op_scalar!(lhs, rhs.clone(), eq).unwrap()?;
+            let cond_array = compare_array_scalar(ComparisonOp::Eq, lhs.as_ref(), rhs)?;
 
-            let array = primitive_bool_array_op!(lhs, *cond_array, nullif)?;
+            let array = primitive_bool_array_op!(lhs, cond_array, nullif)?;
 
             Ok(ColumnarValue::Array(array))
         }
@@ -118,10 +112,10 @@ pub fn nullif_func(args: &[ColumnarValue]) -> Result<ColumnarValue> {
             let lhs = lhs.to_array_of_size(rhs.len());
 
             // Get args0 == args1 evaluated and produce a boolean array
-            let cond_array = binary_array_op!(lhs, rhs, eq)?;
+            let cond_array = compare_datum(ComparisonOp::Eq, &lhs, rhs)?;
 
             // Now, invoke nullif on the result
-            let array = primitive_bool_array_op!(lhs, *cond_array, nullif)?;
+            let array = primitive_bool_array_op!(lhs, cond_array, nullif)?;
             Ok(ColumnarValue::Array(array))
         }
     }
@@ -130,7 +124,8 @@ pub fn nullif_func(args: &[ColumnarValue]) -> Result<ColumnarValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use datafusion_common::Result;
+    use datafusion_common::{Result, ScalarValue};
+    use std::sync::Arc;
 
     #[test]
     fn nullif_int32() -> Result<()> {

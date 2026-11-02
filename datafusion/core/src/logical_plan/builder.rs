@@ -445,7 +445,7 @@ impl LogicalPlanBuilder {
                             DFField::from_qualified(&table_name, schema.field(*i).clone())
                         })
                         .collect(),
-                    schema.metadata().clone(),
+                    schema.metadata().into(),
                 )
             })
             .unwrap_or_else(|| {
@@ -1349,7 +1349,7 @@ pub fn union_with_alias(
                 comparison_eq_coercion(left_field.data_type(), right_field.data_type())
                     .ok_or_else(|| {
                         DataFusionError::Plan(format!(
-                    "UNION Column {} (type: {}) is not compatible with column {} (type: {})",
+                    "UNION Column {} (type: {:?}) is not compatible with column {} (type: {:?})",
                     right_field.name(),
                     right_field.data_type(),
                     left_field.name(),

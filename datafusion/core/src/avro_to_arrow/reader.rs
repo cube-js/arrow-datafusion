@@ -176,7 +176,7 @@ mod tests {
     use arrow::datatypes::TimeUnit;
     use std::fs::File;
 
-    fn build_reader(name: &str) -> Reader<File> {
+    fn build_reader(name: &str) -> Reader<'_, File> {
         let testdata = crate::test_util::arrow_test_data();
         let filename = format!("{}/avro/{}", testdata, name);
         let builder = ReaderBuilder::new().read_schema().with_batch_size(64);

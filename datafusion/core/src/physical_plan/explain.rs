@@ -116,8 +116,10 @@ impl ExecutionPlan for ExplainExec {
             )));
         }
 
-        let mut type_builder = StringBuilder::new(self.stringified_plans.len());
-        let mut plan_builder = StringBuilder::new(self.stringified_plans.len());
+        let mut type_builder =
+            StringBuilder::with_capacity(self.stringified_plans.len(), 1024);
+        let mut plan_builder =
+            StringBuilder::with_capacity(self.stringified_plans.len(), 1024);
 
         let plans_to_print = self
             .stringified_plans
@@ -128,13 +130,13 @@ impl ExecutionPlan for ExplainExec {
         let mut prev: Option<&StringifiedPlan> = None;
 
         for p in plans_to_print {
-            type_builder.append_value(p.plan_type.to_string())?;
+            type_builder.append_value(p.plan_type.to_string());
             match prev {
                 Some(prev) if !should_show(prev, p) => {
-                    plan_builder.append_value("SAME TEXT AS ABOVE")?;
+                    plan_builder.append_value("SAME TEXT AS ABOVE");
                 }
                 Some(_) | None => {
-                    plan_builder.append_value(&*p.plan)?;
+                    plan_builder.append_value(&*p.plan);
                 }
             }
             prev = Some(p);

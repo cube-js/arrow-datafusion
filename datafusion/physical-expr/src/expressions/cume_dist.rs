@@ -126,7 +126,7 @@ mod tests {
             .evaluate_with_rank(vec![partition], ranks)?;
         assert_eq!(1, result.len());
         let result = result[0].as_any().downcast_ref::<Float64Array>().unwrap();
-        let result = result.values();
+        let result = result.values().to_vec();
         assert_eq!(expected, result);
         Ok(())
     }

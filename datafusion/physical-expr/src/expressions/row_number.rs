@@ -93,14 +93,14 @@ mod tests {
         let arr: ArrayRef = Arc::new(BooleanArray::from(vec![
             None, None, None, None, None, None, None, None,
         ]));
-        let schema = Schema::new(vec![Field::new("arr", DataType::Boolean, false)]);
+        let schema = Schema::new(vec![Field::new("arr", DataType::Boolean, true)]);
         let batch = RecordBatch::try_new(Arc::new(schema), vec![arr])?;
         let row_number = RowNumber::new("row_number".to_owned());
         #[allow(clippy::single_range_in_vec_init)]
         let result = row_number.create_evaluator(&batch)?.evaluate(vec![0..8])?;
         assert_eq!(1, result.len());
         let result = result[0].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let result = result.values();
+        let result = result.values().to_vec();
         assert_eq!(vec![1, 2, 3, 4, 5, 6, 7, 8], result);
         Ok(())
     }
@@ -117,7 +117,7 @@ mod tests {
         let result = row_number.create_evaluator(&batch)?.evaluate(vec![0..8])?;
         assert_eq!(1, result.len());
         let result = result[0].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let result = result.values();
+        let result = result.values().to_vec();
         assert_eq!(vec![1, 2, 3, 4, 5, 6, 7, 8], result);
         Ok(())
     }

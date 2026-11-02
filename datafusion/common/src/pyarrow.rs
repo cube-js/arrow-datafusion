@@ -18,12 +18,12 @@
 //! PyArrow
 
 use crate::{DataFusionError, ScalarValue};
-use arrow::array::ArrayData;
-use arrow::pyarrow::PyArrowConvert;
+use arrow::array::{make_array, Array, ArrayData};
+use arrow::pyarrow::{FromPyArrow, ToPyArrow};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::PyErr;
-use pyo3::types::PyList;
-use pyo3::{FromPyObject, IntoPy, PyAny, PyObject, PyResult, Python};
+use pyo3::types::{PyAnyMethods, PyList};
+use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, PyAny, PyResult, Python};
 
 impl From<DataFusionError> for PyErr {
     fn from(err: DataFusionError) -> PyErr {
@@ -31,68 +31,85 @@ impl From<DataFusionError> for PyErr {
     }
 }
 
-impl PyArrowConvert for ScalarValue {
-    fn from_pyarrow(value: &PyAny) -> PyResult<Self> {
+impl FromPyArrow for ScalarValue {
+    fn from_pyarrow_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let py = value.py();
         let typ = value.getattr("type")?;
         let val = value.call_method0("as_py")?;
 
         // construct pyarrow array from the python value and pyarrow type
         let factory = py.import("pyarrow")?.getattr("array")?;
-        let args = PyList::new(py, &[val]);
+        let args = PyList::new(py, [val])?;
         let array = factory.call1((args, typ))?;
 
         // convert the pyarrow array to rust array using C data interface
-        let array = array.extract::<ArrayData>()?;
-        let scalar = ScalarValue::try_from_array(&array.into(), 0)?;
+        let array = make_array(ArrayData::from_pyarrow_bound(&array)?);
+        let scalar = ScalarValue::try_from_array(&array, 0)?;
 
         Ok(scalar)
     }
+}
 
-    fn to_pyarrow(&self, py: Python) -> PyResult<PyObject> {
+impl ToPyArrow for ScalarValue {
+    fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let array = self.to_array();
         // convert to pyarrow array using C data interface
-        let pyarray = array.data_ref().clone().into_py(py);
-        let pyscalar = pyarray.call_method1(py, "__getitem__", (0,))?;
+        let pyarray = array.to_data().to_pyarrow(py)?;
+        let pyscalar = pyarray.call_method1("__getitem__", (0,))?;
 
         Ok(pyscalar)
     }
 }
 
-impl<'source> FromPyObject<'source> for ScalarValue {
-    fn extract(value: &'source PyAny) -> PyResult<Self> {
-        Self::from_pyarrow(value)
+impl FromPyObject<'_, '_> for ScalarValue {
+    type Error = PyErr;
+
+    fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        Self::from_pyarrow_bound(&value)
     }
 }
 
-impl<'a> IntoPy<PyObject> for ScalarValue {
-    fn into_py(self, py: Python) -> PyObject {
-        self.to_pyarrow(py).unwrap()
+impl<'py> IntoPyObject<'py> for ScalarValue {
+    type Target = PyAny;
+
+    type Output = Bound<'py, Self::Target>;
+
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        self.to_pyarrow(py)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pyo3::prepare_freethreaded_python;
     use pyo3::py_run;
-    use pyo3::types::PyDict;
+    use pyo3::types::{PyDict, PyDictMethods};
 
     fn init_python() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            if let Err(err) = py.run("import pyarrow", None, None) {
+        Python::initialize();
+        Python::attach(|py| {
+            if let Err(err) = py.run(c"import pyarrow", None, None) {
                 let locals = PyDict::new(py);
                 py.run(
-                    "import sys; executable = sys.executable; python_path = sys.path",
+                    c"import sys; executable = sys.executable; python_path = sys.path",
                     None,
-                    Some(locals),
+                    Some(&locals),
                 )
                 .expect("Couldn't get python info");
-                let executable: String =
-                    locals.get_item("executable").unwrap().extract().unwrap();
-                let python_path: Vec<&str> =
-                    locals.get_item("python_path").unwrap().extract().unwrap();
+                let executable: String = locals
+                    .get_item("executable")
+                    .unwrap()
+                    .unwrap()
+                    .extract()
+                    .unwrap();
+                let python_path: Vec<String> = locals
+                    .get_item("python_path")
+                    .unwrap()
+                    .unwrap()
+                    .extract()
+                    .unwrap();
 
                 Err(err).expect(
                     format!(
@@ -123,10 +140,10 @@ mod tests {
             ScalarValue::Date32(Some(1234)),
         ];
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for scalar in example_scalars.iter() {
                 let result =
-                    ScalarValue::from_pyarrow(scalar.to_pyarrow(py).unwrap().as_ref(py))
+                    ScalarValue::from_pyarrow_bound(&scalar.to_pyarrow(py).unwrap())
                         .unwrap();
                 assert_eq!(scalar, &result);
             }
@@ -137,13 +154,21 @@ mod tests {
     fn test_py_scalar() {
         init_python();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let scalar_float = ScalarValue::Float64(Some(12.34));
-            let py_float = scalar_float.into_py(py).call_method0(py, "as_py").unwrap();
+            let py_float = scalar_float
+                .into_pyobject(py)
+                .unwrap()
+                .call_method0("as_py")
+                .unwrap();
             py_run!(py, py_float, "assert py_float == 12.34");
 
             let scalar_string = ScalarValue::Utf8(Some("Hello!".to_string()));
-            let py_string = scalar_string.into_py(py).call_method0(py, "as_py").unwrap();
+            let py_string = scalar_string
+                .into_pyobject(py)
+                .unwrap()
+                .call_method0("as_py")
+                .unwrap();
             py_run!(py, py_string, "assert py_string == 'Hello!'");
         });
     }

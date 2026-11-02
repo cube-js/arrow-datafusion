@@ -36,7 +36,7 @@ pub fn get_indexed_field(data_type: &DataType, key: &Expr) -> Result<Field> {
                     i
                 )))
             } else {
-                Ok(Field::new(&i.to_string(), lt.data_type().clone(), false))
+                Ok(Field::new(i.to_string(), lt.data_type().clone(), false))
             }
         }
         // Allow any kind of dynamic expressions for key
@@ -55,7 +55,7 @@ pub fn get_indexed_field(data_type: &DataType, key: &Expr) -> Result<Field> {
                         "Field {} not found in struct",
                         s
                     ))),
-                    Some(f) => Ok(f.clone()),
+                    Some(f) => Ok(f.as_ref().clone()),
                 }
             }
         }
@@ -64,7 +64,7 @@ pub fn get_indexed_field(data_type: &DataType, key: &Expr) -> Result<Field> {
             key
         ))),
         (left, right) => Err(DataFusionError::Plan(format!(
-            "The expression to get an indexed field is only valid for `List` and `Struct` types, field: {}, key: {}",
+            "The expression to get an indexed field is only valid for `List` and `Struct` types, field: {:?}, key: {}",
             left, right
         ))),
     }

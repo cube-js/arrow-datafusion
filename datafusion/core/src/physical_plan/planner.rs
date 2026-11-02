@@ -64,13 +64,13 @@ use crate::{
     physical_plan::displayable,
 };
 use arrow::compute::SortOptions;
+use arrow::datatypes::DataType;
 use arrow::datatypes::{Schema, SchemaRef};
-use arrow::{compute::can_cast_types, datatypes::DataType};
 use async_trait::async_trait;
 use datafusion_common::OuterQueryCursor;
 use datafusion_expr::expr::GroupingSet;
 use datafusion_expr::expr_fn::binary_expr;
-use datafusion_physical_expr::expressions::{any, OuterColumn};
+use datafusion_physical_expr::expressions::{any, can_cast_types, OuterColumn};
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::{debug, trace};
@@ -2018,20 +2018,12 @@ mod tests {
         LogicalPlan schema: DFSchema { fields: [\
             DFField { qualifier: None, field: Field { \
                 name: \"a\", \
-                data_type: Int32, \
-                nullable: false, \
-                dict_id: 0, \
-                dict_is_ordered: false, \
-                metadata: None } }\
+                data_type: Int32 } }\
         ], metadata: {} }, \
         ExecutionPlan schema: Schema { fields: [\
             Field { \
                 name: \"b\", \
-                data_type: Int32, \
-                nullable: false, \
-                dict_id: 0, \
-                dict_is_ordered: false, \
-                metadata: None }\
+                data_type: Int32 }\
         ], metadata: {} }";
         match plan {
             Ok(_) => panic!("Expected planning failure"),
@@ -2069,8 +2061,14 @@ mod tests {
         .build()?;
         let execution_plan = plan(&logical_plan).await?;
         // verify that the plan correctly adds cast from Int64(1) to Utf8
-        let expected = "InListExpr { expr: Column { name: \"c1\", index: 0 }, list: [Literal { value: Utf8(\"a\") }, CastExpr { expr: Literal { value: Int64(1) }, cast_type: Utf8, cast_options: CastOptions { safe: false } }], negated: false }";
-        assert!(format!("{:?}", execution_plan).contains(expected));
+        let expected = "InListExpr { expr: Column { name: \"c1\", index: 0 }, list: [Literal { value: Utf8(\"a\") }, CastExpr { expr: Literal { value: Int64(1) }, cast_type: Utf8, cast_options: CastOptions { safe: false, format_options: FormatOptions { safe: true, null: \"\", date_format: None, datetime_format: None, timestamp_format: None, timestamp_tz_format: None, time_format: None, duration_format: ISO8601, types_info: false, quoted_strings: false, formatter_factory: None } } }], negated: false }";
+        let actual = format!("{:?}", execution_plan);
+        assert!(
+            actual.contains(expected),
+            "{} not found in {}",
+            expected,
+            actual
+        );
 
         // expression: "a in (true, 'a')"
         let list = vec![
@@ -2091,8 +2089,14 @@ mod tests {
         .build()?;
         let execution_plan = plan(&logical_plan).await;
         // verify that the plan correctly adds cast from Utf8 to Boolean
-        let expected = "InListExpr { expr: BinaryExpr { left: Column { name: \"c12\", index: 11 }, op: LtEq, right: Literal { value: Float64(0.025) } }, list: [Literal { value: Boolean(true) }, CastExpr { expr: Literal { value: Utf8(\"a\") }, cast_type: Boolean, cast_options: CastOptions { safe: false } }], negated: false }";
-        assert!(format!("{:?}", execution_plan).contains(expected));
+        let expected = "InListExpr { expr: BinaryExpr { left: Column { name: \"c12\", index: 11 }, op: LtEq, right: Literal { value: Float64(0.025) } }, list: [Literal { value: Boolean(true) }, CastExpr { expr: Literal { value: Utf8(\"a\") }, cast_type: Boolean, cast_options: CastOptions { safe: false, format_options: FormatOptions { safe: true, null: \"\", date_format: None, datetime_format: None, timestamp_format: None, timestamp_tz_format: None, time_format: None, duration_format: ISO8601, types_info: false, quoted_strings: false, formatter_factory: None } } }], negated: false }";
+        let actual = format!("{:?}", execution_plan);
+        assert!(
+            actual.contains(expected),
+            "{} not found in {}",
+            expected,
+            actual
+        );
 
         Ok(())
     }

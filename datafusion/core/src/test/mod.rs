@@ -28,7 +28,7 @@ use crate::logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use crate::physical_plan::file_format::{CsvExec, FileScanConfig};
 use crate::test_util::aggr_test_schema;
 use array::{Array, ArrayRef};
-use arrow::array::{self, DecimalBuilder, Int32Array};
+use arrow::array::{self, Decimal128Builder, Int32Array};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use datafusion_data_access::object_store::local::LocalFileSystem;
@@ -270,12 +270,14 @@ pub fn table_with_decimal() -> Arc<dyn TableProvider> {
 }
 
 fn make_decimal() -> RecordBatch {
-    let mut decimal_builder = DecimalBuilder::new(20, 10, 3);
+    let mut decimal_builder = Decimal128Builder::with_capacity(20)
+        .with_precision_and_scale(10, 3)
+        .unwrap();
     for i in 110000..110010 {
-        decimal_builder.append_value(i as i128).unwrap();
+        decimal_builder.append_value(i as i128);
     }
     for i in 100000..100010 {
-        decimal_builder.append_value(-i as i128).unwrap();
+        decimal_builder.append_value(-i as i128);
     }
     let array = decimal_builder.finish();
     let schema = Schema::new(vec![Field::new("c1", array.data_type().clone(), true)]);

@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::Schema;
 use arrow::datatypes::SchemaRef;
+use arrow::datatypes::{DataType, Field, FieldRef, Fields};
 use arrow::json::reader::infer_json_schema_from_iterator;
 use arrow::json::reader::ValueIter;
 use async_trait::async_trait;
@@ -54,6 +55,33 @@ impl JsonFormat {
     }
 }
 
+/// arrow 13 schema inference left out object fields that only ever held
+/// `null`; arrow 60 infers them as `DataType::Null`. Drop them (recursively in
+/// structs, also inside lists) to keep the inferred schemas unchanged.
+fn drop_null_only_fields(schema: &Schema) -> Schema {
+    Schema::new_with_metadata(
+        drop_null_fields(schema.fields()),
+        schema.metadata().clone(),
+    )
+}
+
+fn drop_null_fields(fields: &Fields) -> Fields {
+    fields
+        .iter()
+        .filter(|f| f.data_type() != &DataType::Null)
+        .map(drop_null_children)
+        .collect()
+}
+
+fn drop_null_children(field: &FieldRef) -> FieldRef {
+    let data_type = match field.data_type() {
+        DataType::Struct(children) => DataType::Struct(drop_null_fields(children)),
+        DataType::List(item) => DataType::List(drop_null_children(item)),
+        _ => return field.clone(),
+    };
+    Arc::new(Field::new(field.name(), data_type, field.is_nullable()))
+}
+
 #[async_trait]
 impl FileFormat for JsonFormat {
     fn as_any(&self) -> &dyn Any {
@@ -73,7 +101,7 @@ impl FileFormat for JsonFormat {
                 }
                 should_take
             }))?;
-            schemas.push(schema);
+            schemas.push(drop_null_only_fields(&schema));
             if records_to_read == 0 {
                 break;
             }

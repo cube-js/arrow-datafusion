@@ -299,7 +299,7 @@ mod tests {
             DataType::Int32,
             DataType::Float32,
             DataType::Float64,
-            DataType::Decimal(10, 2),
+            DataType::Decimal128(10, 2),
             DataType::Utf8,
         ];
         for fun in funcs {
@@ -340,7 +340,7 @@ mod tests {
                         assert_eq!(
                             Field::new(
                                 "c1",
-                                DataType::List(Box::new(Field::new(
+                                DataType::List(Arc::new(Field::new(
                                     "item",
                                     data_type.clone(),
                                     true
@@ -384,7 +384,7 @@ mod tests {
                         assert_eq!(
                             Field::new(
                                 "c1",
-                                DataType::List(Box::new(Field::new(
+                                DataType::List(Arc::new(Field::new(
                                     "item",
                                     data_type.clone(),
                                     true
@@ -464,7 +464,7 @@ mod tests {
             DataType::Int32,
             DataType::Float32,
             DataType::Float64,
-            DataType::Decimal(10, 2),
+            DataType::Decimal128(10, 2),
             DataType::Utf8,
         ];
         for fun in funcs {
@@ -961,7 +961,7 @@ mod tests {
 
         let observed = return_type(
             &AggregateFunction::ApproxMedian,
-            &[DataType::Decimal(10, 6)],
+            &[DataType::Decimal128(10, 6)],
             &[],
         );
         assert!(observed.is_err());
@@ -979,13 +979,16 @@ mod tests {
 
         // test decimal for min
         let observed =
-            return_type(&AggregateFunction::Min, &[DataType::Decimal(10, 6)], &[])?;
-        assert_eq!(DataType::Decimal(10, 6), observed);
+            return_type(&AggregateFunction::Min, &[DataType::Decimal128(10, 6)], &[])?;
+        assert_eq!(DataType::Decimal128(10, 6), observed);
 
         // test decimal for max
-        let observed =
-            return_type(&AggregateFunction::Max, &[DataType::Decimal(28, 13)], &[])?;
-        assert_eq!(DataType::Decimal(28, 13), observed);
+        let observed = return_type(
+            &AggregateFunction::Max,
+            &[DataType::Decimal128(28, 13)],
+            &[],
+        )?;
+        assert_eq!(DataType::Decimal128(28, 13), observed);
 
         Ok(())
     }
@@ -1005,12 +1008,12 @@ mod tests {
         assert_eq!(DataType::Float64, observed);
 
         let observed =
-            return_type(&AggregateFunction::Sum, &[DataType::Decimal(10, 5)], &[])?;
-        assert_eq!(DataType::Decimal(20, 5), observed);
+            return_type(&AggregateFunction::Sum, &[DataType::Decimal128(10, 5)], &[])?;
+        assert_eq!(DataType::Decimal128(20, 5), observed);
 
         let observed =
-            return_type(&AggregateFunction::Sum, &[DataType::Decimal(35, 5)], &[])?;
-        assert_eq!(DataType::Decimal(38, 5), observed);
+            return_type(&AggregateFunction::Sum, &[DataType::Decimal128(35, 5)], &[])?;
+        assert_eq!(DataType::Decimal128(38, 5), observed);
 
         Ok(())
     }
@@ -1036,8 +1039,11 @@ mod tests {
         let observed = return_type(&AggregateFunction::Count, &[DataType::Int8], &[])?;
         assert_eq!(DataType::Int64, observed);
 
-        let observed =
-            return_type(&AggregateFunction::Count, &[DataType::Decimal(28, 13)], &[])?;
+        let observed = return_type(
+            &AggregateFunction::Count,
+            &[DataType::Decimal128(28, 13)],
+            &[],
+        )?;
         assert_eq!(DataType::Int64, observed);
         Ok(())
     }
@@ -1054,12 +1060,12 @@ mod tests {
         assert_eq!(DataType::Float64, observed);
 
         let observed =
-            return_type(&AggregateFunction::Avg, &[DataType::Decimal(10, 6)], &[])?;
-        assert_eq!(DataType::Decimal(14, 10), observed);
+            return_type(&AggregateFunction::Avg, &[DataType::Decimal128(10, 6)], &[])?;
+        assert_eq!(DataType::Decimal128(14, 10), observed);
 
         let observed =
-            return_type(&AggregateFunction::Avg, &[DataType::Decimal(36, 6)], &[])?;
-        assert_eq!(DataType::Decimal(38, 10), observed);
+            return_type(&AggregateFunction::Avg, &[DataType::Decimal128(36, 6)], &[])?;
+        assert_eq!(DataType::Decimal128(38, 10), observed);
         Ok(())
     }
 

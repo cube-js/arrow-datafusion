@@ -75,7 +75,7 @@ impl AggregateExpr for Count {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "count"),
+            format_state_name(&self.name, "count"),
             self.data_type.clone(),
             true,
         )])
@@ -109,7 +109,7 @@ impl CountAccumulator {
 impl Accumulator for CountAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> Result<()> {
         let array = &values[0];
-        self.count += (array.len() - array.data().null_count()) as i64;
+        self.count += (array.len() - array.null_count()) as i64;
         Ok(())
     }
 

@@ -37,8 +37,8 @@ fn plan(ctx: Arc<Mutex<SessionContext>>, sql: &str) {
 
 /// Create schema representing a large table
 pub fn create_schema(column_prefix: &str) -> Schema {
-    let fields = (0..200)
-        .map(|i| Field::new(&format!("{}{}", column_prefix, i), DataType::Int32, true))
+    let fields: Vec<Field> = (0..200)
+        .map(|i| Field::new(format!("{}{}", column_prefix, i), DataType::Int32, true))
         .collect();
     Schema::new(fields)
 }

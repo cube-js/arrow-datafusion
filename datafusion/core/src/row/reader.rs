@@ -431,9 +431,7 @@ macro_rules! fn_read_field {
                     .as_any_mut()
                     .downcast_mut::<$ARRAY>()
                     .unwrap();
-                to.append_option(row.[<get_ $NATIVE _opt>](col_idx))
-                    .map_err(DataFusionError::ArrowError)
-                    .unwrap();
+                to.append_option(row.[<get_ $NATIVE _opt>](col_idx));
             }
 
             fn [<read_field_ $NATIVE _null_free>](to: &mut Box<dyn ArrayBuilder>, col_idx: usize, row: &RowReader) {
@@ -441,9 +439,7 @@ macro_rules! fn_read_field {
                     .as_any_mut()
                     .downcast_mut::<$ARRAY>()
                     .unwrap();
-                to.append_value(row.[<get_ $NATIVE>](col_idx))
-                    .map_err(DataFusionError::ArrowError)
-                    .unwrap();
+                to.append_value(row.[<get_ $NATIVE>](col_idx));
             }
         }
     };
@@ -467,9 +463,9 @@ fn_read_field!(utf8, StringBuilder);
 fn read_field_binary(to: &mut Box<dyn ArrayBuilder>, col_idx: usize, row: &RowReader) {
     let to = to.as_any_mut().downcast_mut::<BinaryBuilder>().unwrap();
     if row.is_valid_at(col_idx) {
-        to.append_value(row.get_binary(col_idx)).unwrap();
+        to.append_value(row.get_binary(col_idx));
     } else {
-        to.append_null().unwrap();
+        to.append_null();
     }
 }
 
@@ -479,9 +475,7 @@ fn read_field_binary_null_free(
     row: &RowReader,
 ) {
     let to = to.as_any_mut().downcast_mut::<BinaryBuilder>().unwrap();
-    to.append_value(row.get_binary(col_idx))
-        .map_err(DataFusionError::ArrowError)
-        .unwrap();
+    to.append_value(row.get_binary(col_idx));
 }
 
 fn read_field(
