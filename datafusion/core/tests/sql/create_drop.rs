@@ -46,6 +46,24 @@ async fn create_table_as() -> Result<()> {
 }
 
 #[tokio::test]
+async fn create_table_as_between_nullable_bound() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    // `1 BETWEEN 0 AND NULL` is NULL, the column must be nullable
+    let sql = "CREATE TABLE my_table AS SELECT 1 BETWEEN 0 AND column1 AS x \
+               FROM (VALUES (2), (NULL)) AS t";
+    ctx.sql(sql).await.unwrap();
+
+    let results = execute_to_batches(&ctx, "SELECT x FROM my_table").await;
+    let expected = [
+        "+------+", "| x    |", "+------+", "| true |", "|      |", "+------+",
+    ];
+    assert_batches_eq!(expected, &results);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn drop_table() -> Result<()> {
     let ctx = SessionContext::new();
     register_aggregate_simple_csv(&ctx).await?;

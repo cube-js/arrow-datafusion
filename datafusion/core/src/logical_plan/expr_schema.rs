@@ -189,8 +189,13 @@ impl ExprSchemable for Expr {
             Expr::Alias(expr, _)
             | Expr::Not(expr)
             | Expr::Negative(expr)
-            | Expr::Sort { expr, .. }
-            | Expr::Between { expr, .. } => expr.nullable(input_schema),
+            | Expr::Sort { expr, .. } => expr.nullable(input_schema),
+            // `1 BETWEEN 0 AND NULL` is NULL
+            Expr::Between {
+                expr, low, high, ..
+            } => Ok(expr.nullable(input_schema)?
+                || low.nullable(input_schema)?
+                || high.nullable(input_schema)?),
             // `1 IN (2, NULL)` is NULL
             Expr::InList { expr, list, .. } => {
                 if expr.nullable(input_schema)? {
@@ -319,5 +324,62 @@ impl ExprSchemable for Expr {
                 this_type, cast_to_type
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logical_plan::{col, lit};
+    use datafusion_common::ScalarValue;
+    use std::collections::HashMap;
+
+    fn schema() -> DFSchema {
+        DFSchema::new_with_metadata(
+            vec![
+                DFField::new(None, "a", DataType::Int32, false),
+                DFField::new(None, "b", DataType::Int32, true),
+            ],
+            HashMap::new(),
+        )
+        .unwrap()
+    }
+
+    fn between(expr: Expr, low: Expr, high: Expr) -> Expr {
+        Expr::Between {
+            expr: Box::new(expr),
+            negated: false,
+            low: Box::new(low),
+            high: Box::new(high),
+        }
+    }
+
+    #[test]
+    fn test_between_nullable() -> Result<()> {
+        let schema = schema();
+        let null = || lit(ScalarValue::Int32(None));
+
+        assert!(!between(col("a"), lit(1), lit(2)).nullable(&schema)?);
+        assert!(between(col("b"), lit(1), lit(2)).nullable(&schema)?);
+        assert!(between(col("a"), col("b"), lit(2)).nullable(&schema)?);
+        assert!(between(col("a"), lit(1), col("b")).nullable(&schema)?);
+        assert!(between(lit(1), lit(0), null()).nullable(&schema)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_in_list_nullable() -> Result<()> {
+        let schema = schema();
+
+        assert!(!col("a")
+            .in_list(vec![lit(1), lit(2)], false)
+            .nullable(&schema)?);
+        assert!(col("b")
+            .in_list(vec![lit(1), lit(2)], false)
+            .nullable(&schema)?);
+        assert!(col("a")
+            .in_list(vec![lit(1), col("b")], false)
+            .nullable(&schema)?);
+        Ok(())
     }
 }
