@@ -76,9 +76,8 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
 /// * booleans are cast to the strings `1` and `0` (arrow's `cast` yields `true` and
 ///   `false`);
 /// * intervals are cast to strings in PostgreSQL's default `postgres` interval style
-///   (`1 year 2 mons 3 days 04:05:06.789000`, see [`interval_to_string`]), the format
-///   the SQL API writes intervals to the wire with (arrow's `cast` yields
-///   `1 years 2 mons 3 days 4 hours 5 mins 6.789 secs`);
+///   (`1 year 2 mons 3 days 04:05:06.789`, see [`interval_to_string`]; arrow's `cast`
+///   yields `1 years 2 mons 3 days 4 hours 5 mins 6.789 secs`);
 /// * a cast between integer and floating point types turns a value that does not fit
 ///   the target type (overflow, NaN or infinity to an integer) into NULL, whatever
 ///   `cast_options.safe` says (arrow 13 ignored `safe` for numeric casts; arrow's `cast`
@@ -531,44 +530,61 @@ fn interval_to_string<O: OffsetSizeTrait>(
     ))
 }
 
-/// Formats an interval like PostgreSQL's `postgres` interval style, e.g.
-/// `1 year 2 mons 3 days 04:05:06.789000`, `-1 days -02:00:00` or `00:00:00`
+/// Formats an interval like PostgreSQL's `EncodeInterval` with `IntervalStyle` set to
+/// `postgres`, e.g. `1 year 2 mons 3 days 04:05:06.789`, `-1 days +02:00:00` or
+/// `00:00:00`
 fn format_interval(months: i32, days: i32, micros: i64) -> String {
-    fn unit(res: &mut String, value: i32, singular: &str, plural: &str) {
-        if value != 0 {
-            let name = if value == 1 { singular } else { plural };
-            res.push_str(&format!("{} {} ", value, name));
+    /// Like PostgreSQL's `AddPostgresIntPart`, a positive field right after a negative
+    /// one gets a `+` sign
+    fn int_part(res: &mut String, is_before: &mut bool, value: i32, unit: &str) {
+        if value == 0 {
+            return;
         }
-    }
-
-    if months == 0 && days == 0 && micros == 0 {
-        return "00:00:00".to_string();
+        if !res.is_empty() {
+            res.push(' ');
+        }
+        let sign = if *is_before && value > 0 { "+" } else { "" };
+        let plural = if value == 1 { "" } else { "s" };
+        res.push_str(&format!("{}{} {}{}", sign, value, unit, plural));
+        *is_before = value < 0;
     }
 
     let mut res = String::new();
-    unit(&mut res, months / 12, "year", "years");
-    unit(&mut res, months % 12, "mon", "mons");
-    unit(&mut res, days, "day", "days");
+    let mut is_before = false;
+    int_part(&mut res, &mut is_before, months / 12, "year");
+    int_part(&mut res, &mut is_before, months % 12, "mon");
+    int_part(&mut res, &mut is_before, days, "day");
 
-    if micros != 0 {
-        if micros < 0 {
-            res.push('-');
+    if res.is_empty() || micros != 0 {
+        if !res.is_empty() {
+            res.push(' ');
         }
+        let sign = if micros < 0 {
+            "-"
+        } else if is_before {
+            "+"
+        } else {
+            ""
+        };
         let micros = micros.unsigned_abs();
         let secs = micros / 1_000_000;
         res.push_str(&format!(
-            "{:02}:{:02}:{:02}",
+            "{}{:02}:{:02}:{:02}",
+            sign,
             secs / 3600,
             secs / 60 % 60,
             secs % 60
         ));
+        // Like PostgreSQL's `AppendSeconds`, the fraction has no trailing zeros
         let fraction = micros % 1_000_000;
         if fraction != 0 {
-            res.push_str(&format!(".{:06}", fraction));
+            let fraction = format!("{:06}", fraction);
+            res.push('.');
+            res.push_str(fraction.trim_end_matches('0'));
         }
     }
 
-    res.trim_end().to_string()
+    res
 }
 
 /// CAST expression casts an expression to a specific data type and returns a runtime error on invalid cast
@@ -1384,6 +1400,7 @@ mod tests {
         let year_month: ArrayRef = Arc::new(IntervalYearMonthArray::from(vec![
             Some(14),
             Some(-1),
+            Some(-13),
             Some(0),
             None,
         ]));
@@ -1393,6 +1410,7 @@ mod tests {
             vec![
                 Some("1 year 2 mons"),
                 Some("-1 mons"),
+                Some("-1 years -1 mons"),
                 Some("00:00:00"),
                 None
             ]
@@ -1402,7 +1420,10 @@ mod tests {
             Some(IntervalDayTime::new(1, 7_200_000)),
             Some(IntervalDayTime::new(2, 1_500)),
             Some(IntervalDayTime::new(-1, -7_200_000)),
+            Some(IntervalDayTime::new(-1, 7_200_000)),
+            Some(IntervalDayTime::new(1, -7_200_000)),
             Some(IntervalDayTime::new(0, 90 * 60_000)),
+            Some(IntervalDayTime::new(0, -500)),
             None,
         ]));
         let result = cast_array(day_time, &DataType::Utf8)?;
@@ -1410,9 +1431,12 @@ mod tests {
             string_values(&result),
             vec![
                 Some("1 day 02:00:00"),
-                Some("2 days 00:00:01.500000"),
+                Some("2 days 00:00:01.5"),
                 Some("-1 days -02:00:00"),
+                Some("-1 days +02:00:00"),
+                Some("1 day -02:00:00"),
                 Some("01:30:00"),
+                Some("-00:00:00.5"),
                 None
             ]
         );
@@ -1425,22 +1449,34 @@ mod tests {
             )),
             Some(IntervalMonthDayNano::new(0, 0, 1_999)),
             Some(IntervalMonthDayNano::new(0, 0, 100 * 3_600 * 1_000_000_000)),
+            Some(IntervalMonthDayNano::new(-1, 3, 0)),
+            Some(IntervalMonthDayNano::new(-12, 3, 0)),
+            Some(IntervalMonthDayNano::new(
+                -10,
+                -3,
+                4 * 3_600 * 1_000_000_000,
+            )),
+            Some(IntervalMonthDayNano::new(1, -1, 0)),
             None,
         ]));
         let result = cast_array(month_day_nano.clone(), &DataType::Utf8)?;
         assert_eq!(
             string_values(&result),
             vec![
-                Some("1 year 2 mons 3 days 04:05:06.789000"),
+                Some("1 year 2 mons 3 days 04:05:06.789"),
                 Some("00:00:00.000001"),
                 Some("100:00:00"),
+                Some("-1 mons +3 days"),
+                Some("-1 years +3 days"),
+                Some("-10 mons -3 days +04:00:00"),
+                Some("1 mon -1 days"),
                 None
             ]
         );
 
         let result = cast_array(month_day_nano, &DataType::LargeUtf8)?;
         let result = result.as_string::<i64>().iter().collect::<Vec<_>>();
-        assert_eq!(result[0], Some("1 year 2 mons 3 days 04:05:06.789000"));
+        assert_eq!(result[0], Some("1 year 2 mons 3 days 04:05:06.789"));
         Ok(())
     }
 
