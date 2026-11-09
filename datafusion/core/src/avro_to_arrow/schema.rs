@@ -15,7 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::arrow::datatypes::{DataType, IntervalUnit, Schema, TimeUnit, UnionMode};
+use crate::arrow::datatypes::{
+    DataType, IntervalUnit, Schema, TimeUnit, UnionFields, UnionMode,
+};
 use crate::error::{DataFusionError, Result};
 use arrow::datatypes::Field;
 use avro_rs::schema::Name;
@@ -23,6 +25,7 @@ use avro_rs::types::Value;
 use avro_rs::Schema as AvroSchema;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
 /// Converts an avro schema to an arrow schema
 pub fn to_arrow_schema(avro_schema: &avro_rs::Schema) -> Result<Schema> {
@@ -69,7 +72,7 @@ fn schema_to_field_with_props(
         AvroSchema::Double => DataType::Float64,
         AvroSchema::Bytes => DataType::Binary,
         AvroSchema::String => DataType::Utf8,
-        AvroSchema::Array(item_schema) => DataType::List(Box::new(
+        AvroSchema::Array(item_schema) => DataType::List(Arc::new(
             schema_to_field_with_props(item_schema, None, false, None)?,
         )),
         AvroSchema::Map(value_schema) => {
@@ -103,7 +106,19 @@ fn schema_to_field_with_props(
                     .iter()
                     .map(|s| schema_to_field_with_props(s, None, has_nullable, None))
                     .collect::<Result<Vec<Field>>>()?;
-                DataType::Union(fields, UnionMode::Dense)
+                // arrow 13 unions had the implicit type ids 0..n (arrow 60 limits a
+                // union to 128 variants)
+                let type_ids = (0..fields.len())
+                    .map(|i| {
+                        i8::try_from(i).map_err(|_| {
+                            DataFusionError::NotImplemented(format!(
+                                "Avro union with {} variants is not supported",
+                                fields.len()
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<i8>>>()?;
+                DataType::Union(UnionFields::try_new(type_ids, fields)?, UnionMode::Dense)
             }
         }
         AvroSchema::Record { name, fields, .. } => {
@@ -125,21 +140,21 @@ fn schema_to_field_with_props(
                     )
                 })
                 .collect();
-            DataType::Struct(fields?)
+            DataType::Struct(fields?.into())
         }
         AvroSchema::Enum { symbols, name, .. } => {
-            return Ok(Field::new_dict(
-                &name.fullname(None),
+            // arrow 13 `Field::new_dict(.., dict_id: 0, dict_is_ordered: false)`, which
+            // are the `Field::new` defaults
+            return Ok(Field::new(
+                name.fullname(None),
                 index_type(symbols.len()),
                 false,
-                0,
-                false,
-            ))
+            ));
         }
         AvroSchema::Fixed { size, .. } => DataType::FixedSizeBinary(*size as i32),
         AvroSchema::Decimal {
             precision, scale, ..
-        } => DataType::Decimal(*precision, *scale),
+        } => DataType::Decimal128(*precision as u8, *scale as i8),
         AvroSchema::Uuid => DataType::FixedSizeBinary(16),
         AvroSchema::Date => DataType::Date32,
         AvroSchema::TimeMillis => DataType::Time32(TimeUnit::Millisecond),
@@ -153,7 +168,9 @@ fn schema_to_field_with_props(
     let name = name.unwrap_or_else(|| default_field_name(&data_type));
 
     let mut field = Field::new(name, field_type, nullable);
-    field.set_metadata(props.cloned());
+    if let Some(props) = props {
+        field.set_metadata(props.clone());
+    }
     Ok(field)
 }
 
@@ -215,7 +232,16 @@ fn default_field_name(dt: &DataType) -> &str {
         DataType::Union(_, _) => "union",
         DataType::Dictionary(_, _) => "map",
         DataType::Map(_, _) => unimplemented!("Map support not implemented"),
-        DataType::Decimal(_, _) => "decimal",
+        DataType::Decimal32(_, _)
+        | DataType::Decimal64(_, _)
+        | DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _) => "decimal",
+        // not produced by the avro schema conversion
+        DataType::Utf8View => "varcharview",
+        DataType::BinaryView => "varbinaryview",
+        DataType::ListView(_) => "listview",
+        DataType::LargeListView(_) => "largelistview",
+        DataType::RunEndEncoded(_, _) => "runendencoded",
     }
 }
 

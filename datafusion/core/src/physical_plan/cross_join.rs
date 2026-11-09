@@ -79,7 +79,7 @@ impl CrossJoinExec {
         let right_fields = right_schema.fields().iter();
 
         // left then right
-        let all_columns = left_fields.chain(right_fields).cloned().collect();
+        let all_columns: Vec<_> = left_fields.chain(right_fields).cloned().collect();
 
         let schema = Arc::new(Schema::new(all_columns));
 

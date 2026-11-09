@@ -348,14 +348,11 @@ impl Subquery {
             // ANY/ALL subquery converts subquery result rows into a list
             // and uses existing code evaluating ANY with a list to evaluate the result
             SubqueryType::AnyAll => {
-                let item = Field::new_dict(
-                    "item",
-                    field.data_type().clone(),
-                    true,
-                    field.dict_id().unwrap_or(0),
-                    field.dict_is_ordered().unwrap_or(false),
-                );
-                Field::new(field.name(), DataType::List(Box::new(item)), false)
+                // arrow 60 deprecates dictionary ids (they no longer take part in
+                // Field equality), so only the ordering flag is carried over
+                let item = Field::new("item", field.data_type().clone(), true)
+                    .with_dict_is_ordered(field.dict_is_ordered().unwrap_or(false));
+                Field::new(field.name(), DataType::List(Arc::new(item)), false)
             }
         }
     }

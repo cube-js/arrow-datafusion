@@ -38,8 +38,9 @@ use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::Accumulator;
 
 use super::format_state_name;
-use arrow::array::Array;
-use arrow::array::DecimalArray;
+use arrow::array::Decimal128Array;
+use arrow::array::{Array, PrimitiveArray};
+use arrow::datatypes::ArrowPrimitiveType;
 
 // Min/max aggregation can take Dictionary encode input but always produces unpacked
 // (aka non Dictionary) output. We need to adjust the output data type to reflect this.
@@ -94,7 +95,7 @@ impl AggregateExpr for Max {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "max"),
+            format_state_name(&self.name, "max"),
             self.data_type.clone(),
             true,
         )])
@@ -147,7 +148,7 @@ macro_rules! typed_min_max_batch_decimal128 {
         if null_count == $VALUES.len() {
             ScalarValue::Decimal128(None, *$PRECISION, *$SCALE)
         } else {
-            let array = $VALUES.as_any().downcast_ref::<DecimalArray>().unwrap();
+            let array = $VALUES.as_any().downcast_ref::<Decimal128Array>().unwrap();
             if null_count == 0 {
                 // there is no null value
                 let mut result = array.value(0);
@@ -173,21 +174,50 @@ macro_rules! typed_min_max_batch_decimal128 {
     }};
 }
 
+/// MIN / MAX of a float array with the semantics of arrow 13's `min` / `max` kernels:
+/// values are compared with `<` / `>` (so `-0.0` and `0.0` are equal and the first one
+/// wins), `max` returns the first NaN if there is any and `min` only returns NaN when all
+/// values are NaN. arrow 60's kernels compare by IEEE total order instead, where a NaN
+/// with its sign bit set is smaller than every number.
+fn float_min_max<T>(array: &PrimitiveArray<T>, is_max: bool) -> Option<T::Native>
+where
+    T: ArrowPrimitiveType,
+    T::Native: PartialOrd,
+{
+    fn is_nan<N: PartialOrd>(v: &N) -> bool {
+        v.partial_cmp(v).is_none()
+    }
+    let replace = |acc: &T::Native, item: &T::Native| {
+        if is_max {
+            (!is_nan(acc) && is_nan(item)) || acc < item
+        } else {
+            (is_nan(acc) && !is_nan(item)) || acc > item
+        }
+    };
+    array
+        .iter()
+        .flatten()
+        .reduce(|acc, item| if replace(&acc, &item) { item } else { acc })
+}
+
 // Statically-typed version of min/max(array) -> ScalarValue  for non-string types.
 // this is a macro to support both operations (min and max).
 macro_rules! min_max_batch {
     ($VALUES:expr, $OP:ident) => {{
         match $VALUES.data_type() {
-            DataType::Decimal(precision, scale) => {
+            DataType::Decimal128(precision, scale) => {
                 typed_min_max_batch_decimal128!($VALUES, precision, scale, $OP)
             }
+            // floats keep arrow 13's NaN handling, see `float_min_max`
+            DataType::Float64 => ScalarValue::Float64(float_min_max(
+                $VALUES.as_any().downcast_ref::<Float64Array>().unwrap(),
+                stringify!($OP) == "max",
+            )),
+            DataType::Float32 => ScalarValue::Float32(float_min_max(
+                $VALUES.as_any().downcast_ref::<Float32Array>().unwrap(),
+                stringify!($OP) == "max",
+            )),
             // all types that have a natural order
-            DataType::Float64 => {
-                typed_min_max_batch!($VALUES, Float64Array, Float64, $OP)
-            }
-            DataType::Float32 => {
-                typed_min_max_batch!($VALUES, Float32Array, Float32, $OP)
-            }
             DataType::Int64 => typed_min_max_batch!($VALUES, Int64Array, Int64, $OP),
             DataType::Int32 => typed_min_max_batch!($VALUES, Int32Array, Int32, $OP),
             DataType::Int16 => typed_min_max_batch!($VALUES, Int16Array, Int16, $OP),
@@ -499,7 +529,7 @@ impl AggregateExpr for Min {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "min"),
+            format_state_name(&self.name, "min"),
             self.data_type.clone(),
             true,
         )])
@@ -563,6 +593,55 @@ mod tests {
     use datafusion_common::ScalarValue::Decimal128;
 
     #[test]
+    fn min_max_float_nan_like_arrow13() -> Result<()> {
+        // the NaN produced by `0.0 * inf` on x86 has its sign bit set
+        let neg_nan = f64::from_bits(0xFFF8_0000_0000_0000);
+        let values: ArrayRef =
+            Arc::new(Float64Array::from(vec![Some(1.0), None, Some(neg_nan)]));
+        match max_batch(&values)? {
+            ScalarValue::Float64(Some(v)) => assert!(v.is_nan()),
+            other => panic!("unexpected {:?}", other),
+        }
+        assert_eq!(min_batch(&values)?, ScalarValue::Float64(Some(1.0)));
+
+        let values: ArrayRef = Arc::new(Float32Array::from(vec![
+            Some(f32::NAN),
+            Some(-3.0),
+            Some(2.0),
+        ]));
+        match max_batch(&values)? {
+            ScalarValue::Float32(Some(v)) => assert!(v.is_nan()),
+            other => panic!("unexpected {:?}", other),
+        }
+        assert_eq!(min_batch(&values)?, ScalarValue::Float32(Some(-3.0)));
+
+        // only NaNs: NaN for both
+        let values: ArrayRef = Arc::new(Float64Array::from(vec![f64::NAN, neg_nan]));
+        for result in [min_batch(&values)?, max_batch(&values)?] {
+            match result {
+                ScalarValue::Float64(Some(v)) => assert!(v.is_nan()),
+                other => panic!("unexpected {:?}", other),
+            }
+        }
+
+        // -0.0 and 0.0 are equal, the first one is kept
+        let values: ArrayRef = Arc::new(Float64Array::from(vec![-0.0, 0.0]));
+        for result in [min_batch(&values)?, max_batch(&values)?] {
+            match result {
+                ScalarValue::Float64(Some(v)) => {
+                    assert_eq!(v.to_bits(), (-0.0_f64).to_bits())
+                }
+                other => panic!("unexpected {:?}", other),
+            }
+        }
+
+        // all NULL
+        let values: ArrayRef = Arc::new(Float64Array::from(vec![None, None]));
+        assert_eq!(max_batch(&values)?, ScalarValue::Float64(None));
+        Ok(())
+    }
+
+    #[test]
     fn min_decimal() -> Result<()> {
         // min
         let left = ScalarValue::Decimal128(Some(123), 10, 2);
@@ -574,7 +653,7 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..6)
                 .map(Some)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
 
@@ -585,7 +664,7 @@ mod tests {
         let array: ArrayRef = Arc::new(
             std::iter::repeat(None)
                 .take(0)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         let result = min_batch(&array)?;
@@ -595,15 +674,15 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..6)
                 .map(Some)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Min,
             ScalarValue::Decimal128(Some(1), 10, 0),
-            DataType::Decimal(10, 0)
+            DataType::Decimal128(10, 0)
         )
     }
 
@@ -613,15 +692,15 @@ mod tests {
         let array: ArrayRef = Arc::new(
             std::iter::repeat(None)
                 .take(6)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Min,
             ScalarValue::Decimal128(None, 10, 0),
-            DataType::Decimal(10, 0)
+            DataType::Decimal128(10, 0)
         )
     }
 
@@ -631,16 +710,16 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..6)
                 .map(|i| if i == 2 { None } else { Some(i) })
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
 
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Min,
             ScalarValue::Decimal128(Some(1), 10, 0),
-            DataType::Decimal(10, 0)
+            DataType::Decimal128(10, 0)
         )
     }
 
@@ -664,7 +743,7 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..6)
                 .map(Some)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 5)?,
         );
         let result = max_batch(&array)?;
@@ -674,7 +753,7 @@ mod tests {
         let array: ArrayRef = Arc::new(
             std::iter::repeat(None)
                 .take(0)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         let result = max_batch(&array)?;
@@ -684,15 +763,15 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..6)
                 .map(Some)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Max,
             ScalarValue::Decimal128(Some(5), 10, 0),
-            DataType::Decimal(10, 0)
+            DataType::Decimal128(10, 0)
         )
     }
 
@@ -701,15 +780,15 @@ mod tests {
         let array: ArrayRef = Arc::new(
             (1..6)
                 .map(|i| if i == 2 { None } else { Some(i) })
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Max,
             ScalarValue::Decimal128(Some(5), 10, 0),
-            DataType::Decimal(10, 0)
+            DataType::Decimal128(10, 0)
         )
     }
 
@@ -718,15 +797,15 @@ mod tests {
         let array: ArrayRef = Arc::new(
             std::iter::repeat(None)
                 .take(6)
-                .collect::<DecimalArray>()
+                .collect::<Decimal128Array>()
                 .with_precision_and_scale(10, 0)?,
         );
         generic_test_op!(
             array,
-            DataType::Decimal(10, 0),
+            DataType::Decimal128(10, 0),
             Min,
             ScalarValue::Decimal128(None, 10, 0),
-            DataType::Decimal(10, 0)
+            DataType::Decimal128(10, 0)
         )
     }
 

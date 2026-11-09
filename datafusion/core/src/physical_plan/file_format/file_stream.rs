@@ -41,7 +41,8 @@ use std::{
 use super::PartitionColumnProjector;
 
 pub type FileIter = Box<dyn Iterator<Item = PartitionedFile> + Send + Sync>;
-pub type BatchIter = Box<dyn Iterator<Item = ArrowResult<RecordBatch>> + Send + Sync>;
+/// Not `Sync`: the arrow 60 json reader is `Send` but not `Sync`
+pub type BatchIter = Box<dyn Iterator<Item = ArrowResult<RecordBatch>> + Send>;
 
 /// A closure that creates a file format reader (iterator over `RecordBatch`) from a `Read` object
 /// and an optional number of required records.

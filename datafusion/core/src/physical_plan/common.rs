@@ -23,7 +23,7 @@ use crate::execution::context::TaskContext;
 use crate::physical_plan::metrics::MemTrackingMetrics;
 use crate::physical_plan::{ColumnStatistics, ExecutionPlan, Statistics};
 use arrow::compute::concat;
-use arrow::datatypes::{Schema, SchemaRef};
+use arrow::datatypes::{DataType, Schema, SchemaRef};
 use arrow::error::ArrowError;
 use arrow::error::Result as ArrowResult;
 use arrow::ipc::writer::FileWriter;
@@ -221,8 +221,15 @@ pub fn compute_record_batch_statistics(
     for partition in batches.iter() {
         for batch in partition {
             for (stat_index, col_index) in projection.iter().enumerate() {
-                *column_statistics[stat_index].null_count.get_or_insert(0) +=
-                    batch.column(*col_index).null_count();
+                let column = batch.column(*col_index);
+                // arrow 13 counted every row of a NullArray as null, arrow 60
+                // `null_count` only counts physical nulls (0 for a NullArray)
+                let null_count = if column.data_type() == &DataType::Null {
+                    column.len()
+                } else {
+                    column.null_count()
+                };
+                *column_statistics[stat_index].null_count.get_or_insert(0) += null_count;
             }
         }
     }
@@ -427,7 +434,7 @@ mod tests {
         let expected = Statistics {
             is_exact: true,
             num_rows: Some(3),
-            total_byte_size: Some(416), // this might change a bit if the way we compute the size changes
+            total_byte_size: Some(228), // this might change a bit if the way we compute the size changes
             column_statistics: Some(vec![
                 ColumnStatistics {
                     distinct_count: None,

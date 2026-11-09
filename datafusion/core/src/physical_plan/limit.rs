@@ -29,7 +29,6 @@ use crate::physical_plan::{
     DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
 };
 use arrow::array::ArrayRef;
-use arrow::compute::limit;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
 use arrow::record_batch::RecordBatch;
@@ -341,7 +340,11 @@ impl ExecutionPlan for LocalLimitExec {
 /// Truncate a RecordBatch to maximum of n rows
 pub fn truncate_batch(batch: &RecordBatch, n: usize) -> RecordBatch {
     let limited_columns: Vec<ArrayRef> = (0..batch.num_columns())
-        .map(|i| limit(batch.column(i), n))
+        .map(|i| {
+            // arrow 13 `compute::limit(array, n)` == `array.slice(0, min(n, len))`
+            let column = batch.column(i);
+            column.slice(0, n.min(column.len()))
+        })
         .collect();
 
     RecordBatch::try_new(batch.schema(), limited_columns).unwrap()

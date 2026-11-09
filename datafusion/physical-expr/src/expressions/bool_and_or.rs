@@ -58,7 +58,7 @@ impl AggregateExpr for BoolAnd {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "value"),
+            format_state_name(&self.name, "value"),
             DataType::Boolean,
             true,
         )])
@@ -163,7 +163,7 @@ impl AggregateExpr for BoolOr {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "value"),
+            format_state_name(&self.name, "value"),
             DataType::Boolean,
             true,
         )])

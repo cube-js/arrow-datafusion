@@ -17,10 +17,12 @@
 
 use super::{Expr, Like};
 use crate::logical_expr::{aggregate_function, function, window_function};
-use arrow::compute::can_cast_types;
 use arrow::datatypes::DataType;
 use datafusion_common::{DFField, DFSchema, DataFusionError, ExprSchema, Result};
 use datafusion_expr::binary_rule::{binary_operator_data_type, case_expression_coercion};
+use datafusion_physical_expr::expressions::{
+    can_cast_types, cast_may_produce_null, DEFAULT_DATAFUSION_CAST_OPTIONS,
+};
 use datafusion_physical_expr::field_util::get_indexed_field;
 
 /// trait to allow expr to typable with respect to a schema
@@ -187,9 +189,25 @@ impl ExprSchemable for Expr {
             Expr::Alias(expr, _)
             | Expr::Not(expr)
             | Expr::Negative(expr)
-            | Expr::Sort { expr, .. }
-            | Expr::Between { expr, .. }
-            | Expr::InList { expr, .. } => expr.nullable(input_schema),
+            | Expr::Sort { expr, .. } => expr.nullable(input_schema),
+            // `1 BETWEEN 0 AND NULL` is NULL
+            Expr::Between {
+                expr, low, high, ..
+            } => Ok(expr.nullable(input_schema)?
+                || low.nullable(input_schema)?
+                || high.nullable(input_schema)?),
+            // `1 IN (2, NULL)` is NULL
+            Expr::InList { expr, list, .. } => {
+                if expr.nullable(input_schema)? {
+                    return Ok(true);
+                }
+                for item in list {
+                    if item.nullable(input_schema)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
             Expr::Column(c) => input_schema.nullable(c),
             Expr::OuterColumn(_, _) | Expr::InSubquery { .. } => Ok(true),
             Expr::Literal(value) => Ok(value.is_null()),
@@ -208,10 +226,21 @@ impl ExprSchemable for Expr {
                 } else if let Some(e) = else_expr {
                     e.nullable(input_schema)
                 } else {
-                    Ok(false)
+                    // CASE produces NULL if there is no `else` expr
+                    // (aka when none of the `when_then_exprs` match)
+                    Ok(true)
                 }
             }
-            Expr::Cast { expr, .. } => expr.nullable(input_schema),
+            Expr::Cast { expr, data_type } => {
+                // a cast can turn values into NULL (e.g. an overflowing numeric cast,
+                // see `cast_may_produce_null`)
+                Ok(expr.nullable(input_schema)?
+                    || cast_may_produce_null(
+                        &expr.get_type(input_schema)?,
+                        data_type,
+                        &DEFAULT_DATAFUSION_CAST_OPTIONS,
+                    ))
+            }
             Expr::ScalarVariable(_, _)
             | Expr::TryCast { .. }
             | Expr::ScalarFunction { .. }
@@ -295,5 +324,62 @@ impl ExprSchemable for Expr {
                 this_type, cast_to_type
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logical_plan::{col, lit};
+    use datafusion_common::ScalarValue;
+    use std::collections::HashMap;
+
+    fn schema() -> DFSchema {
+        DFSchema::new_with_metadata(
+            vec![
+                DFField::new(None, "a", DataType::Int32, false),
+                DFField::new(None, "b", DataType::Int32, true),
+            ],
+            HashMap::new(),
+        )
+        .unwrap()
+    }
+
+    fn between(expr: Expr, low: Expr, high: Expr) -> Expr {
+        Expr::Between {
+            expr: Box::new(expr),
+            negated: false,
+            low: Box::new(low),
+            high: Box::new(high),
+        }
+    }
+
+    #[test]
+    fn test_between_nullable() -> Result<()> {
+        let schema = schema();
+        let null = || lit(ScalarValue::Int32(None));
+
+        assert!(!between(col("a"), lit(1), lit(2)).nullable(&schema)?);
+        assert!(between(col("b"), lit(1), lit(2)).nullable(&schema)?);
+        assert!(between(col("a"), col("b"), lit(2)).nullable(&schema)?);
+        assert!(between(col("a"), lit(1), col("b")).nullable(&schema)?);
+        assert!(between(lit(1), lit(0), null()).nullable(&schema)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_in_list_nullable() -> Result<()> {
+        let schema = schema();
+
+        assert!(!col("a")
+            .in_list(vec![lit(1), lit(2)], false)
+            .nullable(&schema)?);
+        assert!(col("b")
+            .in_list(vec![lit(1), lit(2)], false)
+            .nullable(&schema)?);
+        assert!(col("a")
+            .in_list(vec![lit(1), col("b")], false)
+            .nullable(&schema)?);
+        Ok(())
     }
 }

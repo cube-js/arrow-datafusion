@@ -33,14 +33,32 @@ async fn create_table_as() -> Result<()> {
     let results_all = execute_to_batches(&ctx, sql_all).await;
 
     let expected = [
-        "+---------+----------------+------+",
-        "| c1      | c2             | c3   |",
-        "+---------+----------------+------+",
-        "| 0.00001 | 0.000000000001 | true |",
-        "+---------+----------------+------+",
+        "+---------+-------+------+",
+        "| c1      | c2    | c3   |",
+        "+---------+-------+------+",
+        "| 0.00001 | 1e-12 | true |",
+        "+---------+-------+------+",
     ];
 
     assert_batches_eq!(expected, &results_all);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_table_as_between_nullable_bound() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    // `1 BETWEEN 0 AND NULL` is NULL, the column must be nullable
+    let sql = "CREATE TABLE my_table AS SELECT 1 BETWEEN 0 AND column1 AS x \
+               FROM (VALUES (2), (NULL)) AS t";
+    ctx.sql(sql).await.unwrap();
+
+    let results = execute_to_batches(&ctx, "SELECT x FROM my_table").await;
+    let expected = [
+        "+------+", "| x    |", "+------+", "| true |", "|      |", "+------+",
+    ];
+    assert_batches_eq!(expected, &results);
 
     Ok(())
 }
@@ -118,8 +136,8 @@ async fn create_external_table_with_timestamps() {
         "+--------+-------------------------+",
         "| name   | ts                      |",
         "+--------+-------------------------+",
-        "| Andrew | 2018-11-13 17:11:10.011 |",
-        "| Jorge  | 2018-12-13 12:12:10.011 |",
+        "| Andrew | 2018-11-13T17:11:10.011 |",
+        "| Jorge  | 2018-12-13T12:12:10.011 |",
         "+--------+-------------------------+",
     ];
     assert_batches_sorted_eq!(expected, &result);

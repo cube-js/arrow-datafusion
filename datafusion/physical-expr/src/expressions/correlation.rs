@@ -73,32 +73,32 @@ impl AggregateExpr for Correlation {
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![
             Field::new(
-                &format_state_name(&self.name, "count"),
+                format_state_name(&self.name, "count"),
                 DataType::UInt64,
                 true,
             ),
             Field::new(
-                &format_state_name(&self.name, "mean1"),
+                format_state_name(&self.name, "mean1"),
                 DataType::Float64,
                 true,
             ),
             Field::new(
-                &format_state_name(&self.name, "m2_1"),
+                format_state_name(&self.name, "m2_1"),
                 DataType::Float64,
                 true,
             ),
             Field::new(
-                &format_state_name(&self.name, "mean2"),
+                format_state_name(&self.name, "mean2"),
                 DataType::Float64,
                 true,
             ),
             Field::new(
-                &format_state_name(&self.name, "m2_2"),
+                format_state_name(&self.name, "m2_2"),
                 DataType::Float64,
                 true,
             ),
             Field::new(
-                &format_state_name(&self.name, "algo_const"),
+                format_state_name(&self.name, "algo_const"),
                 DataType::Float64,
                 true,
             ),
@@ -336,8 +336,8 @@ mod tests {
         let b: ArrayRef = Arc::new(Int32Array::from(vec![Some(4), Some(5), Some(6)]));
 
         let schema = Schema::new(vec![
-            Field::new("a", DataType::Int32, false),
-            Field::new("b", DataType::Int32, false),
+            Field::new("a", DataType::Int32, true),
+            Field::new("b", DataType::Int32, true),
         ]);
         let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![a, b])?;
 
@@ -359,8 +359,8 @@ mod tests {
         let b: ArrayRef = Arc::new(Int32Array::from(vec![None, None]));
 
         let schema = Schema::new(vec![
-            Field::new("a", DataType::Int32, false),
-            Field::new("b", DataType::Int32, false),
+            Field::new("a", DataType::Int32, true),
+            Field::new("b", DataType::Int32, true),
         ]);
         let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![a, b])?;
 
@@ -419,8 +419,8 @@ mod tests {
         let d = Arc::new(Float64Array::from(vec![None]));
 
         let schema = Schema::new(vec![
-            Field::new("a", DataType::Float64, false),
-            Field::new("b", DataType::Float64, false),
+            Field::new("a", DataType::Float64, true),
+            Field::new("b", DataType::Float64, true),
         ]);
 
         let batch1 = RecordBatch::try_new(Arc::new(schema.clone()), vec![a, b])?;

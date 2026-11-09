@@ -21,7 +21,6 @@
 //! projection expressions. `SELECT` without `FROM` will only evaluate expressions.
 
 use std::any::Any;
-use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -30,7 +29,7 @@ use crate::error::Result;
 use crate::physical_plan::{
     ColumnStatistics, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr,
 };
-use arrow::datatypes::{Field, Schema, SchemaRef};
+use arrow::datatypes::{Field, Metadata, Schema, SchemaRef};
 use arrow::error::Result as ArrowResult;
 use arrow::record_batch::RecordBatch;
 
@@ -197,20 +196,18 @@ impl ExecutionPlan for ProjectionExec {
 
 /// If e is a direct column reference, returns the field level
 /// metadata for that field, if any. Otherwise returns None
-fn get_field_metadata(
-    e: &Arc<dyn PhysicalExpr>,
-    input_schema: &Schema,
-) -> Option<BTreeMap<String, String>> {
+fn get_field_metadata(e: &Arc<dyn PhysicalExpr>, input_schema: &Schema) -> Metadata {
     let name = if let Some(column) = e.as_any().downcast_ref::<Column>() {
         column.name()
     } else {
-        return None;
+        return Metadata::new();
     };
 
     input_schema
         .field_with_name(name)
         .ok()
-        .and_then(|f| f.metadata().cloned())
+        .map(|f| f.metadata().clone())
+        .unwrap_or_default()
 }
 
 fn stats_projection(
@@ -335,7 +332,7 @@ mod tests {
         )?;
 
         let col_field = projection.schema.field(0);
-        let col_metadata = col_field.metadata().unwrap().clone();
+        let col_metadata = col_field.metadata().clone();
         let data: &str = &col_metadata["testing"];
         assert_eq!(data, "test");
 
@@ -416,5 +413,32 @@ mod tests {
         };
 
         assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn project_cast_overflow_of_non_nullable_column() -> Result<()> {
+        use crate::assert_batches_eq;
+        use crate::datasource::MemTable;
+        use arrow::array::Float64Array;
+        use arrow::datatypes::{DataType, Field};
+
+        // a numeric cast that overflows yields NULL, even for a non-nullable input
+        let schema =
+            Arc::new(Schema::new(vec![Field::new("c", DataType::Float64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Float64Array::from(vec![1.5, f64::NAN, 1e20]))],
+        )?;
+        let ctx = SessionContext::new();
+        ctx.register_table("t", Arc::new(MemTable::try_new(schema, vec![vec![batch]])?))?;
+
+        let df = ctx.sql("SELECT CAST(c AS INT) AS x FROM t").await?;
+        assert!(df.schema().field(0).is_nullable());
+        let result = df.collect().await?;
+        let expected = [
+            "+---+", "| x |", "+---+", "| 1 |", "|   |", "|   |", "+---+",
+        ];
+        assert_batches_eq!(expected, &result);
+        Ok(())
     }
 }

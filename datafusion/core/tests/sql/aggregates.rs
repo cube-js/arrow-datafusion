@@ -670,7 +670,7 @@ async fn csv_query_array_agg_distinct() -> Result<()> {
         *actual[0].schema(),
         Schema::new(vec![Field::new(
             "ARRAYAGG(DISTINCT aggregate_test_100.c2)",
-            DataType::List(Box::new(Field::new("item", DataType::UInt32, true))),
+            DataType::List(Arc::new(Field::new("item", DataType::UInt32, true))),
             false
         ),])
     );
@@ -870,9 +870,9 @@ async fn csv_query_projection_drop_out_aggr_merge() -> Result<()> {
         "+-------------------------------------+",
         "| round(t.num Multiply Float64(2.25)) |",
         "+-------------------------------------+",
-        "| 7                                   |",
-        "| 9                                   |",
-        "| 11                                  |",
+        "| 7.0                                 |",
+        "| 9.0                                 |",
+        "| 11.0                                |",
         "+-------------------------------------+",
     ];
     assert_batches_eq!(expected, &actual);
@@ -934,7 +934,7 @@ async fn aggregate_timestamps_min() -> Result<()> {
     let expected = ["+----------------------------+----------------------------+-------------------------+---------------------+",
         "| MIN(t.nanos)               | MIN(t.micros)              | MIN(t.millis)           | MIN(t.secs)         |",
         "+----------------------------+----------------------------+-------------------------+---------------------+",
-        "| 2011-12-13 11:13:10.123450 | 2011-12-13 11:13:10.123450 | 2011-12-13 11:13:10.123 | 2011-12-13 11:13:10 |",
+        "| 2011-12-13T11:13:10.123450 | 2011-12-13T11:13:10.123450 | 2011-12-13T11:13:10.123 | 2011-12-13T11:13:10 |",
         "+----------------------------+----------------------------+-------------------------+---------------------+"];
     assert_batches_sorted_eq!(expected, &results);
 
@@ -955,7 +955,7 @@ async fn aggregate_timestamps_max() -> Result<()> {
     let expected = ["+-------------------------+-------------------------+-------------------------+---------------------+",
         "| MAX(t.nanos)            | MAX(t.micros)           | MAX(t.millis)           | MAX(t.secs)         |",
         "+-------------------------+-------------------------+-------------------------+---------------------+",
-        "| 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10.432 | 2021-01-01 05:11:10 |",
+        "| 2021-01-01T05:11:10.432 | 2021-01-01T05:11:10.432 | 2021-01-01T05:11:10.432 | 2021-01-01T05:11:10 |",
         "+-------------------------+-------------------------+-------------------------+---------------------+"];
     assert_batches_sorted_eq!(expected, &results);
 
@@ -994,7 +994,7 @@ async fn aggregate_decimal_min() -> Result<()> {
         "+-----------------+",
     ];
     assert_eq!(
-        &DataType::Decimal(10, 3),
+        &DataType::Decimal128(10, 3),
         result[0].schema().field(0).data_type()
     );
     assert_batches_sorted_eq!(expected, &result);
@@ -1018,7 +1018,7 @@ async fn aggregate_decimal_max() -> Result<()> {
         "+-----------------+",
     ];
     assert_eq!(
-        &DataType::Decimal(10, 3),
+        &DataType::Decimal128(10, 3),
         result[0].schema().field(0).data_type()
     );
     assert_batches_sorted_eq!(expected, &result);
@@ -1041,7 +1041,7 @@ async fn aggregate_decimal_sum() -> Result<()> {
         "+-----------------+",
     ];
     assert_eq!(
-        &DataType::Decimal(20, 3),
+        &DataType::Decimal128(20, 3),
         result[0].schema().field(0).data_type()
     );
     assert_batches_sorted_eq!(expected, &result);
@@ -1064,7 +1064,7 @@ async fn aggregate_decimal_avg() -> Result<()> {
         "+-----------------+",
     ];
     assert_eq!(
-        &DataType::Decimal(14, 7),
+        &DataType::Decimal128(14, 7),
         result[0].schema().field(0).data_type()
     );
     assert_batches_sorted_eq!(expected, &result);

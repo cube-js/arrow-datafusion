@@ -16,8 +16,10 @@
 // under the License.
 
 use crate::{PhysicalExpr, PhysicalSortExpr};
-use arrow::compute::kernels::partition::lexicographical_partition_ranges;
+use arrow::array::{Array, AsArray};
+use arrow::compute::kernels::partition::partition;
 use arrow::compute::kernels::sort::{SortColumn, SortOptions};
+use arrow::datatypes::{DataType, Float32Type, Float64Type};
 use arrow::record_batch::RecordBatch;
 use arrow::{array::ArrayRef, datatypes::Field};
 use datafusion_common::{DataFusionError, Result};
@@ -73,9 +75,13 @@ pub trait WindowExpr: Send + Sync + Debug {
                 end: num_rows,
             }])
         } else {
-            Ok(lexicographical_partition_ranges(partition_columns)
+            let columns = partition_columns
+                .iter()
+                .map(|c| canonicalize_floats(&c.values))
+                .collect::<Vec<_>>();
+            Ok(partition(&columns)
                 .map_err(DataFusionError::ArrowError)?
-                .collect::<Vec<_>>())
+                .ranges())
         }
     }
 
@@ -109,5 +115,70 @@ pub trait WindowExpr: Send + Sync + Debug {
             .collect::<Result<Vec<SortColumn>>>()?;
         sort_columns.extend(order_by_columns);
         Ok(sort_columns)
+    }
+}
+
+/// Maps `-0.0` to `0.0` and every NaN to the canonical NaN in a float column, so that
+/// arrow's `partition` (which compares floats by their total order) puts rows into the
+/// same partition exactly when arrow 13's `lexicographical_partition_ranges` did: it
+/// compared floats with `partial_cmp`, so `-0.0 == 0.0`, and treated all NaNs as equal.
+/// Other columns are returned unchanged.
+fn canonicalize_floats(values: &ArrayRef) -> ArrayRef {
+    match values.data_type() {
+        DataType::Float32 => Arc::new(
+            values
+                .as_primitive::<Float32Type>()
+                .unary::<_, Float32Type>(|v| {
+                    if v.is_nan() {
+                        f32::NAN
+                    } else if v == 0.0 {
+                        0.0
+                    } else {
+                        v
+                    }
+                }),
+        ),
+        DataType::Float64 => Arc::new(
+            values
+                .as_primitive::<Float64Type>()
+                .unary::<_, Float64Type>(|v| {
+                    if v.is_nan() {
+                        f64::NAN
+                    } else if v == 0.0 {
+                        0.0
+                    } else {
+                        v
+                    }
+                }),
+        ),
+        _ => Arc::clone(values),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::array::{Float32Array, Float64Array};
+
+    #[test]
+    fn float_partitions_ignore_zero_sign_and_nan_payload() -> Result<()> {
+        let neg_nan = f64::from_bits(0xFFF8_0000_0000_0000);
+        let column: ArrayRef = Arc::new(Float64Array::from(vec![
+            Some(-0.0),
+            Some(0.0),
+            Some(1.0),
+            Some(neg_nan),
+            Some(f64::NAN),
+            None,
+            None,
+        ]));
+        let ranges = partition(&[canonicalize_floats(&column)])?.ranges();
+        assert_eq!(ranges, vec![0..2, 2..3, 3..5, 5..7]);
+
+        let column: ArrayRef =
+            Arc::new(Float32Array::from(vec![Some(0.0), Some(-0.0), Some(2.5)]));
+        let ranges = partition(&[canonicalize_floats(&column)])?.ranges();
+        assert_eq!(ranges, vec![0..2, 2..3]);
+        Ok(())
     }
 }

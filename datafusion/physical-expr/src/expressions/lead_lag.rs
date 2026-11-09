@@ -22,7 +22,7 @@ use crate::window::partition_evaluator::PartitionEvaluator;
 use crate::window::BuiltInWindowFunctionExpr;
 use crate::PhysicalExpr;
 use arrow::array::ArrayRef;
-use arrow::compute::cast;
+use arrow::compute::CUBESQL_CAST_OPTIONS;
 use arrow::datatypes::{DataType, Field};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::ScalarValue;
@@ -130,7 +130,10 @@ fn create_empty_array(
         .map(|scalar| scalar.to_array_of_size(size))
         .unwrap_or_else(|| new_null_array(data_type, size));
     if array.data_type() != data_type {
-        cast(&array, data_type).map_err(DataFusionError::ArrowError)
+        // arrow 13 semantics, e.g. a default value that does not fit the column type
+        // becomes NULL
+        super::cast::cast_array_with_options(&array, data_type, &CUBESQL_CAST_OPTIONS)
+            .map_err(DataFusionError::ArrowError)
     } else {
         Ok(array)
     }
@@ -146,7 +149,7 @@ fn shift_with_default_value(
 
     let value_len = array.len() as i64;
     if offset == 0 {
-        Ok(arrow::array::make_array(array.data_ref().clone()))
+        Ok(Arc::clone(array))
     } else if offset == i64::MIN || offset.abs() >= value_len {
         create_empty_array(value, array.data_type(), array.len())
     } else {

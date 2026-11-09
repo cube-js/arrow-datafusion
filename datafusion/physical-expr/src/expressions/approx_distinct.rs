@@ -20,8 +20,8 @@
 use super::format_state_name;
 use crate::{hyperloglog::HyperLogLog, AggregateExpr, PhysicalExpr};
 use arrow::array::{
-    ArrayRef, BinaryArray, BinaryOffsetSizeTrait, GenericBinaryArray, GenericStringArray,
-    PrimitiveArray, StringOffsetSizeTrait,
+    ArrayRef, BinaryArray, GenericBinaryArray, GenericStringArray, OffsetSizeTrait,
+    PrimitiveArray,
 };
 use arrow::datatypes::{
     ArrowPrimitiveType, DataType, Field, Int16Type, Int32Type, Int64Type, Int8Type,
@@ -73,7 +73,7 @@ impl AggregateExpr for ApproxDistinct {
 
     fn state_fields(&self) -> Result<Vec<Field>> {
         Ok(vec![Field::new(
-            &format_state_name(&self.name, "hll_registers"),
+            format_state_name(&self.name, "hll_registers"),
             DataType::Binary,
             false,
         )])
@@ -102,7 +102,7 @@ impl AggregateExpr for ApproxDistinct {
             DataType::LargeBinary => Box::new(BinaryHLLAccumulator::<i64>::new()),
             other => {
                 return Err(DataFusionError::NotImplemented(format!(
-                    "Support for 'approx_distinct' for data type {} is not implemented",
+                    "Support for 'approx_distinct' for data type {:?} is not implemented",
                     other
                 )))
             }
@@ -118,7 +118,7 @@ impl AggregateExpr for ApproxDistinct {
 #[derive(Debug)]
 struct BinaryHLLAccumulator<T>
 where
-    T: BinaryOffsetSizeTrait,
+    T: OffsetSizeTrait,
 {
     hll: HyperLogLog<Vec<u8>>,
     phantom_data: PhantomData<T>,
@@ -126,7 +126,7 @@ where
 
 impl<T> BinaryHLLAccumulator<T>
 where
-    T: BinaryOffsetSizeTrait,
+    T: OffsetSizeTrait,
 {
     /// new approx_distinct accumulator
     pub fn new() -> Self {
@@ -140,7 +140,7 @@ where
 #[derive(Debug)]
 struct StringHLLAccumulator<T>
 where
-    T: StringOffsetSizeTrait,
+    T: OffsetSizeTrait,
 {
     hll: HyperLogLog<String>,
     phantom_data: PhantomData<T>,
@@ -148,7 +148,7 @@ where
 
 impl<T> StringHLLAccumulator<T>
 where
-    T: StringOffsetSizeTrait,
+    T: OffsetSizeTrait,
 {
     /// new approx_distinct accumulator
     pub fn new() -> Self {
@@ -258,7 +258,7 @@ macro_rules! downcast_value {
 
 impl<T> Accumulator for BinaryHLLAccumulator<T>
 where
-    T: BinaryOffsetSizeTrait,
+    T: OffsetSizeTrait,
 {
     fn update_batch(&mut self, values: &[ArrayRef]) -> Result<()> {
         let array: &GenericBinaryArray<T> =
@@ -274,7 +274,7 @@ where
 
 impl<T> Accumulator for StringHLLAccumulator<T>
 where
-    T: StringOffsetSizeTrait,
+    T: OffsetSizeTrait,
 {
     fn update_batch(&mut self, values: &[ArrayRef]) -> Result<()> {
         let array: &GenericStringArray<T> =

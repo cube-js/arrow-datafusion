@@ -220,16 +220,16 @@ pub fn schema_null_free(schema: &Arc<Schema>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::datafusion_data_access::object_store::local::{
+        local_object_reader, local_object_reader_stream, LocalFileSystem,
+    };
     use crate::datasource::file_format::parquet::ParquetFormat;
     use crate::datasource::file_format::FileFormat;
-    use crate::datasource::object_store::local::{
-        local_object_reader, local_object_reader_stream, local_unpartitioned_file,
-        LocalFileSystem,
-    };
+    use crate::datasource::listing::local_unpartitioned_file;
     use crate::error::Result;
-    use crate::execution::runtime_env::RuntimeEnv;
     use crate::physical_plan::file_format::FileScanConfig;
     use crate::physical_plan::{collect, ExecutionPlan};
+    use crate::prelude::SessionContext;
     use crate::row::reader::read_as_batch;
     #[cfg(feature = "jit")]
     use crate::row::reader::read_as_batch_jit;
@@ -556,12 +556,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_parquet() -> Result<()> {
-        let runtime = Arc::new(RuntimeEnv::default());
+        let session_ctx = SessionContext::new();
+        let task_ctx = session_ctx.task_ctx();
         let projection = Some(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
         let exec = get_exec("alltypes_plain.parquet", &projection, None).await?;
         let schema = exec.schema().clone();
 
-        let batches = collect(exec, runtime).await?;
+        let batches = collect(exec, task_ctx).await?;
         assert_eq!(1, batches.len());
         let batch = &batches[0];
 
@@ -589,7 +590,7 @@ mod tests {
     fn test_unsupported_type_read() {
         let schema = Arc::new(Schema::new(vec![Field::new(
             "a",
-            DataType::Decimal(5, 2),
+            DataType::Decimal128(5, 2),
             false,
         )]));
         let vector = vec![0; 1024];

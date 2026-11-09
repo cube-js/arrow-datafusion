@@ -284,25 +284,25 @@ fn paths_to_batch(
     table_path: &str,
     metas: &[FileMeta],
 ) -> Result<RecordBatch> {
-    let mut key_builder = StringBuilder::new(metas.len());
-    let mut length_builder = UInt64Builder::new(metas.len());
-    let mut modified_builder = Date64Builder::new(metas.len());
+    let mut key_builder = StringBuilder::with_capacity(metas.len(), 0);
+    let mut length_builder = UInt64Builder::with_capacity(metas.len());
+    let mut modified_builder = Date64Builder::with_capacity(metas.len());
     let mut partition_builders = table_partition_cols
         .iter()
-        .map(|_| StringBuilder::new(metas.len()))
+        .map(|_| StringBuilder::with_capacity(metas.len(), 0))
         .collect::<Vec<_>>();
     for file_meta in metas {
         if let Some(partition_values) =
             parse_partitions_for_path(table_path, file_meta.path(), table_partition_cols)
         {
-            key_builder.append_value(file_meta.path())?;
-            length_builder.append_value(file_meta.size())?;
+            key_builder.append_value(file_meta.path());
+            length_builder.append_value(file_meta.size());
             match file_meta.last_modified {
-                Some(lm) => modified_builder.append_value(lm.timestamp_millis())?,
-                None => modified_builder.append_null()?,
+                Some(lm) => modified_builder.append_value(lm.timestamp_millis()),
+                None => modified_builder.append_null(),
             }
             for (i, part_val) in partition_values.iter().enumerate() {
-                partition_builders[i].append_value(part_val)?;
+                partition_builders[i].append_value(part_val);
             }
         } else {
             debug!("No partitioning for path {}", file_meta.path());
@@ -323,7 +323,9 @@ fn paths_to_batch(
     let mut fields = vec![
         Field::new(FILE_PATH_COLUMN_NAME, DataType::Utf8, false),
         Field::new(FILE_SIZE_COLUMN_NAME, DataType::UInt64, false),
-        Field::new(FILE_MODIFIED_COLUMN_NAME, DataType::Date64, false),
+        // nullable: files without a last modified date get a NULL (arrow 60
+        // `RecordBatch::try_new` rejects nulls in non-nullable columns)
+        Field::new(FILE_MODIFIED_COLUMN_NAME, DataType::Date64, true),
     ];
     for pn in table_partition_cols {
         fields.push(Field::new(pn, DataType::Utf8, false));

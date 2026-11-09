@@ -34,7 +34,7 @@ use crate::physical_plan::{
 };
 use crate::scalar::ScalarValue;
 
-use arrow::{array::ArrayRef, compute, compute::cast};
+use arrow::{array::ArrayRef, compute};
 use arrow::{
     array::{Array, UInt32Builder},
     error::Result as ArrowResult,
@@ -42,6 +42,9 @@ use arrow::{
 use arrow::{
     datatypes::{Field, Schema, SchemaRef},
     record_batch::RecordBatch,
+};
+use datafusion_physical_expr::expressions::{
+    cast_array_with_options, DEFAULT_DATAFUSION_CAST_OPTIONS,
 };
 use hashbrown::raw::RawTable;
 
@@ -436,12 +439,12 @@ fn group_aggregate_batch(
     }
 
     // Collect all indices + offsets based on keys in this vec
-    let mut batch_indices: UInt32Builder = UInt32Builder::new(0);
+    let mut batch_indices: UInt32Builder = UInt32Builder::with_capacity(0);
     let mut offsets = vec![0];
     let mut offset_so_far = 0;
     for group_idx in groups_with_rows.iter() {
         let indices = &accumulators.group_states[*group_idx].indices;
-        batch_indices.append_slice(indices)?;
+        batch_indices.append_slice(indices);
         offset_so_far += indices.len();
         offsets.push(offset_so_far);
     }
@@ -914,7 +917,13 @@ fn create_batch_from_map(
     let columns = columns
         .iter()
         .zip(output_schema.fields().iter())
-        .map(|(col, desired_field)| cast(col, desired_field.data_type()))
+        .map(|(col, desired_field)| {
+            cast_array_with_options(
+                col,
+                desired_field.data_type(),
+                &DEFAULT_DATAFUSION_CAST_OPTIONS,
+            )
+        })
         .collect::<ArrowResult<Vec<_>>>()?;
 
     RecordBatch::try_new(Arc::new(output_schema.to_owned()), columns)
@@ -1040,9 +1049,9 @@ mod tests {
             "+---+---------------+-------------+",
             "| a | AVG(b)[count] | AVG(b)[sum] |",
             "+---+---------------+-------------+",
-            "| 2 | 2             | 2           |",
-            "| 3 | 3             | 7           |",
-            "| 4 | 3             | 11          |",
+            "| 2 | 2             | 2.0         |",
+            "| 3 | 3             | 7.0         |",
+            "| 4 | 3             | 11.0        |",
             "+---+---------------+-------------+",
         ];
         assert_batches_sorted_eq!(expected, &result);
@@ -1077,7 +1086,7 @@ mod tests {
             "+---+--------------------+",
             "| a | AVG(b)             |",
             "+---+--------------------+",
-            "| 2 | 1                  |",
+            "| 2 | 1.0                |",
             "| 3 | 2.3333333333333335 |", // 3, (2 + 3 + 2) / 3
             "| 4 | 3.6666666666666665 |", // 4, (3 + 4 + 4) / 3
             "+---+--------------------+",

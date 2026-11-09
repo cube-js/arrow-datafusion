@@ -19,10 +19,11 @@
 
 use crate::{Signature, TypeSignature, Volatility};
 use arrow::datatypes::{
-    DataType, Field, TimeUnit, DECIMAL_MAX_PRECISION, DECIMAL_MAX_SCALE,
+    DataType, Field, TimeUnit, DECIMAL128_MAX_PRECISION, DECIMAL128_MAX_SCALE,
 };
 use datafusion_common::{DataFusionError, Result};
 use std::ops::Deref;
+use std::sync::Arc;
 use std::{fmt, str::FromStr};
 
 pub static STRINGS: &[DataType] = &[DataType::Utf8, DataType::LargeUtf8];
@@ -173,7 +174,7 @@ pub fn return_type(
         AggregateFunction::Stddev => stddev_return_type(&coerced_data_types[0]),
         AggregateFunction::StddevPop => stddev_return_type(&coerced_data_types[0]),
         AggregateFunction::Avg => avg_return_type(&coerced_data_types[0]),
-        AggregateFunction::ArrayAgg => Ok(DataType::List(Box::new(Field::new(
+        AggregateFunction::ArrayAgg => Ok(DataType::List(Arc::new(Field::new(
             "item",
             coerced_data_types[0].clone(),
             true,
@@ -432,11 +433,12 @@ pub fn sum_return_type(arg_type: &DataType) -> Result<DataType> {
         // In the https://www.postgresql.org/docs/current/functions-aggregate.html doc,
         // the result type of floating-point is FLOAT64 with the double precision.
         DataType::Float64 | DataType::Float32 => Ok(DataType::Float64),
-        DataType::Decimal(precision, scale) => {
+        DataType::Decimal128(precision, scale) => {
             // in the spark, the result type is DECIMAL(min(38,precision+10), s)
             // ref: https://github.com/apache/spark/blob/fcf636d9eb8d645c24be3db2d599aba2d7e2955a/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/expressions/aggregate/Sum.scala#L66
-            let new_precision = DECIMAL_MAX_PRECISION.min(*precision + 10);
-            Ok(DataType::Decimal(new_precision, *scale))
+            let new_precision =
+                DECIMAL128_MAX_PRECISION.min(precision.saturating_add(10));
+            Ok(DataType::Decimal128(new_precision, *scale))
         }
         DataType::Null => Ok(DataType::Null),
         other => Err(DataFusionError::Plan(format!(
@@ -529,12 +531,12 @@ pub fn stddev_return_type(arg_type: &DataType) -> Result<DataType> {
 /// function return type of an average
 pub fn avg_return_type(arg_type: &DataType) -> Result<DataType> {
     match arg_type {
-        DataType::Decimal(precision, scale) => {
+        DataType::Decimal128(precision, scale) => {
             // in the spark, the result type is DECIMAL(min(38,precision+4), min(38,scale+4)).
             // ref: https://github.com/apache/spark/blob/fcf636d9eb8d645c24be3db2d599aba2d7e2955a/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/expressions/aggregate/Average.scala#L66
-            let new_precision = DECIMAL_MAX_PRECISION.min(*precision + 4);
-            let new_scale = DECIMAL_MAX_SCALE.min(*scale + 4);
-            Ok(DataType::Decimal(new_precision, new_scale))
+            let new_precision = DECIMAL128_MAX_PRECISION.min(precision.saturating_add(4));
+            let new_scale = DECIMAL128_MAX_SCALE.min(scale.saturating_add(4));
+            Ok(DataType::Decimal128(new_precision, new_scale))
         }
         DataType::Int8
         | DataType::Int16
@@ -636,7 +638,7 @@ pub fn is_sum_support_arg_type(arg_type: &DataType) -> bool {
             | DataType::Int64
             | DataType::Float32
             | DataType::Float64
-            | DataType::Decimal(_, _)
+            | DataType::Decimal128(_, _)
             | DataType::Null
     )
 }
@@ -654,7 +656,7 @@ pub fn is_avg_support_arg_type(arg_type: &DataType) -> bool {
             | DataType::Int64
             | DataType::Float32
             | DataType::Float64
-            | DataType::Decimal(_, _)
+            | DataType::Decimal128(_, _)
             | DataType::Null
     )
 }
@@ -785,7 +787,7 @@ mod tests {
         let input_types = vec![
             vec![DataType::Int32],
             // support the decimal data type for min/max agg
-            // vec![DataType::Decimal(10, 2)],
+            // vec![DataType::Decimal128(10, 2)],
             vec![DataType::Utf8],
         ];
         for fun in funs {
@@ -800,7 +802,7 @@ mod tests {
         let input_types = vec![
             vec![DataType::Int32],
             vec![DataType::Float32],
-            vec![DataType::Decimal(20, 3)],
+            vec![DataType::Decimal128(20, 3)],
             vec![DataType::Null],
         ];
         for fun in funs {
@@ -838,13 +840,13 @@ mod tests {
 
     #[test]
     fn test_avg_return_data_type() -> Result<()> {
-        let data_type = DataType::Decimal(10, 5);
+        let data_type = DataType::Decimal128(10, 5);
         let result_type = avg_return_type(&data_type)?;
-        assert_eq!(DataType::Decimal(14, 9), result_type);
+        assert_eq!(DataType::Decimal128(14, 9), result_type);
 
-        let data_type = DataType::Decimal(36, 10);
+        let data_type = DataType::Decimal128(36, 10);
         let result_type = avg_return_type(&data_type)?;
-        assert_eq!(DataType::Decimal(38, 14), result_type);
+        assert_eq!(DataType::Decimal128(38, 14), result_type);
         Ok(())
     }
 
@@ -854,20 +856,20 @@ mod tests {
         let result_type = variance_return_type(&data_type)?;
         assert_eq!(DataType::Float64, result_type);
 
-        let data_type = DataType::Decimal(36, 10);
+        let data_type = DataType::Decimal128(36, 10);
         assert!(variance_return_type(&data_type).is_err());
         Ok(())
     }
 
     #[test]
     fn test_sum_return_data_type() -> Result<()> {
-        let data_type = DataType::Decimal(10, 5);
+        let data_type = DataType::Decimal128(10, 5);
         let result_type = sum_return_type(&data_type)?;
-        assert_eq!(DataType::Decimal(20, 5), result_type);
+        assert_eq!(DataType::Decimal128(20, 5), result_type);
 
-        let data_type = DataType::Decimal(36, 10);
+        let data_type = DataType::Decimal128(36, 10);
         let result_type = sum_return_type(&data_type)?;
-        assert_eq!(DataType::Decimal(38, 10), result_type);
+        assert_eq!(DataType::Decimal128(38, 10), result_type);
         Ok(())
     }
 
@@ -877,7 +879,7 @@ mod tests {
         let result_type = stddev_return_type(&data_type)?;
         assert_eq!(DataType::Float64, result_type);
 
-        let data_type = DataType::Decimal(36, 10);
+        let data_type = DataType::Decimal128(36, 10);
         assert!(stddev_return_type(&data_type).is_err());
         Ok(())
     }
@@ -888,7 +890,7 @@ mod tests {
         let result_type = covariance_return_type(&data_type)?;
         assert_eq!(DataType::Float64, result_type);
 
-        let data_type = DataType::Decimal(36, 10);
+        let data_type = DataType::Decimal128(36, 10);
         assert!(covariance_return_type(&data_type).is_err());
         Ok(())
     }
@@ -899,7 +901,7 @@ mod tests {
         let result_type = correlation_return_type(&data_type)?;
         assert_eq!(DataType::Float64, result_type);
 
-        let data_type = DataType::Decimal(36, 10);
+        let data_type = DataType::Decimal128(36, 10);
         assert!(correlation_return_type(&data_type).is_err());
         Ok(())
     }

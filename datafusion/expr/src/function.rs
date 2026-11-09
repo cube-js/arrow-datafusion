@@ -105,7 +105,7 @@ pub fn return_type(
     // Some built-in functions' return type depends on the incoming type.
     match fun {
         BuiltinScalarFunction::MakeArray => Ok(DataType::FixedSizeList(
-            Box::new(Field::new("item", input_expr_types[0].clone(), true)),
+            Arc::new(Field::new("item", input_expr_types[0].clone(), true)),
             input_expr_types.len() as i32,
         )),
         BuiltinScalarFunction::Ascii => Ok(DataType::Int32),
@@ -211,7 +211,7 @@ pub fn return_type(
         }
         BuiltinScalarFunction::Now => Ok(DataType::Timestamp(
             TimeUnit::Nanosecond,
-            Some("UTC".to_owned()),
+            Some("UTC".into()),
         )),
         BuiltinScalarFunction::UtcTimestamp => {
             Ok(DataType::Timestamp(TimeUnit::Nanosecond, None))
@@ -224,10 +224,10 @@ pub fn return_type(
         BuiltinScalarFunction::Upper => utf8_to_str_type(&input_expr_types[0], "upper"),
         BuiltinScalarFunction::RegexpMatch => Ok(match input_expr_types[0] {
             DataType::LargeUtf8 => {
-                DataType::List(Box::new(Field::new("item", DataType::LargeUtf8, true)))
+                DataType::List(Arc::new(Field::new("item", DataType::LargeUtf8, true)))
             }
             DataType::Utf8 => {
-                DataType::List(Box::new(Field::new("item", DataType::Utf8, true)))
+                DataType::List(Arc::new(Field::new("item", DataType::Utf8, true)))
             }
             DataType::Null => DataType::Null,
             _ => {
@@ -411,7 +411,7 @@ pub fn signature(fun: &BuiltinScalarFunction) -> Signature {
                 ]),
                 TypeSignature::Exact(vec![
                     DataType::Utf8,
-                    DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".to_owned())),
+                    DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
                 ]),
             ],
             fun.volatility(),
@@ -570,8 +570,8 @@ pub fn signature(fun: &BuiltinScalarFunction) -> Signature {
                 TypeSignature::Exact(vec![DataType::Float32]),
                 // NOTE: stub, won't execute
                 TypeSignature::Exact(vec![
-                    DataType::Decimal(38, 10),
-                    DataType::Decimal(38, 10),
+                    DataType::Decimal128(38, 10),
+                    DataType::Decimal128(38, 10),
                 ]),
             ],
             fun.volatility(),
@@ -583,7 +583,7 @@ pub fn signature(fun: &BuiltinScalarFunction) -> Signature {
                 TypeSignature::Exact(vec![DataType::Float64]),
                 TypeSignature::Exact(vec![DataType::Float32]),
                 // NOTE: stub, won't execute
-                TypeSignature::Exact(vec![DataType::Decimal(38, 10), DataType::Int32]),
+                TypeSignature::Exact(vec![DataType::Decimal128(38, 10), DataType::Int32]),
             ],
             fun.volatility(),
         ),

@@ -144,9 +144,9 @@ impl DFSchema {
             schema
                 .fields()
                 .iter()
-                .map(|f| DFField::from_qualified(qualifier, f.clone()))
+                .map(|f| DFField::from_qualified(qualifier, f.as_ref().clone()))
                 .collect(),
-            schema.metadata().clone(),
+            schema.metadata().into(),
         )
     }
 
@@ -414,7 +414,7 @@ impl From<DFSchema> for Schema {
                         f.field
                     }
                 })
-                .collect(),
+                .collect::<Vec<Field>>(),
             df_schema.metadata,
         )
     }
@@ -424,7 +424,11 @@ impl From<&DFSchema> for Schema {
     /// Convert DFSchema reference into a Schema
     fn from(df_schema: &DFSchema) -> Self {
         Schema::new_with_metadata(
-            df_schema.fields.iter().map(|f| f.field.clone()).collect(),
+            df_schema
+                .fields
+                .iter()
+                .map(|f| f.field.clone())
+                .collect::<Vec<Field>>(),
             df_schema.metadata.clone(),
         )
     }
@@ -438,9 +442,9 @@ impl TryFrom<Schema> for DFSchema {
             schema
                 .fields()
                 .iter()
-                .map(|f| DFField::from(f.clone()))
+                .map(|f| DFField::from(f.as_ref().clone()))
                 .collect(),
-            schema.metadata().clone(),
+            schema.metadata().into(),
         )
     }
 }
@@ -697,8 +701,8 @@ mod tests {
     fn from_qualified_schema_into_arrow_schema() -> Result<()> {
         let schema = DFSchema::try_from_qualified_schema("t1", &test_schema_1())?;
         let arrow_schema: Schema = schema.into();
-        let expected = "Field { name: \"c0\", data_type: Boolean, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None }, \
-        Field { name: \"c1\", data_type: Boolean, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None }";
+        let expected =
+            "Field { \"c0\": nullable Boolean }, Field { \"c1\": nullable Boolean }";
         assert_eq!(expected, arrow_schema.to_string());
         Ok(())
     }
