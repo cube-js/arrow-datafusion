@@ -109,7 +109,7 @@ impl CountAccumulator {
 impl Accumulator for CountAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> Result<()> {
         let array = &values[0];
-        self.count += (array.len() - array.null_count()) as i64;
+        self.count += (array.len() - array.logical_null_count()) as i64;
         Ok(())
     }
 
@@ -180,6 +180,18 @@ mod tests {
         generic_test_op!(
             a,
             DataType::Boolean,
+            Count,
+            ScalarValue::from(0i64),
+            DataType::Int64
+        )
+    }
+
+    #[test]
+    fn count_null_type() -> Result<()> {
+        let a: ArrayRef = Arc::new(NullArray::new(4));
+        generic_test_op!(
+            a,
+            DataType::Null,
             Count,
             ScalarValue::from(0i64),
             DataType::Int64
