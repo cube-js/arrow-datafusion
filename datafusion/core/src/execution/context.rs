@@ -1557,7 +1557,10 @@ mod tests {
     use arrow::datatypes::*;
     use arrow::record_batch::RecordBatch;
     use async_trait::async_trait;
-    use datafusion_expr::{TableFunctionImplementation, Volatility};
+    use datafusion_expr::{
+        ColumnarValue, TableFunctionImplementation, TableFunctionRows, Volatility,
+    };
+    use futures::{FutureExt, StreamExt};
     use std::fs::File;
     use std::sync::Weak;
     use std::thread::{self, JoinHandle};
@@ -2126,6 +2129,171 @@ mod tests {
         ];
 
         assert_batches_eq!(expected, &result);
+
+        Ok(())
+    }
+
+    /// Counts up from its argument without an end
+    struct EndlessSeries {
+        starts: Int64Array,
+        /// Row and the next value of it
+        cursor: Option<(usize, i64)>,
+    }
+
+    impl TableFunctionRows for EndlessSeries {
+        fn next_values(&mut self, row: usize, max_rows: usize) -> Result<ArrayRef> {
+            let next = match self.cursor {
+                Some((cursor_row, next)) if cursor_row == row => next,
+                _ => self.starts.value(row),
+            };
+            let end = next + max_rows as i64;
+            self.cursor = Some((row, end));
+
+            Ok(Arc::new(Int64Array::from_iter_values(next..end)))
+        }
+    }
+
+    fn endless_udtf() -> TableFunctionImplementation {
+        Arc::new(|args: &[ColumnarValue], num_rows| {
+            let starts = args[0].clone().into_array(num_rows);
+            let starts = starts
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("cast failed")
+                .clone();
+
+            Ok(Box::new(EndlessSeries {
+                starts,
+                cursor: None,
+            }) as Box<dyn TableFunctionRows>)
+        })
+    }
+
+    fn table_function_context(batch_size: usize) -> SessionContext {
+        let mut ctx =
+            SessionContext::with_config(SessionConfig::new().with_batch_size(batch_size));
+        ctx.register_udtf(create_udtf(
+            "integer_series",
+            vec![DataType::Int64, DataType::Int64],
+            Arc::new(DataType::Int64),
+            Volatility::Immutable,
+            integer_udtf(),
+        ));
+        ctx.register_udtf(create_udtf(
+            "endless_series",
+            vec![DataType::Int64],
+            Arc::new(DataType::Int64),
+            Volatility::Immutable,
+            endless_udtf(),
+        ));
+
+        ctx
+    }
+
+    #[tokio::test]
+    async fn table_function_output_is_split_into_batches() -> Result<()> {
+        let ctx = table_function_context(3);
+
+        let result = plan_and_collect(
+            &ctx,
+            "SELECT asd, integer_series(1, 2) a, integer_series(1, qwe) b FROM (select 1 asd, 8 qwe UNION ALL select 2 asd, 0 qwe UNION ALL select 3 asd, 4 qwe) x ORDER BY asd, b",
+        )
+        .await?;
+
+        let expected = vec![
+            "+-----+---+---+",
+            "| asd | a | b |",
+            "+-----+---+---+",
+            "| 1   | 1 | 1 |",
+            "| 1   | 2 | 2 |",
+            "| 1   |   | 3 |",
+            "| 1   |   | 4 |",
+            "| 1   |   | 5 |",
+            "| 1   |   | 6 |",
+            "| 1   |   | 7 |",
+            "| 1   |   | 8 |",
+            "| 2   | 1 |   |",
+            "| 2   | 2 |   |",
+            "| 3   | 1 | 1 |",
+            "| 3   | 2 | 2 |",
+            "| 3   |   | 3 |",
+            "| 3   |   | 4 |",
+            "+-----+---+---+",
+        ];
+        assert_batches_eq!(expected, &result);
+
+        let stream = ctx
+            .sql("SELECT * FROM integer_series(1, 8) pos(n)")
+            .await?
+            .execute_stream()
+            .await?;
+        let batches = stream.collect::<Vec<_>>().await;
+        let sizes = batches
+            .iter()
+            .map(|batch| batch.as_ref().unwrap().num_rows())
+            .collect::<Vec<_>>();
+        assert_eq!(sizes, vec![3, 3, 2]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn lazy_table_function_stops_at_limit() -> Result<()> {
+        let ctx = table_function_context(3);
+
+        let result =
+            plan_and_collect(&ctx, "SELECT n FROM endless_series(10) pos(n) LIMIT 5")
+                .await?;
+
+        let expected = vec![
+            "+----+", "| n  |", "+----+", "| 10 |", "| 11 |", "| 12 |", "| 13 |",
+            "| 14 |", "+----+",
+        ];
+        assert_batches_eq!(expected, &result);
+
+        let result = plan_and_collect(
+            &ctx,
+            "SELECT endless_series(1) a, integer_series(1, 4) b LIMIT 7",
+        )
+        .await?;
+
+        let expected = vec![
+            "+---+---+",
+            "| a | b |",
+            "+---+---+",
+            "| 1 | 1 |",
+            "| 2 | 2 |",
+            "| 3 | 3 |",
+            "| 4 | 4 |",
+            "| 5 |   |",
+            "| 6 |   |",
+            "| 7 |   |",
+            "+---+---+",
+        ];
+        assert_batches_eq!(expected, &result);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn lazy_table_function_yields_to_the_executor() -> Result<()> {
+        let ctx = table_function_context(2);
+
+        let mut stream = ctx
+            .sql("SELECT * FROM endless_series(1) pos(n)")
+            .await?
+            .execute_stream()
+            .await?;
+
+        let mut ready = 0;
+        while let Some(batch) = stream.next().now_or_never() {
+            assert_eq!(batch.unwrap()?.num_rows(), 2);
+            ready += 1;
+            assert!(ready <= 64, "the stream never yields");
+        }
+        assert_eq!(ready, 64);
+        // The stream woke itself up, so it goes on once it is polled again
+        assert!(stream.next().now_or_never().is_some());
 
         Ok(())
     }
