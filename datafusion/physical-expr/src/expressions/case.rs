@@ -280,6 +280,7 @@ fn if_then_else(
             true_values,
             false_values
         ),
+        DataType::Null => Ok(new_null_array(&DataType::Null, bools.len())),
         other => Err(DataFusionError::Execution(format!(
             "CASE does not support '{:?}'",
             other
