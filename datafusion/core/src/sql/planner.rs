@@ -2856,6 +2856,14 @@ impl<'a, S: ContextProvider> SqlToRel<'a, S> {
             ))));
         }
 
+        if let Some(filter) = function.filter {
+            return Err(DataFusionError::NotImplemented(format!(
+                "FILTER not supported in {}: {}",
+                name.to_ascii_uppercase(),
+                filter
+            )));
+        }
+
         let over = function.over;
         let within_group = function.within_group;
         let (arg_list, distinct, clauses) = function_arguments_into_args(function.args);
@@ -4866,6 +4874,16 @@ mod tests {
                         \n  Aggregate: groupBy=[[]], aggr=[[COUNT(#person.id)]]\
                         \n    TableScan: person projection=None";
         quick_test(sql, expected);
+    }
+
+    #[test]
+    fn select_count_filter() {
+        let sql = "SELECT COUNT(*) FILTER (WHERE age > 1) FROM person";
+        let err = logical_plan(sql).expect_err("query should have failed");
+        assert_eq!(
+            r#"NotImplemented("FILTER not supported in COUNT: age > 1")"#,
+            format!("{:?}", err)
+        );
     }
 
     #[test]
