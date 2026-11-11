@@ -1406,3 +1406,93 @@ async fn select_distinct_on_in_cte() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn query_without_input_columns() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_aggregate_csv(&ctx).await?;
+    let t = "(SELECT 1 AS a UNION ALL SELECT 1 AS a UNION ALL SELECT 2 AS a) t";
+    let u = "(SELECT 1 AS b UNION ALL SELECT 2 AS b) u";
+    let cases = [
+        (format!("SELECT count(1) OVER () FROM {}", t), vec!["3"; 3]),
+        (
+            "SELECT count(1) OVER () FROM (SELECT 1 AS a) t".to_string(),
+            vec!["1"],
+        ),
+        (
+            format!("SELECT count(CAST(NULL AS int)) OVER () FROM {}", t),
+            vec!["0"; 3],
+        ),
+        (
+            format!("SELECT count(*) FROM {} WHERE random() < 2", t),
+            vec!["3"],
+        ),
+        (
+            format!(
+                "SELECT count(*) FROM (SELECT a FROM {} WHERE random() < 2 LIMIT 2) s",
+                t
+            ),
+            vec!["2"],
+        ),
+        (
+            format!("SELECT count(1) OVER (ORDER BY random()) FROM {}", t),
+            vec!["1", "2", "3"],
+        ),
+        (
+            format!(
+                "SELECT count(1) OVER (PARTITION BY random() < 2) FROM {}",
+                t
+            ),
+            vec!["3"; 3],
+        ),
+        (
+            format!(
+                "SELECT count(CASE WHEN random() < 0.5 THEN 1 ELSE 0 END) OVER () FROM {}",
+                t
+            ),
+            vec!["3"; 3],
+        ),
+        (
+            format!("SELECT 1 FROM (SELECT max(a) AS m FROM {}) s", t),
+            vec!["1"],
+        ),
+        (format!("SELECT count(1) OVER () FROM {} CROSS JOIN {}", t, u), vec!["6"; 6]),
+        (format!("SELECT (SELECT count(*) FROM {})", t), vec!["3"]),
+        (
+            "SELECT count(*) FROM (SELECT c2 FROM aggregate_test_100 UNION ALL SELECT 1 AS c2) s WHERE random() < 2".to_string(),
+            vec!["101"],
+        ),
+        (
+            format!("SELECT count(*) FROM (SELECT DISTINCT 1 FROM {}) s", t),
+            vec!["1"],
+        ),
+        (
+            "SELECT count(*) FROM (SELECT DISTINCT c9 FROM aggregate_test_100) s"
+                .to_string(),
+            vec!["100"],
+        ),
+        (
+            "SELECT count(a) FROM (SELECT DISTINCT a, b FROM (SELECT 1 AS a, 1 AS b UNION ALL SELECT 1 AS a, 2 AS b) x) s".to_string(),
+            vec!["2"],
+        ),
+        (
+            "SELECT count(*) FROM (SELECT 1 AS a UNION ALL SELECT 2) s1 CROSS JOIN (SELECT 3 AS a UNION ALL SELECT 4) s2".to_string(),
+            vec!["4"],
+        ),
+        (
+            "SELECT sum(b) FROM (SELECT DISTINCT a, b FROM (SELECT 1 AS a, 1 AS b UNION ALL SELECT 1 AS a, 2 AS b) x UNION ALL SELECT 1 AS a, 3 AS b) s".to_string(),
+            vec!["6"],
+        ),
+        (
+            "SELECT count(1) OVER () FROM (SELECT 1 AS a UNION ALL (SELECT 2 AS b LIMIT 1)) s".to_string(),
+            vec!["2"; 2],
+        ),
+    ];
+    for (sql, expected) in cases {
+        let actual = execute(&ctx, &sql).await;
+        let expected: Vec<Vec<String>> =
+            expected.iter().map(|v| vec![v.to_string()]).collect();
+        assert_eq!(actual, expected, "{}", sql);
+    }
+    Ok(())
+}

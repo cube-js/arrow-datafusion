@@ -18,7 +18,7 @@
 use arrow::datatypes::{DataType, Schema};
 use arrow::error::Result as ArrowResult;
 
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use datafusion_common::Result;
 
@@ -67,7 +67,9 @@ pub trait PhysicalExpr: Send + Sync + Display + Debug {
             .map(|c| take(c.as_ref(), &indices, None))
             .collect::<ArrowResult<Vec<Arc<dyn Array>>>>()?;
 
-        let tmp_batch = RecordBatch::try_new(batch.schema(), tmp_columns)?;
+        let options = RecordBatchOptions::new().with_row_count(Some(indices.len()));
+        let tmp_batch =
+            RecordBatch::try_new_with_options(batch.schema(), tmp_columns, &options)?;
         let tmp_result = self.evaluate(&tmp_batch)?;
         if let ColumnarValue::Array(a) = tmp_result {
             let result = scatter(selection, a.as_ref())?;

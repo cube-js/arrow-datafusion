@@ -33,7 +33,7 @@ use crate::execution::context::TaskContext;
 use arrow::compute::kernels::concat::concat;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use async_trait::async_trait;
 use futures::stream::{Stream, StreamExt};
 use log::debug;
@@ -269,7 +269,8 @@ impl RecordBatchStream for CoalesceBatchesStream {
     }
 }
 
-/// Concatenates an array of `RecordBatch` into one batch
+/// Concatenates an array of `RecordBatch` into one batch.
+/// `row_count` must be the total number of rows in `batches`.
 pub fn concat_batches(
     schema: &SchemaRef,
     batches: &[RecordBatch],
@@ -293,7 +294,8 @@ pub fn concat_batches(
         batches.len(),
         row_count
     );
-    RecordBatch::try_new(schema.clone(), arrays)
+    let options = RecordBatchOptions::new().with_row_count(Some(row_count));
+    RecordBatch::try_new_with_options(schema.clone(), arrays, &options)
 }
 
 #[cfg(test)]

@@ -708,6 +708,15 @@ pub(crate) fn generate_sort_key(
     sort_key
 }
 
+/// Returns the window expression under an alias, which the optimizer may add when it
+/// rewrites a window expression.
+pub(crate) fn unalias_window_expr(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Alias(expr, _) => expr.as_ref(),
+        expr => expr,
+    }
+}
+
 /// given a slice of window expressions sharing the same sort key, find their common partition
 /// keys.
 pub(crate) fn window_expr_common_partition_keys(
@@ -715,7 +724,7 @@ pub(crate) fn window_expr_common_partition_keys(
 ) -> Result<&[Expr]> {
     let all_partition_keys = window_exprs
         .iter()
-        .map(|expr| match expr {
+        .map(|expr| match unalias_window_expr(expr) {
             Expr::WindowFunction { partition_by, .. } => Ok(partition_by),
             expr => Err(DataFusionError::Execution(format!(
                 "Impossibly got non-window expr {:?}",

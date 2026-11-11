@@ -57,7 +57,9 @@ use crate::physical_plan::windows::WindowAggExec;
 use crate::physical_plan::{join_utils, Partitioning};
 use crate::physical_plan::{AggregateExpr, ExecutionPlan, PhysicalExpr, WindowExpr};
 use crate::scalar::ScalarValue;
-use crate::sql::utils::{generate_sort_key, window_expr_common_partition_keys};
+use crate::sql::utils::{
+    generate_sort_key, unalias_window_expr, window_expr_common_partition_keys,
+};
 use crate::variable::VarType;
 use crate::{
     error::{DataFusionError, Result},
@@ -574,7 +576,7 @@ impl DefaultPhysicalPlanner {
                     };
 
                     // add a sort phase
-                    let get_sort_keys = |expr: &Expr| match expr {
+                    let get_sort_keys = |expr: &Expr| match unalias_window_expr(expr) {
                         Expr::WindowFunction {
                             ref partition_by,
                             ref order_by,

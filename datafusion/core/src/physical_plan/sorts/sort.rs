@@ -44,7 +44,7 @@ use arrow::compute::{lexsort_to_indices, take, SortColumn, TakeOptions};
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
 use arrow::ipc::reader::FileReader;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use async_trait::async_trait;
 use futures::lock::Mutex;
 use futures::StreamExt;
@@ -544,7 +544,8 @@ fn sort_batch(
     )?;
 
     // reorder all rows based on sorted indices
-    RecordBatch::try_new(
+    let options = RecordBatchOptions::new().with_row_count(Some(indices.len()));
+    RecordBatch::try_new_with_options(
         schema,
         batch
             .columns()
@@ -561,6 +562,7 @@ fn sort_batch(
                 )
             })
             .collect::<ArrowResult<Vec<ArrayRef>>>()?,
+        &options,
     )
 }
 
