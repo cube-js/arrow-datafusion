@@ -42,9 +42,23 @@ use std::sync::Arc;
 pub type ScalarFunctionImplementation =
     Arc<dyn Fn(&[ColumnarValue]) -> Result<ColumnarValue> + Send + Sync>;
 
-/// Table function. Second tuple
-pub type TableFunctionImplementation =
-    Arc<dyn Fn(&[ColumnarValue], usize) -> Result<(ArrayRef, Vec<usize>)> + Send + Sync>;
+/// Values a table function produces for the rows of one input batch.
+///
+/// The values are pulled in chunks, so a function can produce them lazily instead of
+/// materializing its whole output at once.
+pub trait TableFunctionRows: Send {
+    /// Up to `max_rows` further values of input row `row`. Fewer than `max_rows` values mean
+    /// the row is exhausted, and every later call for it returns an empty array.
+    ///
+    /// Rows are requested in ascending order.
+    fn next_values(&mut self, row: usize, max_rows: usize) -> Result<ArrayRef>;
+}
+
+/// Table function: receives the arguments evaluated for an input batch and the number of
+/// rows in it.
+pub type TableFunctionImplementation = Arc<
+    dyn Fn(&[ColumnarValue], usize) -> Result<Box<dyn TableFunctionRows>> + Send + Sync,
+>;
 
 /// A function's return type
 pub type ReturnTypeFunction =

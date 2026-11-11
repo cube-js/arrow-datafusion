@@ -27,11 +27,12 @@ use crate::error::{DataFusionError, Result};
 use crate::physical_plan::{
     ColumnStatistics, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr,
 };
-use arrow::array::{new_null_array, Array, ArrayRef, NullArray};
+use arrow::array::{new_null_array, Array, ArrayRef, NullArray, UInt64Array};
 use arrow::compute::kernels;
 use arrow::datatypes::{Field, FieldRef, Metadata, Schema, SchemaRef};
 use arrow::error::Result as ArrowResult;
 use arrow::record_batch::RecordBatch;
+use datafusion_expr::TableFunctionRows;
 use datafusion_physical_expr::TableFunctionExpr;
 
 use super::expressions::{Column, PhysicalSortExpr};
@@ -159,11 +160,16 @@ impl ExecutionPlan for TableFunExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
+        let batch_size = context.session_config().batch_size.max(1);
+
         Ok(Box::pin(TableFunStream {
             schema: self.schema.clone(),
             expr: self.expr.iter().map(|x| x.0.clone()).collect(),
             input: self.input.execute(partition, context).await?,
             baseline_metrics: BaselineMetrics::new(&self.metrics, partition),
+            batch_size,
+            current: None,
+            batches_without_yield: 0,
         }))
     }
 
@@ -247,68 +253,137 @@ fn stats_table_fun(
     }
 }
 
+/// Number of batches a stream returns in a row before it yields to the executor, so that a
+/// table function with an endless output does not starve other tasks and can be cancelled
+const YIELD_AFTER_BATCHES: usize = 64;
+
+/// Input batch that is being expanded by table functions
+struct InputBatch {
+    /// Input columns, without the placeholder column of EmptyRelation
+    columns: Vec<ArrayRef>,
+    /// Values of every table function for the rows of the batch
+    functions: Vec<Box<dyn TableFunctionRows>>,
+    num_rows: usize,
+    /// First row that still has values to return
+    row: usize,
+    /// Whether an output batch was returned for this input batch
+    returned: bool,
+}
+
+/// TableFun iterator
+struct TableFunStream {
+    schema: SchemaRef,
+    expr: Vec<Arc<dyn PhysicalExpr>>,
+    input: SendableRecordBatchStream,
+    baseline_metrics: BaselineMetrics,
+    /// Maximum number of rows in an output batch
+    batch_size: usize,
+    current: Option<InputBatch>,
+    /// Batches returned since the stream was pending for the last time
+    batches_without_yield: usize,
+}
+
 impl TableFunStream {
-    fn batch(&self, batch: &RecordBatch) -> ArrowResult<RecordBatch> {
-        let arrays = (batch
-            .columns()
+    fn start_batch(&self, batch: &RecordBatch) -> ArrowResult<InputBatch> {
+        let input_columns = self.schema.fields().len() - self.expr.len();
+        let columns = if batch.num_columns() == input_columns {
+            batch.columns().to_vec()
+        } else {
+            batch
+                .columns()
+                .iter()
+                // Filtering out placeholder column of EmptyRelation
+                .filter(|a| a.as_any().downcast_ref::<NullArray>().is_none())
+                .cloned()
+                .collect()
+        };
+
+        let functions = self
+            .expr
             .iter()
-            // Filtering out placeholder column of EmptyRelation
-            .filter(|a| a.as_any().downcast_ref::<NullArray>().is_none())
-            .map(|a| {
-                Ok((
-                    (a.clone(), (0..a.len()).map(|_| 1).collect::<Vec<_>>()),
-                    false,
+            .map(|expr| {
+                let t_expr = expr.as_any().downcast_ref::<TableFunctionExpr>().unwrap();
+                t_expr.evaluate_table(batch)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(InputBatch {
+            columns,
+            functions,
+            num_rows: batch.num_rows(),
+            row: 0,
+            returned: false,
+        })
+    }
+
+    /// Returns the next output batch of the current input batch, at most `batch_size` rows.
+    /// `None` when the input batch has no rows left. An input batch without any output rows
+    /// still returns one empty batch.
+    fn next_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+        let Some(input) = self.current.as_mut() else {
+            return Ok(None);
+        };
+        let function_fields = &self.schema.fields()[input.columns.len()..];
+
+        // Input row of every output row
+        let mut rows: Vec<u64> = Vec::new();
+        let mut sections: Vec<Vec<ArrayRef>> = vec![Vec::new(); input.functions.len()];
+
+        while rows.len() < self.batch_size && input.row < input.num_rows {
+            let wanted = self.batch_size - rows.len();
+            let values = input
+                .functions
+                .iter_mut()
+                .map(|function| function.next_values(input.row, wanted))
+                .collect::<Result<Vec<_>>>()?;
+
+            // A row is as long as its longest function, shorter ones are padded with nulls
+            let len = values.iter().map(|v| v.len()).max().unwrap_or(0);
+            if len > wanted {
+                return Err(DataFusionError::Internal(format!(
+                    "Table function returned {} values when at most {} were requested",
+                    len, wanted
                 ))
-            }))
-        .chain(self.expr.iter().map(|expr| {
-            let t_expr = expr.as_any().downcast_ref::<TableFunctionExpr>().unwrap();
-            Ok((t_expr.evaluate_table(batch)?, true))
-        }))
-        .collect::<Result<Vec<_>>>()?;
+                .into());
+            }
 
-        // Detect count sizes of batch sections
-        let mut max_batch_sizes: Vec<usize> = vec![0; batch.num_rows()];
-        for ((_, indexes), _) in arrays.iter() {
-            for (i, batch_size) in indexes.iter().enumerate() {
-                if max_batch_sizes[i] < *batch_size {
-                    max_batch_sizes[i] = *batch_size;
+            if len > 0 {
+                for ((values, sections), field) in values
+                    .into_iter()
+                    .zip(sections.iter_mut())
+                    .zip(function_fields)
+                {
+                    let padding = len - values.len();
+                    sections.push(values);
+                    if padding > 0 {
+                        sections.push(new_null_array(field.data_type(), padding));
+                    }
                 }
+                rows.extend(std::iter::repeat(input.row as u64).take(len));
+            }
+
+            // Fewer values than requested: every function is done with the row
+            if len < wanted {
+                input.row += 1;
             }
         }
 
-        if max_batch_sizes.is_empty() {
-            return Ok(RecordBatch::new_empty(self.schema.clone()));
-        }
-
-        let mut columns: Vec<ArrayRef> = Vec::new();
-
-        for (col_i, ((col_arr, cur_batch_sizes), is_table_fun)) in
-            arrays.iter().enumerate()
-        {
-            let mut sections: Vec<ArrayRef> = Vec::new();
-
-            let mut start_i_of_batch = 0;
-
-            for (i_batch, max_size) in max_batch_sizes.iter().enumerate() {
-                let current_batch_size = cur_batch_sizes[i_batch];
-                sections.push(col_arr.slice(start_i_of_batch, current_batch_size));
-                if *is_table_fun {
-                    if max_size - current_batch_size > 0 {
-                        sections.push(new_null_array(
-                            self.schema.field(col_i).data_type(),
-                            max_size - current_batch_size,
-                        ));
-                    }
-                } else if max_size - current_batch_size > 0 {
-                    for _ in 0..(max_size - current_batch_size) {
-                        sections
-                            .push(col_arr.slice(start_i_of_batch, current_batch_size));
-                    }
-                }
-
-                start_i_of_batch += cur_batch_sizes[i_batch];
+        if rows.is_empty() {
+            if input.returned {
+                return Ok(None);
             }
+            input.returned = true;
+            return Ok(Some(RecordBatch::new_empty(self.schema.clone())));
+        }
+        input.returned = true;
 
+        let rows = UInt64Array::from(rows);
+        let mut columns: Vec<ArrayRef> =
+            Vec::with_capacity(input.columns.len() + sections.len());
+        for column in &input.columns {
+            columns.push(kernels::take::take(column.as_ref(), &rows, None)?);
+        }
+        for sections in sections {
             columns.push(kernels::concat::concat(
                 sections
                     .iter()
@@ -318,16 +393,8 @@ impl TableFunStream {
             )?);
         }
 
-        RecordBatch::try_new(self.schema.clone(), columns)
+        RecordBatch::try_new(self.schema.clone(), columns).map(Some)
     }
-}
-
-/// TableFun iterator
-struct TableFunStream {
-    schema: SchemaRef,
-    expr: Vec<Arc<dyn PhysicalExpr>>,
-    input: SendableRecordBatchStream,
-    baseline_metrics: BaselineMetrics,
 }
 
 impl Stream for TableFunStream {
@@ -337,17 +404,48 @@ impl Stream for TableFunStream {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        let poll = self.input.poll_next_unpin(cx).map(|x| match x {
-            Some(Ok(batch)) => Some(self.batch(&batch)),
-            other => other,
-        });
+        loop {
+            if self.current.is_some() {
+                if self.batches_without_yield >= YIELD_AFTER_BATCHES {
+                    self.batches_without_yield = 0;
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
 
-        self.baseline_metrics.record_poll(poll)
-    }
+                match self.next_batch() {
+                    Ok(Some(batch)) => {
+                        self.batches_without_yield += 1;
+                        let poll = Poll::Ready(Some(Ok(batch)));
+                        return self.baseline_metrics.record_poll(poll);
+                    }
+                    Ok(None) => self.current = None,
+                    Err(e) => {
+                        self.current = None;
+                        return self
+                            .baseline_metrics
+                            .record_poll(Poll::Ready(Some(Err(e))));
+                    }
+                }
+            }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // same number of record batches
-        self.input.size_hint()
+            match self.input.poll_next_unpin(cx) {
+                Poll::Pending => {
+                    self.batches_without_yield = 0;
+                    return Poll::Pending;
+                }
+                Poll::Ready(Some(Ok(batch))) => match self.start_batch(&batch) {
+                    Ok(input) => self.current = Some(input),
+                    Err(e) => {
+                        return self
+                            .baseline_metrics
+                            .record_poll(Poll::Ready(Some(Err(e))))
+                    }
+                },
+                Poll::Ready(other) => {
+                    return self.baseline_metrics.record_poll(Poll::Ready(other))
+                }
+            }
+        }
     }
 }
 

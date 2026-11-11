@@ -37,7 +37,10 @@ use crate::physical_plan::expressions::{
 };
 use crate::{
     error::{DataFusionError, Result},
-    logical_expr::{function, ScalarFunctionImplementation, TableFunctionImplementation},
+    logical_expr::{
+        function, ScalarFunctionImplementation, TableFunctionImplementation,
+        TableFunctionRows,
+    },
     scalar::ScalarValue,
 };
 use arrow::{
@@ -270,7 +273,59 @@ where
     })
 }
 
-/// Create a table function.
+/// Values of a table function that computed its whole output for a batch at once
+struct MaterializedTableFunctionRows {
+    values: ArrayRef,
+    /// Number of values of each input row
+    section_sizes: Vec<usize>,
+    /// Row the cursor is in
+    row: usize,
+    /// Offset in `values` of the first value of `row` that is not returned yet
+    offset: usize,
+    /// Offset in `values` past the last value of `row`
+    row_end: usize,
+}
+
+impl MaterializedTableFunctionRows {
+    fn new(values: ArrayRef, section_sizes: Vec<usize>) -> Self {
+        let row_end = section_sizes.first().copied().unwrap_or(0);
+        Self {
+            values,
+            section_sizes,
+            row: 0,
+            offset: 0,
+            row_end,
+        }
+    }
+}
+
+impl TableFunctionRows for MaterializedTableFunctionRows {
+    fn next_values(&mut self, row: usize, max_rows: usize) -> Result<ArrayRef> {
+        if row < self.row {
+            return Err(DataFusionError::Internal(format!(
+                "Table function rows are requested out of order: {} after {}",
+                row, self.row
+            )));
+        }
+        while self.row < row {
+            self.row += 1;
+            self.offset = self.row_end;
+            self.row_end += self.section_sizes.get(self.row).copied().unwrap_or(0);
+        }
+
+        let len = (self.row_end - self.offset).min(max_rows);
+        let values = self.values.slice(self.offset, len);
+        self.offset += len;
+
+        Ok(values)
+    }
+}
+
+/// Create a table function from a function that returns all values for a batch at once:
+/// the values and the number of them that belongs to each input row.
+///
+/// A function with an output that is not bound by its input should implement
+/// [`TableFunctionRows`] instead, to produce the values lazily.
 pub fn make_table_function<F>(inner: F) -> TableFunctionImplementation
 where
     F: Fn(&[ArrayRef]) -> Result<(ArrayRef, Vec<usize>)> + Sync + Send + 'static,
@@ -282,7 +337,20 @@ where
             .map(|arg| arg.clone().into_array(num_rows))
             .collect::<Vec<ArrayRef>>();
 
-        (inner)(&args)
+        let (values, section_sizes) = (inner)(&args)?;
+        let total: usize = section_sizes.iter().sum();
+        if total != values.len() {
+            return Err(DataFusionError::Internal(format!(
+                "Table function returned {} values, but its sections hold {}",
+                values.len(),
+                total
+            )));
+        }
+
+        Ok(
+            Box::new(MaterializedTableFunctionRows::new(values, section_sizes))
+                as Box<dyn TableFunctionRows>,
+        )
     })
 }
 

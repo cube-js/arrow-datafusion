@@ -30,14 +30,15 @@
 //! to a function that supports f64, it is coerced to f64.
 
 use crate::PhysicalExpr;
-use arrow::array::ArrayRef;
 use arrow::datatypes::{DataType, Schema};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DataFusionError, Result};
 use datafusion_expr::ColumnarValue;
 pub use datafusion_expr::NullColumnarValue;
 use datafusion_expr::ScalarFunctionImplementation;
-use datafusion_expr::{BuiltinScalarFunction, TableFunctionImplementation};
+use datafusion_expr::{
+    BuiltinScalarFunction, TableFunctionImplementation, TableFunctionRows,
+};
 use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::{self, Formatter};
@@ -202,7 +203,11 @@ impl TableFunctionExpr {
         &self.return_type
     }
 
-    pub fn evaluate_table(&self, batch: &RecordBatch) -> Result<(ArrayRef, Vec<usize>)> {
+    /// Evaluates the arguments for `batch` and returns the values of the function for its rows
+    pub fn evaluate_table(
+        &self,
+        batch: &RecordBatch,
+    ) -> Result<Box<dyn TableFunctionRows>> {
         // evaluate the arguments, if there are no arguments we'll instead pass in a null array
         // indicating the batch size (as a convention)
         let inputs = match (self.args.len(), self.name.parse::<BuiltinScalarFunction>()) {

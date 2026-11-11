@@ -44,7 +44,7 @@ pub use expr::{Expr, GroupingSet, Like};
 pub use expr_fn::{col, sum};
 pub use function::{
     AccumulatorFunctionImplementation, ReturnTypeFunction, ScalarFunctionImplementation,
-    StateTypeFunction, TableFunctionImplementation,
+    StateTypeFunction, TableFunctionImplementation, TableFunctionRows,
 };
 pub use literal::{lit, lit_timestamp_nano, Literal, TimestampLiteral};
 pub use nullif::SUPPORTED_NULLIF_TYPES;
