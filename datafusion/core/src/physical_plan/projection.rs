@@ -31,7 +31,7 @@ use crate::physical_plan::{
 };
 use arrow::datatypes::{Field, Metadata, Schema, SchemaRef};
 use arrow::error::Result as ArrowResult;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use super::expressions::{Column, PhysicalSortExpr};
 use super::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
@@ -248,7 +248,8 @@ impl ProjectionStream {
             .map(|r| r.map(|v| v.into_array(batch.num_rows())))
             .collect::<Result<Vec<_>>>()?;
 
-        RecordBatch::try_new(self.schema.clone(), arrays)
+        let options = RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));
+        RecordBatch::try_new_with_options(self.schema.clone(), arrays, &options)
     }
 }
 

@@ -23,7 +23,7 @@ use std::{any::Any, sync::Arc, task::Poll};
 
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::error::Result as ArrowResult;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use futures::{Stream, TryStreamExt};
 
@@ -334,13 +334,15 @@ fn build_batch(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    RecordBatch::try_new(
+    let options = RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));
+    RecordBatch::try_new_with_options(
         Arc::new(schema.clone()),
         arrays
             .iter()
             .chain(batch.columns().iter())
             .cloned()
             .collect(),
+        &options,
     )
 }
 

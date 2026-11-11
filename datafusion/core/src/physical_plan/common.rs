@@ -27,7 +27,7 @@ use arrow::datatypes::{DataType, Schema, SchemaRef};
 use arrow::error::ArrowError;
 use arrow::error::Result as ArrowResult;
 use arrow::ipc::writer::FileWriter;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use futures::channel::mpsc;
 use futures::{Future, SinkExt, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
@@ -117,7 +117,11 @@ pub(crate) fn combine_batches(
                 )
             })
             .collect::<ArrowResult<Vec<_>>>()?;
-        Ok(Some(RecordBatch::try_new(schema.clone(), columns)?))
+        let row_count = batches.iter().map(|batch| batch.num_rows()).sum();
+        let options = RecordBatchOptions::new().with_row_count(Some(row_count));
+        Ok(Some(RecordBatch::try_new_with_options(
+            schema, columns, &options,
+        )?))
     }
 }
 

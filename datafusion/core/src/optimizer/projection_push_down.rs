@@ -20,17 +20,17 @@
 
 use crate::error::{DataFusionError, Result};
 use crate::logical_plan::plan::{
-    Aggregate, Analyze, Join, Projection, Subquery, TableScan, Window,
+    Aggregate, Analyze, Distinct, Join, Projection, Subquery, TableScan, Window,
 };
 use crate::logical_plan::{
-    build_join_schema, Column, DFField, DFSchema, DFSchemaRef, LogicalPlan,
+    build_join_schema, Column, DFField, DFSchema, DFSchemaRef, Expr, LogicalPlan,
     LogicalPlanBuilder, ToDFSchema, Union,
 };
 use crate::optimizer::optimizer::OptimizerConfig;
 use crate::optimizer::optimizer::OptimizerRule;
 use crate::optimizer::utils;
 use crate::sql::utils::find_sort_exprs;
-use arrow::datatypes::{Field, Schema};
+use arrow::datatypes::Schema;
 use arrow::error::Result as ArrowResult;
 use std::{
     collections::{BTreeSet, HashSet},
@@ -408,41 +408,60 @@ fn optimize_plan(
             schema,
             alias,
         }) => {
-            // UNION inputs will reference the same column with different identifiers, so we need
-            // to populate new_required_columns by unqualified column name based on required fields
-            // from the resulting UNION output
-            let union_required_fields = schema
+            // UNION inputs match the UNION output by position, not by name
+            let required_positions = schema
                 .fields()
                 .iter()
-                .filter(|f| new_required_columns.contains(&f.qualified_column()))
-                .map(|f| f.field())
-                .collect::<HashSet<&Field>>();
+                .enumerate()
+                .filter(|(_, f)| new_required_columns.contains(&f.qualified_column()))
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
             let new_inputs = inputs
                 .iter()
                 .map(|input_plan| {
-                    input_plan
+                    let input_schema = input_plan.schema();
+                    let required_fields = required_positions
+                        .iter()
+                        .map(|i| input_schema.field(*i).clone())
+                        .collect::<Vec<_>>();
+                    let required_columns = required_fields
+                        .iter()
+                        .map(|f| f.qualified_column())
+                        .collect::<Vec<_>>();
+                    let new_input = optimize_plan(
+                        _optimizer,
+                        input_plan,
+                        &required_columns.iter().cloned().collect(),
+                        has_projection,
+                        _optimizer_config,
+                    )?;
+                    let new_input_columns = new_input
                         .schema()
                         .fields()
                         .iter()
-                        .filter(|f| union_required_fields.contains(f.field()))
-                        .for_each(|f| {
-                            new_required_columns.insert(f.qualified_column());
-                        });
-                    optimize_plan(
-                        _optimizer,
-                        input_plan,
-                        &new_required_columns,
-                        has_projection,
-                        _optimizer_config,
-                    )
+                        .map(|f| f.qualified_column())
+                        .collect::<Vec<_>>();
+                    if new_input_columns == required_columns {
+                        return Ok(new_input);
+                    }
+                    // Some inputs keep columns no one needs (scans, DISTINCT), so all inputs
+                    // are cut to the same columns as the UNION
+                    let metadata = new_input.schema().metadata().clone();
+                    Ok(LogicalPlan::Projection(Projection {
+                        expr: required_columns.into_iter().map(Expr::Column).collect(),
+                        input: Arc::new(new_input),
+                        schema: DFSchemaRef::new(DFSchema::new_with_metadata(
+                            required_fields,
+                            metadata,
+                        )?),
+                        alias: None,
+                    }))
                 })
                 .collect::<Result<Vec<_>>>()?;
             let new_schema = DFSchema::new_with_metadata(
-                schema
-                    .fields()
+                required_positions
                     .iter()
-                    .filter(|f| union_required_fields.contains(f.field()))
-                    .cloned()
+                    .map(|i| schema.field(*i).clone())
                     .collect(),
                 schema.metadata().clone(),
             )?;
@@ -495,6 +514,23 @@ fn optimize_plan(
                 types: types.clone(),
             }))
         }
+        LogicalPlan::Distinct(Distinct { input }) => {
+            // DISTINCT compares whole rows, so it needs every column of its input
+            let new_required_columns = input
+                .schema()
+                .fields()
+                .iter()
+                .map(|f| f.qualified_column())
+                .collect::<HashSet<Column>>();
+            let new_input = optimize_plan(
+                _optimizer,
+                input,
+                &new_required_columns,
+                has_projection,
+                _optimizer_config,
+            )?;
+            utils::from_plan(plan, &[], &[new_input])
+        }
         // all other nodes: Add any additional columns used by
         // expressions in this node to the list of required columns
         LogicalPlan::Limit(_)
@@ -509,7 +545,6 @@ fn optimize_plan(
         | LogicalPlan::DropTable(_)
         | LogicalPlan::CrossJoin(_)
         | LogicalPlan::TableUDFs(_)
-        | LogicalPlan::Distinct(_)
         | LogicalPlan::Extension { .. } => {
             let expr = plan.expressions();
             // collect all required columns by this plan
@@ -545,7 +580,7 @@ mod tests {
         col, exprlist_to_fields, lit, max, min, Expr, JoinType, LogicalPlanBuilder,
     };
     use crate::test::*;
-    use arrow::datatypes::DataType;
+    use arrow::datatypes::{DataType, Field};
 
     #[test]
     fn aggregate_no_group_by() -> Result<()> {

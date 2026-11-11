@@ -41,7 +41,7 @@ use arrow::{
 };
 use arrow::{
     datatypes::{Field, Schema, SchemaRef},
-    record_batch::RecordBatch,
+    record_batch::{RecordBatch, RecordBatchOptions},
 };
 use datafusion_physical_expr::expressions::{
     cast_array_with_options, DEFAULT_DATAFUSION_CAST_OPTIONS,
@@ -754,8 +754,10 @@ async fn compute_hash_aggregate(
 
     // 2. convert values to a record batch
     let timer = elapsed_compute.timer();
-    let batch = finalize_aggregation(&accumulators, &mode)
-        .map(|columns| RecordBatch::try_new(schema.clone(), columns))?;
+    let batch = finalize_aggregation(&accumulators, &mode).map(|columns| {
+        let options = RecordBatchOptions::new().with_row_count(Some(1));
+        RecordBatch::try_new_with_options(schema.clone(), columns, &options)
+    })?;
     timer.done();
     batch
 }

@@ -26,7 +26,7 @@ use crate::physical_plan::{
 };
 use arrow::array::NullArray;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use log::debug;
 
 use super::expressions::PhysicalSortExpr;
@@ -68,7 +68,14 @@ impl EmptyExec {
     }
 
     fn data(&self) -> Result<Vec<RecordBatch>> {
-        let batch = if self.produce_one_row {
+        let batch = if self.produce_one_row && self.schema.fields().is_empty() {
+            let options = RecordBatchOptions::new().with_row_count(Some(1));
+            vec![RecordBatch::try_new_with_options(
+                self.schema.clone(),
+                vec![],
+                &options,
+            )?]
+        } else if self.produce_one_row {
             vec![RecordBatch::try_new(
                 Arc::new(Schema::new(vec![Field::new(
                     "placeholder",

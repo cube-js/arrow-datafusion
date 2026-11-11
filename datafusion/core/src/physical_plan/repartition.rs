@@ -26,7 +26,7 @@ use std::{any::Any, vec};
 use crate::error::{DataFusionError, Result};
 use crate::physical_plan::hash_utils::create_hashes;
 use crate::physical_plan::{DisplayFormatType, ExecutionPlan, Partitioning, Statistics};
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use arrow::{
     array::{Array, UInt64Array},
     error::{ArrowError, Result as ArrowResult},
@@ -376,8 +376,13 @@ impl RepartitionExec {
                                     .map_err(DataFusionError::ArrowError)
                             })
                             .collect::<Result<Vec<Arc<dyn Array>>>>()?;
-                        let output_batch =
-                            RecordBatch::try_new(input_batch.schema(), columns);
+                        let options =
+                            RecordBatchOptions::new().with_row_count(Some(indices.len()));
+                        let output_batch = RecordBatch::try_new_with_options(
+                            input_batch.schema(),
+                            columns,
+                            &options,
+                        );
                         timer.done();
 
                         let timer = r_metrics.send_time.timer();
