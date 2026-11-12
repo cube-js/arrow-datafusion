@@ -78,6 +78,51 @@ async fn case_when_else_null() -> Result<()> {
 }
 
 #[tokio::test]
+async fn case_when_all_branches_null() -> Result<()> {
+    let ctx = SessionContext::new();
+    let t = "(SELECT 1 AS a UNION ALL SELECT 1 AS a UNION ALL SELECT 2 AS a) t";
+
+    let sql = format!("SELECT CASE WHEN a > 100 THEN NULL END AS c FROM {}", t);
+    let actual = execute_to_batches(&ctx, &sql).await;
+    let expected = [
+        "+---+", "| c |", "+---+", "|   |", "|   |", "|   |", "+---+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = format!(
+        "SELECT count(CASE WHEN a > 100 THEN NULL END) AS c1, \
+         count(CASE WHEN a > 1 THEN NULL ELSE NULL END) AS c2, \
+         count(CASE a WHEN 1 THEN NULL END) AS c3, \
+         count(CASE WHEN 1 = 1 THEN NULL END) AS c4 FROM {}",
+        t
+    );
+    let actual = execute_to_batches(&ctx, &sql).await;
+    let expected = [
+        "+----+----+----+----+",
+        "| c1 | c2 | c3 | c4 |",
+        "+----+----+----+----+",
+        "| 0  | 0  | 0  | 0  |",
+        "+----+----+----+----+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    let sql = format!(
+        "SELECT CASE WHEN a > 1 THEN NULL END AS c, count(*) AS n FROM {} GROUP BY 1",
+        t
+    );
+    let actual = execute_to_batches(&ctx, &sql).await;
+    let expected = [
+        "+---+---+",
+        "| c | n |",
+        "+---+---+",
+        "|   | 3 |",
+        "+---+---+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
 async fn case_when_else_utf_boolean_cast() -> Result<()> {
     let ctx = create_case_context()?;
     let sql = "SELECT CASE true WHEN 'false' THEN 'yes' ELSE 'no' END";
