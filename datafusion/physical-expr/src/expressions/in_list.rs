@@ -36,6 +36,8 @@ use arrow::{
 use crate::PhysicalExpr;
 use arrow::array::*;
 use arrow::buffer::BooleanBuffer;
+use arrow::compute::kernels::boolean::{not, or_kleene};
+use arrow::compute::kernels::cmp::eq;
 use arrow::datatypes::TimeUnit;
 use datafusion_common::ScalarValue;
 use datafusion_common::{DataFusionError, Result};
@@ -301,6 +303,36 @@ impl InListExpr {
             )?)))
         }
     }
+
+    /// Compare `array` with a list that contains non-constant values (columns),
+    /// as `array = v1 OR array = v2 OR ...`, negated for `NOT IN`. This gives
+    /// SQL semantics: NULL when nothing matched but some comparison was NULL.
+    fn compare_with_arrays(
+        &self,
+        array: &ArrayRef,
+        list_values: Vec<ColumnarValue>,
+    ) -> Result<ColumnarValue> {
+        let len = array.len();
+        let mut found: Option<BooleanArray> = None;
+        for value in list_values {
+            let matches = match value {
+                ColumnarValue::Scalar(scalar) if scalar.is_null() => {
+                    BooleanArray::new_null(len)
+                }
+                ColumnarValue::Scalar(scalar) => {
+                    eq(array, &Scalar::new(scalar.to_array_of_size(1)))?
+                }
+                ColumnarValue::Array(list_array) => eq(array, &list_array)?,
+            };
+            found = Some(match found {
+                Some(found) => or_kleene(&found, &matches)?,
+                None => matches,
+            });
+        }
+        let found = found.unwrap_or_else(|| BooleanArray::from(vec![false; len]));
+        let result = if self.negated { not(&found)? } else { found };
+        Ok(ColumnarValue::Array(Arc::new(result)))
+    }
 }
 
 impl std::fmt::Display for InListExpr {
@@ -344,6 +376,15 @@ impl PhysicalExpr for InListExpr {
             .iter()
             .map(|expr| expr.evaluate(batch))
             .collect::<Result<Vec<_>>>()?;
+
+        if value_data_type != DataType::Null
+            && list_values
+                .iter()
+                .any(|v| matches!(v, ColumnarValue::Array(_)))
+        {
+            let array = value.into_array(batch.num_rows());
+            return self.compare_with_arrays(&array, list_values);
+        }
 
         let array = match value {
             ColumnarValue::Array(array) => array,
