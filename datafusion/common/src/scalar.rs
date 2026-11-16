@@ -1594,7 +1594,10 @@ impl ScalarValue {
                 eq_array_primitive!(array, index, IntervalMonthDayNanoArray, val)
             }
             ScalarValue::Struct(_, _) => unimplemented!(),
-            ScalarValue::Null => array.is_null(index),
+            // `NullArray` has no validity buffer, so `is_null` is false for its rows
+            ScalarValue::Null => {
+                array.data_type() == &DataType::Null || array.is_null(index)
+            }
         }
     }
 
