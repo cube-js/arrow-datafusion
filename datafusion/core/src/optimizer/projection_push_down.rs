@@ -313,32 +313,34 @@ fn optimize_plan(
 
             utils::exprlist_to_columns(group_expr, &mut new_required_columns)?;
 
+            // Keep every group field: the physical aggregate outputs all group
+            // expressions, so dropping one would shift the aggregate columns.
+            let group_field_count = schema.fields().len() - aggr_expr.len();
+            let mut new_fields = schema.fields()[..group_field_count].to_vec();
+
             // Gather all columns needed for expressions in this Aggregate
             let mut new_aggr_expr = Vec::new();
-            aggr_expr.iter().try_for_each(|expr| {
-                let name = &expr.name(schema)?;
-                let column = Column::from_name(name);
+            aggr_expr
+                .iter()
+                .zip(schema.fields()[group_field_count..].iter())
+                .try_for_each(|(expr, field)| {
+                    let name = &expr.name(schema)?;
+                    let column = Column::from_name(name);
 
-                if required_columns.contains(&column) {
-                    new_aggr_expr.push(expr.clone());
-                    new_required_columns.insert(column);
+                    if required_columns.contains(&column) {
+                        new_aggr_expr.push(expr.clone());
+                        new_fields.push(field.clone());
+                        new_required_columns.insert(column);
 
-                    // add to the new set of required columns
-                    utils::expr_to_columns(expr, &mut new_required_columns)
-                } else {
-                    Ok(())
-                }
-            })?;
+                        // add to the new set of required columns
+                        utils::expr_to_columns(expr, &mut new_required_columns)
+                    } else {
+                        Ok(())
+                    }
+                })?;
 
-            let new_schema = DFSchema::new_with_metadata(
-                schema
-                    .fields()
-                    .iter()
-                    .filter(|x| new_required_columns.contains(&x.qualified_column()))
-                    .cloned()
-                    .collect(),
-                schema.metadata().clone(),
-            )?;
+            let new_schema =
+                DFSchema::new_with_metadata(new_fields, schema.metadata().clone())?;
 
             Ok(LogicalPlan::Aggregate(Aggregate {
                 group_expr: group_expr.clone(),
@@ -1022,6 +1024,32 @@ mod tests {
         \n      TableScan: test projection=Some([0, 1, 2])";
 
         assert_optimized_plan_eq(&plan, expected);
+
+        Ok(())
+    }
+
+    /// An unused non-column group expression must stay in the Aggregate schema.
+    #[test]
+    fn aggregate_unused_group_by_expression() -> Result<()> {
+        let table_scan = test_table_scan()?;
+
+        let plan = LogicalPlanBuilder::from(table_scan)
+            .aggregate(vec![col("a"), col("a") + lit(1)], vec![max(col("b"))])?
+            .project(vec![col("a"), col("MAX(test.b)")])?
+            .build()?;
+
+        let expected = "Projection: #test.a, #MAX(test.b)\
+        \n  Aggregate: groupBy=[[#test.a, #test.a + Int32(1)]], aggr=[[MAX(#test.b)]]\
+        \n    TableScan: test projection=Some([0, 1])";
+
+        assert_optimized_plan_eq(&plan, expected);
+
+        let optimized_plan = optimize(&plan)?;
+        let aggregate = match &optimized_plan {
+            LogicalPlan::Projection(projection) => projection.input.as_ref(),
+            _ => panic!("expected a Projection"),
+        };
+        assert_fields_eq(aggregate, vec!["a", "test.a + Int32(1)", "MAX(test.b)"]);
 
         Ok(())
     }

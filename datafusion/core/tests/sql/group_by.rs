@@ -444,6 +444,48 @@ async fn csv_group_by_date() -> Result<()> {
 }
 
 #[tokio::test]
+async fn group_by_expression_not_in_select_list() -> Result<()> {
+    let ctx = SessionContext::new();
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("a", DataType::Int64, true),
+        Field::new("s", DataType::Utf8, true),
+    ]));
+    let data = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(Int64Array::from(vec![Some(1), Some(1), Some(2), None])),
+            Arc::new(StringArray::from(vec![
+                Some("x"),
+                Some("x"),
+                Some("z"),
+                None,
+            ])),
+        ],
+    )?;
+    let table = MemTable::try_new(schema, vec![vec![data]])?;
+    ctx.register_table("t", Arc::new(table))?;
+
+    let expected = [
+        "+---+---+",
+        "| a | n |",
+        "+---+---+",
+        "| 1 | 2 |",
+        "| 2 | 1 |",
+        "|   | 1 |",
+        "+---+---+",
+    ];
+    for sql in [
+        "SELECT a, COUNT(*) AS n FROM t GROUP BY a, a + 1 ORDER BY a",
+        "SELECT a, COUNT(*) AS n FROM t GROUP BY a + 1, a ORDER BY a",
+        "SELECT a, COUNT(*) AS n FROM t GROUP BY a, upper(s) ORDER BY a",
+    ] {
+        let actual = execute_to_batches(&ctx, sql).await;
+        assert_batches_eq!(expected, &actual);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn group_by_date_trunc() -> Result<()> {
     let tmp_dir = TempDir::new()?;
     let ctx = SessionContext::new();
