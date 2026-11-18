@@ -1266,13 +1266,38 @@ pub fn build_join_schema(
     right: &DFSchema,
     join_type: &JoinType,
 ) -> Result<DFSchema> {
+    // Fields of the side padded with NULLs for unmatched rows become nullable
+    fn nullable_fields(fields: &[DFField]) -> impl Iterator<Item = DFField> + '_ {
+        fields.iter().map(|f| {
+            let field = f.field().clone().with_nullable(true);
+            match f.qualifier() {
+                Some(q) => DFField::from_qualified(q, field),
+                None => DFField::from(field),
+            }
+        })
+    }
+
     let fields: Vec<DFField> = match join_type {
-        JoinType::Inner | JoinType::Left | JoinType::Full | JoinType::Right => {
-            let right_fields = right.fields().iter();
-            let left_fields = left.fields().iter();
+        JoinType::Inner => {
             // left then right
-            left_fields.chain(right_fields).cloned().collect()
+            left.fields()
+                .iter()
+                .chain(right.fields())
+                .cloned()
+                .collect()
         }
+        JoinType::Left => left
+            .fields()
+            .iter()
+            .cloned()
+            .chain(nullable_fields(right.fields()))
+            .collect(),
+        JoinType::Right => nullable_fields(left.fields())
+            .chain(right.fields().iter().cloned())
+            .collect(),
+        JoinType::Full => nullable_fields(left.fields())
+            .chain(nullable_fields(right.fields()))
+            .collect(),
         JoinType::Semi | JoinType::Anti => {
             // Only use the left side for the schema
             left.fields().clone()

@@ -1138,3 +1138,80 @@ async fn join_partitioned() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn outer_join_padded_side_is_nullable() -> Result<()> {
+    let ctx = SessionContext::new();
+    let l = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)])),
+        vec![Arc::new(Int32Array::from_slice([1, 2]))],
+    )?;
+    ctx.register_table("l", Arc::new(MemTable::try_new(l.schema(), vec![vec![l]])?))?;
+    let r = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new("rid", DataType::Int32, false)])),
+        vec![Arc::new(Int32Array::from_slice([1, 3]))],
+    )?;
+    ctx.register_table("r", Arc::new(MemTable::try_new(r.schema(), vec![vec![r]])?))?;
+
+    // `x / x` is simplified to 1 only for non-nullable `x`
+    let cases = [
+        (
+            "SELECT id, rid / rid AS q FROM l LEFT JOIN r ON id = rid",
+            vec![
+                "+----+---+",
+                "| id | q |",
+                "+----+---+",
+                "| 1  | 1 |",
+                "| 2  |   |",
+                "+----+---+",
+            ],
+        ),
+        (
+            "SELECT id / id AS q, rid FROM l RIGHT JOIN r ON id = rid",
+            vec![
+                "+---+-----+",
+                "| q | rid |",
+                "+---+-----+",
+                "| 1 | 1   |",
+                "|   | 3   |",
+                "+---+-----+",
+            ],
+        ),
+        (
+            "SELECT id / id AS p, rid / rid AS q FROM l FULL JOIN r ON id = rid",
+            vec![
+                "+---+---+",
+                "| p | q |",
+                "+---+---+",
+                "|   | 1 |",
+                "| 1 |   |",
+                "| 1 | 1 |",
+                "+---+---+",
+            ],
+        ),
+        (
+            "SELECT id / id AS q FROM l INNER JOIN r ON id = rid",
+            vec!["+---+", "| q |", "+---+", "| 1 |", "+---+"],
+        ),
+    ];
+    for (sql, expected) in cases {
+        let actual = execute_to_batches(&ctx, sql).await;
+        assert_batches_sorted_eq!(expected, &actual);
+    }
+
+    let nullable = |sql: &str| -> Result<Vec<bool>> {
+        let plan = ctx.create_logical_plan(sql)?;
+        Ok(plan
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.is_nullable())
+            .collect())
+    };
+    let sql = |j: &str| format!("SELECT id, rid FROM l {} JOIN r ON id = rid", j);
+    assert_eq!(nullable(&sql("INNER"))?, vec![false, false]);
+    assert_eq!(nullable(&sql("LEFT"))?, vec![false, true]);
+    assert_eq!(nullable(&sql("RIGHT"))?, vec![true, false]);
+    assert_eq!(nullable(&sql("FULL"))?, vec![true, true]);
+    Ok(())
+}
