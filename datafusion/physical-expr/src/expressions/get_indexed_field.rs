@@ -78,7 +78,8 @@ impl GetIndexedFieldExpr {
                 )))
             },
             DataType::List(lt) => {
-                Ok(Field::new("unknown", lt.data_type().clone(), false))
+                // an element can be NULL or out of range
+                Ok(Field::new("unknown", lt.data_type().clone(), true))
             },
             other => Err(DataFusionError::Plan(format!(
                 "The expression to get an indexed field is only valid for `List` and `Struct` types, actual: {:?}",
@@ -105,8 +106,8 @@ impl PhysicalExpr for GetIndexedFieldExpr {
     }
 
     fn nullable(&self, input_schema: &Schema) -> Result<bool> {
-        self.get_data_type_field(input_schema)
-            .map(|f| f.is_nullable())
+        Ok(self.arg.nullable(input_schema)?
+            || self.get_data_type_field(input_schema)?.is_nullable())
     }
 
     fn evaluate(&self, batch: &RecordBatch) -> Result<ColumnarValue> {

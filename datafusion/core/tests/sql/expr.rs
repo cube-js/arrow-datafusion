@@ -1644,3 +1644,94 @@ async fn comparisons_with_null() -> Result<()> {
     assert_batches_eq!(expected, &actual);
     Ok(())
 }
+
+#[tokio::test]
+async fn case_when_boolean_null_semantics() -> Result<()> {
+    let ctx = create_case_context()?;
+    // c1: 'a', 'b', 'c', NULL
+    let sql = "SELECT \
+        CASE WHEN c1 = 'a' THEN true END AS no_else, \
+        CASE WHEN c1 = 'a' THEN false ELSE true END AS null_when_else, \
+        CASE WHEN c1 = 'a' THEN false WHEN c1 = 'b' THEN false ELSE true END AS two_whens, \
+        CASE WHEN c1 IS NULL THEN true END AS non_null_when_no_else \
+        FROM t1";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = [
+        "+---------+----------------+-----------+-----------------------+",
+        "| no_else | null_when_else | two_whens | non_null_when_no_else |",
+        "+---------+----------------+-----------+-----------------------+",
+        "| true    | false          | false     |                       |",
+        "|         | true           | false     |                       |",
+        "|         | true           | true      |                       |",
+        "|         | true           | true      | true                  |",
+        "+---------+----------------+-----------+-----------------------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn case_when_boolean_nullable_operands() -> Result<()> {
+    let ctx = SessionContext::new();
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("a", DataType::Utf8, false),
+        Field::new("p", DataType::Utf8, true),
+    ]));
+    let data = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec!["x", "y"])),
+            Arc::new(StringArray::from(vec![Some("x"), None])),
+        ],
+    )?;
+    let table = MemTable::try_new(schema, vec![vec![data]])?;
+    ctx.register_table("t", Arc::new(table))?;
+    // a non-null `a` with a NULL pattern or list element gives a NULL predicate,
+    // which falls to ELSE
+    let sql = "SELECT \
+        CASE WHEN a LIKE p THEN false ELSE true END AS l, \
+        CASE WHEN a ILIKE p THEN false ELSE true END AS il, \
+        CASE WHEN a = ANY(['x', NULL]) THEN false ELSE true END AS an \
+        FROM t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = [
+        "+-------+-------+-------+",
+        "| l     | il    | an    |",
+        "+-------+-------+-------+",
+        "| false | false | false |",
+        "| true  | true  | true  |",
+        "+-------+-------+-------+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
+async fn case_when_boolean_nullable_list_element() -> Result<()> {
+    let ctx = SessionContext::new();
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "l",
+        DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
+        false,
+    )]));
+    let list = ListArray::from_iter_primitive::<Int64Type, _, _>(vec![
+        Some(vec![Some(1), Some(2)]),
+        Some(vec![None, Some(5)]),
+    ]);
+    let data = RecordBatch::try_new(schema.clone(), vec![Arc::new(list)])?;
+    let table = MemTable::try_new(schema, vec![vec![data]])?;
+    ctx.register_table("t", Arc::new(table))?;
+    // a NULL list element gives a NULL predicate, which falls to ELSE
+    let sql = "SELECT CASE WHEN l[1] = 1 THEN false ELSE true END AS c, l[1] AS e FROM t";
+    let actual = execute_to_batches(&ctx, sql).await;
+    let expected = [
+        "+-------+---+",
+        "| c     | e |",
+        "+-------+---+",
+        "| false | 1 |",
+        "| true  |   |",
+        "+-------+---+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}

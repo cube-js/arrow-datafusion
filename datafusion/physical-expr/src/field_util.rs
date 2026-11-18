@@ -36,12 +36,13 @@ pub fn get_indexed_field(data_type: &DataType, key: &Expr) -> Result<Field> {
                     i
                 )))
             } else {
-                Ok(Field::new(i.to_string(), lt.data_type().clone(), false))
+                // an element can be NULL or out of range
+                Ok(Field::new(i.to_string(), lt.data_type().clone(), true))
             }
         }
         // Allow any kind of dynamic expressions for key
         (DataType::List(lt),_) => {
-            Ok(Field::new("unknown", lt.data_type().clone(), false))
+            Ok(Field::new("unknown", lt.data_type().clone(), true))
         }
         (DataType::Struct(fields), Expr::Literal(ScalarValue::Utf8(Some(s)))) => {
             if s.is_empty() {
