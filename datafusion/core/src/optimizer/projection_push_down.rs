@@ -719,7 +719,7 @@ mod tests {
                 vec![
                     DFField::new(Some("test"), "a", DataType::UInt32, false),
                     DFField::new(Some("test"), "b", DataType::UInt32, false),
-                    DFField::new(Some("test2"), "c1", DataType::UInt32, false),
+                    DFField::new(Some("test2"), "c1", DataType::UInt32, true),
                 ],
                 HashMap::new()
             )?,
@@ -763,7 +763,7 @@ mod tests {
                 vec![
                     DFField::new(Some("test"), "a", DataType::UInt32, false),
                     DFField::new(Some("test"), "b", DataType::UInt32, false),
-                    DFField::new(Some("test2"), "c1", DataType::UInt32, false),
+                    DFField::new(Some("test2"), "c1", DataType::UInt32, true),
                 ],
                 HashMap::new()
             )?,
@@ -805,7 +805,7 @@ mod tests {
                 vec![
                     DFField::new(Some("test"), "a", DataType::UInt32, false),
                     DFField::new(Some("test"), "b", DataType::UInt32, false),
-                    DFField::new(Some("test2"), "a", DataType::UInt32, false),
+                    DFField::new(Some("test2"), "a", DataType::UInt32, true),
                 ],
                 HashMap::new()
             )?,
