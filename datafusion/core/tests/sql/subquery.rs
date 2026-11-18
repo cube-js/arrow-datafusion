@@ -316,3 +316,184 @@ async fn subquery_topn() -> Result<()> {
 
     Ok(())
 }
+
+/// Table `t(a BIGINT, s TEXT)` with rows (1,'x'), (1,'y'), (2,'z'), (NULL,NULL)
+/// spread over 2 partitions / 3 batches, so the outer query of a correlated
+/// subquery runs several partitions concurrently.
+fn register_multi_partition_table(ctx: &SessionContext) -> Result<()> {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("a", DataType::Int64, true),
+        Field::new("s", DataType::Utf8, true),
+    ]));
+    let batch = |a: Vec<Option<i64>>, s: Vec<Option<&str>>| {
+        RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(a)) as ArrayRef,
+                Arc::new(StringArray::from(s)) as ArrayRef,
+            ],
+        )
+    };
+    let partitions = vec![
+        vec![
+            batch(vec![Some(1)], vec![Some("x")])?,
+            batch(vec![Some(1), Some(2)], vec![Some("y"), Some("z")])?,
+        ],
+        vec![batch(vec![None], vec![None])?],
+    ];
+    ctx.register_table("t", Arc::new(MemTable::try_new(schema, partitions)?))?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn subquery_correlated_exists_multi_partition() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_multi_partition_table(&ctx)?;
+
+    let sql = "SELECT a, s FROM t t1 WHERE EXISTS (SELECT 1 FROM t t2 WHERE t2.a = t1.a) ORDER BY a, s";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = [
+        "+---+---+",
+        "| a | s |",
+        "+---+---+",
+        "| 1 | x |",
+        "| 1 | y |",
+        "| 2 | z |",
+        "+---+---+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn subquery_correlated_scalar_multi_partition() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_multi_partition_table(&ctx)?;
+
+    let sql = "SELECT a, s, (SELECT max(t2.s) FROM t t2 WHERE t2.a = t1.a) AS m FROM t t1 ORDER BY a, s";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = [
+        "+---+---+---+",
+        "| a | s | m |",
+        "+---+---+---+",
+        "| 1 | x | y |",
+        "| 1 | y | y |",
+        "| 2 | z | z |",
+        "|   |   |   |",
+        "+---+---+---+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+/// The subquery side yields several batches (one per input partition/batch);
+/// a matching row in a batch other than the first must still be seen.
+#[tokio::test]
+async fn subquery_correlated_match_in_later_batch() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_multi_partition_table(&ctx)?;
+
+    let sql = "SELECT a, s, \
+        EXISTS (SELECT 1 FROM t t2 WHERE t2.s = t1.s) AS e, \
+        (SELECT t2.a FROM t t2 WHERE t2.s = t1.s) AS v \
+        FROM t t1 ORDER BY a, s";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = [
+        "+---+---+-------+---+",
+        "| a | s | e     | v |",
+        "+---+---+-------+---+",
+        "| 1 | x | true  | 1 |",
+        "| 1 | y | true  | 1 |",
+        "| 2 | z | true  | 2 |",
+        "|   |   | false |   |",
+        "+---+---+-------+---+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+/// Rows of a scalar sub query may come in different batches; more than one row
+/// in total is an error even when each batch holds only one.
+#[tokio::test]
+async fn subquery_correlated_scalar_rows_in_several_batches() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_multi_partition_table(&ctx)?;
+
+    // For a = 2 the sub query matches (2,'z') and (NULL,NULL), which sit in
+    // different partitions
+    let sql = "SELECT a, \
+        (SELECT t2.s FROM t t2 WHERE t2.a = t1.a OR t2.a IS NULL) AS v \
+        FROM t t1 WHERE t1.a = 2";
+    let err = plan_and_collect(&ctx, sql).await.unwrap_err();
+    assert_contains!(
+        err.to_string(),
+        "Sub query should return no more than one row"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn subquery_correlated_any_values_in_several_batches() -> Result<()> {
+    let ctx = SessionContext::new();
+    register_multi_partition_table(&ctx)?;
+
+    let sql = "SELECT a, s FROM t t1 \
+        WHERE 'y' = ANY(SELECT t2.s FROM t t2 WHERE t2.a = t1.a) ORDER BY a, s";
+    let actual = execute_to_batches(&ctx, sql).await;
+
+    let expected = [
+        "+---+---+",
+        "| a | s |",
+        "+---+---+",
+        "| 1 | x |",
+        "| 1 | y |",
+        "+---+---+",
+    ];
+    assert_batches_eq!(expected, &actual);
+
+    Ok(())
+}
+
+/// Outer partitions run concurrently and share the cursor the correlated sub
+/// query reads the outer row from; one partition must not move the cursor of
+/// another one (that read past the end of a shorter batch and panicked).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn subquery_correlated_concurrent_partitions() -> Result<()> {
+    let ctx = SessionContext::new();
+    let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64, true)]));
+    let batch = |a: Vec<Option<i64>>| {
+        RecordBatch::try_new(schema.clone(), vec![Arc::new(Int64Array::from(a))])
+    };
+    let partitions = (0..8)
+        .map(|p| {
+            Ok(vec![
+                batch((0..10).map(|i| Some(p * 10 + i)).collect())?,
+                batch(vec![Some(p * 10)])?,
+            ])
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ctx.register_table("t", Arc::new(MemTable::try_new(schema, partitions)?))?;
+
+    let sql = "SELECT count(*) AS n, sum(a) AS s FROM t t1 \
+        WHERE EXISTS (SELECT 1 FROM t t2 WHERE t2.a = t1.a)";
+    let expected = [
+        "+----+------+",
+        "| n  | s    |",
+        "+----+------+",
+        "| 88 | 3440 |",
+        "+----+------+",
+    ];
+    for _ in 0..20 {
+        let actual = execute_to_batches(&ctx, sql).await;
+        assert_batches_eq!(expected, &actual);
+    }
+
+    Ok(())
+}
