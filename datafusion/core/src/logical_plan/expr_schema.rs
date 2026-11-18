@@ -259,10 +259,20 @@ impl ExprSchemable for Expr {
                 ref left,
                 ref right,
                 ..
-            } => Ok(left.nullable(input_schema)? || right.nullable(input_schema)?),
-            Expr::Like(Like { expr, .. }) => expr.nullable(input_schema),
-            Expr::ILike(Like { expr, .. }) => expr.nullable(input_schema),
-            Expr::SimilarTo(Like { expr, .. }) => expr.nullable(input_schema),
+            } => Ok(left.nullable(input_schema)?
+                || right.nullable(input_schema)?
+                // a NULL list element can make the comparison NULL
+                || match right.get_type(input_schema)? {
+                    DataType::List(field) | DataType::LargeList(field) => {
+                        field.is_nullable()
+                    }
+                    _ => true,
+                }),
+            Expr::Like(Like { expr, pattern, .. })
+            | Expr::ILike(Like { expr, pattern, .. })
+            | Expr::SimilarTo(Like { expr, pattern, .. }) => {
+                Ok(expr.nullable(input_schema)? || pattern.nullable(input_schema)?)
+            }
             Expr::Wildcard => Err(DataFusionError::Internal(
                 "Wildcard expressions are not valid in a logical query plan".to_owned(),
             )),
@@ -272,7 +282,8 @@ impl ExprSchemable for Expr {
             )),
             Expr::GetIndexedField { ref expr, key } => {
                 let data_type = expr.get_type(input_schema)?;
-                get_indexed_field(&data_type, key).map(|x| x.is_nullable())
+                Ok(expr.nullable(input_schema)?
+                    || get_indexed_field(&data_type, key)?.is_nullable())
             }
             Expr::GroupingSet(_) => {
                 // grouping sets do not really have the concept of nullable and do not appear

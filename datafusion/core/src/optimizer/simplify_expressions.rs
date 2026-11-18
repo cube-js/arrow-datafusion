@@ -701,13 +701,19 @@ impl<'a, S: SimplifyInfo> ExprRewriter for Simplifier<'a, S> {
             //
             // Note: the rationale for this rewrite is that the expr can then be further
             // simplified using the existing rules for AND/OR
+            //
+            // A missing ELSE means `ELSE NULL`. CASE treats a NULL predicate as not
+            // matched, but `NULL AND A` and `NOT NULL` are NULL, so require non-null WHENs.
             Case {
                 expr: None,
                 when_then_expr,
                 else_expr,
             } if !when_then_expr.is_empty()
                 && when_then_expr.len() < 3 // The rewrite is O(n!) so limit to small number
-                && info.is_boolean_type(&when_then_expr[0].1)? =>
+                && info.is_boolean_type(&when_then_expr[0].1)?
+                && when_then_expr
+                    .iter()
+                    .all(|(when, _)| matches!(info.nullable(when), Ok(false))) =>
             {
                 // The disjunction of all the when predicates encountered so far
                 let mut filter_expr = lit(false);
@@ -725,10 +731,10 @@ impl<'a, S: SimplifyInfo> ExprRewriter for Simplifier<'a, S> {
                     filter_expr = filter_expr.or(*when);
                 }
 
-                if let Some(else_expr) = else_expr {
-                    let case_expr = filter_expr.not().and(*else_expr);
-                    out_expr = out_expr.or(case_expr);
-                }
+                let else_expr =
+                    else_expr.map_or(Expr::Literal(ScalarValue::Boolean(None)), |e| *e);
+                let case_expr = filter_expr.not().and(else_expr);
+                out_expr = out_expr.or(case_expr);
 
                 // Do a first pass at simplification
                 out_expr.rewrite(self)?
@@ -1231,6 +1237,7 @@ mod tests {
                     DFField::new(None, "c2", DataType::Boolean, true),
                     DFField::new(None, "c1_non_null", DataType::Utf8, false),
                     DFField::new(None, "c2_non_null", DataType::Boolean, false),
+                    DFField::new(None, "c3_non_null", DataType::Boolean, false),
                 ],
                 HashMap::new(),
             )
@@ -1349,12 +1356,12 @@ mod tests {
             simplify(Expr::Case {
                 expr: None,
                 when_then_expr: vec![(
-                    Box::new(col("c2").not_eq(lit(false))),
+                    Box::new(col("c2_non_null").not_eq(lit(false))),
                     Box::new(lit("ok").eq(lit("not_ok"))),
                 )],
-                else_expr: Some(Box::new(col("c2").eq(lit(true)))),
+                else_expr: Some(Box::new(col("c2_non_null").eq(lit(true)))),
             }),
-            col("c2").not().and(col("c2")) // #1716
+            col("c2_non_null").not().and(col("c2_non_null")) // #1716
         );
 
         // CASE WHERE c2 != false THEN "ok" == "ok" ELSE c2
@@ -1369,12 +1376,12 @@ mod tests {
             simplify(simplify(Expr::Case {
                 expr: None,
                 when_then_expr: vec![(
-                    Box::new(col("c2").not_eq(lit(false))),
+                    Box::new(col("c2_non_null").not_eq(lit(false))),
                     Box::new(lit("ok").eq(lit("ok"))),
                 )],
-                else_expr: Some(Box::new(col("c2").eq(lit(true)))),
+                else_expr: Some(Box::new(col("c2_non_null").eq(lit(true)))),
             })),
-            col("c2").or(col("c2").not().and(col("c2"))) // #1716
+            col("c2_non_null")
         );
 
         // CASE WHERE ISNULL(c2) THEN true ELSE c2
@@ -1387,20 +1394,19 @@ mod tests {
             simplify(simplify(Expr::Case {
                 expr: None,
                 when_then_expr: vec![(
-                    Box::new(col("c2").is_null()),
+                    Box::new(col("c2_non_null").is_null()),
                     Box::new(lit(true)),
                 )],
-                else_expr: Some(Box::new(col("c2"))),
+                else_expr: Some(Box::new(col("c2_non_null"))),
             })),
-            col("c2")
+            col("c2_non_null")
                 .is_null()
-                .or(col("c2").is_null().not().and(col("c2")))
+                .or(col("c2_non_null").is_null().not().and(col("c2_non_null")))
         );
 
-        // CASE WHERE c1 then true WHERE c2 then false ELSE true
-        // --> c1 OR (NOT(c1) AND c2 AND FALSE) OR (NOT(c1 OR c2) AND TRUE)
-        // --> c1 OR (NOT(c1 OR c2))
-        // --> NOT(c1) AND c2
+        // CASE WHERE c3 then true WHERE c2 then false ELSE true
+        // --> c3 OR (NOT(c3) AND c2 AND FALSE) OR (NOT(c3 OR c2) AND TRUE)
+        // --> c3 OR (NOT(c3 OR c2))
         //
         // Need to call simplify 2x due to
         // https://github.com/apache/arrow-datafusion/issues/1160
@@ -1408,32 +1414,64 @@ mod tests {
             simplify(simplify(Expr::Case {
                 expr: None,
                 when_then_expr: vec![
-                    (Box::new(col("c1")), Box::new(lit(true)),),
-                    (Box::new(col("c2")), Box::new(lit(false)),)
+                    (Box::new(col("c3_non_null")), Box::new(lit(true)),),
+                    (Box::new(col("c2_non_null")), Box::new(lit(false)),)
                 ],
                 else_expr: Some(Box::new(lit(true))),
             })),
-            col("c1").or(col("c1").or(col("c2")).not())
+            col("c3_non_null").or(col("c3_non_null").or(col("c2_non_null")).not())
         );
 
-        // CASE WHERE c1 then true WHERE c2 then true ELSE false
-        // --> c1 OR (NOT(c1) AND c2 AND TRUE) OR (NOT(c1 OR c2) AND FALSE)
-        // --> c1 OR (NOT(c1) AND c2)
-        // --> c1 OR c2
-        //
-        // Need to call simplify 2x due to
-        // https://github.com/apache/arrow-datafusion/issues/1160
+        // CASE WHERE c3 then true WHERE c2 then true ELSE false
+        // --> c3 OR (NOT(c3) AND c2 AND TRUE) OR (NOT(c3 OR c2) AND FALSE)
+        // --> c3 OR (c2 AND NOT(c3))
         assert_eq!(
             simplify(simplify(Expr::Case {
                 expr: None,
                 when_then_expr: vec![
-                    (Box::new(col("c1")), Box::new(lit(true)),),
-                    (Box::new(col("c2")), Box::new(lit(false)),)
+                    (Box::new(col("c3_non_null")), Box::new(lit(true)),),
+                    (Box::new(col("c2_non_null")), Box::new(lit(true)),)
                 ],
-                else_expr: Some(Box::new(lit(true))),
+                else_expr: Some(Box::new(lit(false))),
             })),
-            col("c1").or(col("c1").or(col("c2")).not())
+            col("c3_non_null").or(col("c2_non_null").and(col("c3_non_null").not()))
         );
+
+        // CASE WHEN c2 THEN true END
+        // --> (c2 AND true) OR (NOT c2 AND NULL), a missing ELSE is NULL
+        // --> c2 OR (NOT c2 AND NULL)
+        assert_eq!(
+            simplify(simplify(Expr::Case {
+                expr: None,
+                when_then_expr: vec![
+                    (Box::new(col("c2_non_null")), Box::new(lit(true)),)
+                ],
+                else_expr: None,
+            })),
+            col("c2_non_null").or(col("c2_non_null").not().and(lit_null()))
+        );
+
+        // A nullable WHEN predicate is not rewritten: CASE treats a NULL
+        // predicate as not matched, while `NULL AND A` / `NOT NULL` are NULL.
+        for else_expr in [None, Some(Box::new(lit(true)))] {
+            let case = Expr::Case {
+                expr: None,
+                when_then_expr: vec![(Box::new(col("c2")), Box::new(lit(false)))],
+                else_expr,
+            };
+            assert_eq!(simplify(case.clone()), case);
+        }
+
+        // Any nullable WHEN predicate blocks the rewrite
+        let case = Expr::Case {
+            expr: None,
+            when_then_expr: vec![
+                (Box::new(col("c2_non_null")), Box::new(lit(true))),
+                (Box::new(col("c2")), Box::new(lit(false))),
+            ],
+            else_expr: Some(Box::new(lit(true))),
+        };
+        assert_eq!(simplify(case.clone()), case);
     }
 
     /// Boolean null
