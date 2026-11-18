@@ -123,6 +123,34 @@ async fn case_when_all_branches_null() -> Result<()> {
 }
 
 #[tokio::test]
+async fn case_when_constant_when_keeps_earlier_matches() -> Result<()> {
+    let ctx = SessionContext::new();
+    let t = "(SELECT 1 AS a UNION ALL SELECT 2 AS a UNION ALL SELECT NULL AS a) t";
+
+    let sql = format!(
+        "SELECT a, \
+         CASE WHEN a = 1 THEN 'x' WHEN 1 = 1 THEN 'y' END AS c1, \
+         CASE a WHEN 1 THEN 4 WHEN 1 THEN 5 ELSE 6 END AS c2, \
+         CASE WHEN NULL THEN 1 ELSE 2 END AS c3, \
+         CASE WHEN a = 2 THEN 1 WHEN NULL THEN 2 WHEN true THEN 3 END AS c4 \
+         FROM {} ORDER BY a",
+        t
+    );
+    let actual = execute_to_batches(&ctx, &sql).await;
+    let expected = [
+        "+---+----+----+----+----+",
+        "| a | c1 | c2 | c3 | c4 |",
+        "+---+----+----+----+----+",
+        "| 1 | x  | 4  | 2  | 3  |",
+        "| 2 | y  | 6  | 2  | 1  |",
+        "|   | y  | 6  | 2  | 3  |",
+        "+---+----+----+----+----+",
+    ];
+    assert_batches_eq!(expected, &actual);
+    Ok(())
+}
+
+#[tokio::test]
 async fn case_when_else_utf_boolean_cast() -> Result<()> {
     let ctx = create_case_context()?;
     let sql = "SELECT CASE true WHEN 'false' THEN 'yes' ELSE 'no' END";

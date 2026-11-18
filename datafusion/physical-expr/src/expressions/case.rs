@@ -22,7 +22,9 @@ use super::cast::cast_array_with_options;
 use crate::expressions::try_cast;
 use crate::PhysicalExpr;
 use arrow::array::{self, *};
-use arrow::compute::{and, is_null, not, or, or_kleene, CUBESQL_CAST_OPTIONS};
+use arrow::compute::{
+    and, and_kleene, is_null, not, or, or_kleene, CUBESQL_CAST_OPTIONS,
+};
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DataFusionError, Result};
@@ -355,6 +357,9 @@ impl CaseExpr {
 
             // build boolean array representing which rows match the "when" value
             let when_match = compare_datum(ComparisonOp::Eq, &when_value, &base_value)?;
+            // `evaluate_selection` returns a scalar WHEN value (e.g. a literal) for all
+            // rows, so rows already matched by an earlier WHEN have to be excluded here
+            let when_match = and_kleene(&when_match, &remainder)?;
 
             let then_value = self.when_then_expr[i]
                 .1
@@ -418,6 +423,12 @@ impl CaseExpr {
                 .0
                 .evaluate_selection(batch, &remainder)?;
             let when_value = when_value.into_array(batch.num_rows());
+            // an untyped NULL condition (e.g. `WHEN NULL`) never matches
+            let when_value = if when_value.data_type() == &DataType::Null {
+                new_null_array(&DataType::Boolean, batch.num_rows())
+            } else {
+                when_value
+            };
             let when_value = when_value
                 .as_ref()
                 .as_any()
@@ -427,6 +438,9 @@ impl CaseExpr {
                         "WHEN expression did not return a BooleanArray".to_string(),
                     )
                 })?;
+            // `evaluate_selection` returns a scalar WHEN value (e.g. a literal) for all
+            // rows, so rows already matched by an earlier WHEN have to be excluded here
+            let when_value = &and_kleene(when_value, &remainder)?;
 
             let then_value = self.when_then_expr[i]
                 .1
@@ -1059,6 +1073,108 @@ mod tests {
             .downcast_ref::<Int32Array>()
             .expect("failed to downcast to Int32Array");
         assert_eq!(result, &Int32Array::from(vec![Some(1), Some(2), Some(2)]));
+
+        Ok(())
+    }
+
+    #[test]
+    fn case_without_expr_constant_when_keeps_earlier_matches() -> Result<()> {
+        let batch = case_test_batch()?;
+        let schema = batch.schema();
+
+        // CASE WHEN a = 'foo' THEN 1 WHEN true THEN 2 END
+        let when1 = binary(
+            col("a", &schema)?,
+            Operator::Eq,
+            lit(ScalarValue::Utf8(Some("foo".to_string()))),
+            &batch.schema(),
+        )?;
+        let expr = case(
+            None,
+            &[
+                (when1, lit(ScalarValue::Int32(Some(1)))),
+                (
+                    lit(ScalarValue::Boolean(Some(true))),
+                    lit(ScalarValue::Int32(Some(2))),
+                ),
+            ],
+            None,
+        )?;
+        let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+        let result = result
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("failed to downcast to Int32Array");
+        assert_eq!(
+            result,
+            &Int32Array::from(vec![Some(1), Some(2), Some(2), Some(2)])
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn case_with_expr_constant_when_keeps_earlier_matches() -> Result<()> {
+        let batch = case_test_batch()?;
+        let schema = batch.schema();
+
+        // CASE a WHEN 'foo' THEN 1 WHEN 'foo' THEN 2 ELSE 3 END
+        let expr = case(
+            Some(col("a", &schema)?),
+            &[
+                (
+                    lit(ScalarValue::Utf8(Some("foo".to_string()))),
+                    lit(ScalarValue::Int32(Some(1))),
+                ),
+                (
+                    lit(ScalarValue::Utf8(Some("foo".to_string()))),
+                    lit(ScalarValue::Int32(Some(2))),
+                ),
+            ],
+            Some(lit(ScalarValue::Int32(Some(3)))),
+        )?;
+        let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+        let result = result
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("failed to downcast to Int32Array");
+        assert_eq!(
+            result,
+            &Int32Array::from(vec![Some(1), Some(3), Some(3), Some(3)])
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn case_without_expr_null_when() -> Result<()> {
+        let batch = case_test_batch()?;
+        let schema = batch.schema();
+
+        // CASE WHEN a = 'foo' THEN 1 WHEN NULL THEN 2 ELSE 3 END
+        let when1 = binary(
+            col("a", &schema)?,
+            Operator::Eq,
+            lit(ScalarValue::Utf8(Some("foo".to_string()))),
+            &batch.schema(),
+        )?;
+        let expr = case(
+            None,
+            &[
+                (when1, lit(ScalarValue::Int32(Some(1)))),
+                (lit(ScalarValue::Null), lit(ScalarValue::Int32(Some(2)))),
+            ],
+            Some(lit(ScalarValue::Int32(Some(3)))),
+        )?;
+        let result = expr.evaluate(&batch)?.into_array(batch.num_rows());
+        let result = result
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("failed to downcast to Int32Array");
+        assert_eq!(
+            result,
+            &Int32Array::from(vec![Some(1), Some(3), Some(3), Some(3)])
+        );
 
         Ok(())
     }
