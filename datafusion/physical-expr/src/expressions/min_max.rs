@@ -258,6 +258,8 @@ macro_rules! min_max_batch {
             ),
             DataType::Date32 => typed_min_max_batch!($VALUES, Date32Array, Date32, $OP),
             DataType::Date64 => typed_min_max_batch!($VALUES, Date64Array, Date64, $OP),
+            // an untyped NULL column has no values, so its min/max is NULL
+            DataType::Null => ScalarValue::Null,
             other => {
                 // This should have been handled before
                 return Err(DataFusionError::Internal(format!(
@@ -428,6 +430,7 @@ macro_rules! min_max {
             ) => {
                 typed_min_max!(lhs, rhs, Date64, $OP)
             }
+            (ScalarValue::Null, ScalarValue::Null) => ScalarValue::Null,
             e => {
                 return Err(DataFusionError::Internal(format!(
                     "MIN/MAX is not expected to receive scalars of incompatible types {:?}",

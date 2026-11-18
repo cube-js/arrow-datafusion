@@ -1064,6 +1064,16 @@ impl ScalarValue {
         scalars: impl IntoIterator<Item = ScalarValue>,
         data_type: &DataType,
     ) -> Result<GenericListArray<i32>> {
+        let element_type = match data_type {
+            DataType::List(field) => field.data_type(),
+            other => {
+                return Err(DataFusionError::Internal(format!(
+                    "Expected List data type, got {:?}",
+                    other
+                )))
+            }
+        };
+
         let mut offsets = Int32Array::builder(0);
         offsets.append_value(0);
 
@@ -1074,7 +1084,11 @@ impl ScalarValue {
             if let ScalarValue::List(values, _) = scalar {
                 match values {
                     Some(values) => {
-                        let element_array = ScalarValue::iter_to_array(*values)?;
+                        let element_array = if values.is_empty() {
+                            new_empty_array(element_type)
+                        } else {
+                            ScalarValue::iter_to_array(*values)?
+                        };
 
                         // Add new offset index
                         flat_len += element_array.len() as i32;
@@ -1104,9 +1118,13 @@ impl ScalarValue {
         // Concatenate element arrays to create single flat array
         let element_arrays: Vec<&dyn Array> =
             elements.iter().map(|a| a.as_ref()).collect();
-        let flat_array = match arrow::compute::concat(&element_arrays) {
-            Ok(flat_array) => flat_array,
-            Err(err) => return Err(DataFusionError::ArrowError(err)),
+        let flat_array = if element_arrays.is_empty() {
+            new_empty_array(element_type)
+        } else {
+            match arrow::compute::concat(&element_arrays) {
+                Ok(flat_array) => flat_array,
+                Err(err) => return Err(DataFusionError::ArrowError(err)),
+            }
         };
 
         // Build ListArray using ArrayData so we can specify a flat inner array, and offset indices
