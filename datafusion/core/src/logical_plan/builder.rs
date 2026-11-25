@@ -1365,7 +1365,16 @@ pub fn union_with_alias(
     right_plan: LogicalPlan,
     alias: Option<String>,
 ) -> Result<LogicalPlan> {
-    let union_schema = (0..left_plan.schema().fields().len())
+    let left_len = left_plan.schema().fields().len();
+    let right_len = right_plan.schema().fields().len();
+    if left_len != right_len {
+        return Err(DataFusionError::Plan(format!(
+            "UNION queries must have the same number of columns (left: {}, right: {})",
+            left_len, right_len
+        )));
+    }
+
+    let union_schema = (0..left_len)
         .map(|i| {
             let left_field = left_plan.schema().field(i);
             let right_field = right_plan.schema().field(i);

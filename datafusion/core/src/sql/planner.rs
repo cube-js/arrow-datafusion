@@ -5354,6 +5354,24 @@ mod tests {
     }
 
     #[test]
+    fn union_with_different_column_counts() {
+        for (sql, left, right) in [
+            ("SELECT 1 UNION ALL SELECT 1, 2", 1, 2),
+            ("SELECT 1, 2 UNION SELECT 1", 2, 1),
+            ("SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 1, 2", 1, 2),
+        ] {
+            let err = logical_plan(sql).expect_err("query should have failed");
+            assert_eq!(
+                format!(
+                    "Plan(\"UNION queries must have the same number of columns (left: {}, right: {})\")",
+                    left, right
+                ),
+                format!("{:?}", err)
+            );
+        }
+    }
+
+    #[test]
     fn union_with_incompatible_data_type() {
         let sql = "SELECT interval '1 year 1 day' UNION ALL SELECT 1";
         let err = logical_plan(sql).expect_err("query should have failed");
